@@ -134,6 +134,9 @@ export function CanvasStage(props: Props) {
   } | null>(null)
   const live = useRef({ zoom: props.zoom, pan: props.pan, w: 0, h: 0, camera: props.camera })
   live.current = { zoom: props.zoom, pan: props.pan, w: size.w, h: size.h, camera: props.camera }
+  /** 手势回调里要用最新的 props（effect 只挂一次） */
+  const propsRef = useRef(props)
+  propsRef.current = props
 
   useEffect(() => {
     const el = hostRef.current
@@ -150,12 +153,41 @@ export function CanvasStage(props: Props) {
 
   /* 手势：双指缩放（围绕捏合中点）、双指平移、中键/Alt 拖拽平移 */
   useEffect(() => {
-    const el = hostRef.current
-    if (!el) return
+    const host = hostRef.current
+    if (!host) return
 
     const center = () => ({ x: live.current.w / 2, y: live.current.h / 2 + 40 })
+    /** 这一次手势是不是从画布里按下的：面板上的拖动不该带动画布 */
+    let fromCanvas = false
+
+    /** 捏合一旦开始就停掉正在进行的拖动，否则第二根手指会继续拖对象 */
+    const stopObjectDrag = () => {
+      const wasDragging =
+        Boolean(pointDrag.current) || Boolean(shapeDrag.current) || Boolean(draftRef.current)
+      pointDrag.current = null
+      shapeDrag.current = null
+      draftRef.current = null
+      pendingPan.current = null
+      orbit.current = null
+      panDrag.current = null
+      if (draftRef.current === null) setDraft(null)
+      if (wasDragging) propsRef.current.onDragEnd()
+    }
+
+    const resetAll = () => {
+      pointers.current.clear()
+      pinch.current = null
+      panDrag.current = null
+      fromCanvas = false
+    }
 
     const onDown = (e: PointerEvent) => {
+      // 主指针落下 = 新手势。触摸时 pointerup 偶尔会丢（手指滑出窗口、系统抢走手势），
+      // 残留的指针会让之后每次单指触摸都被当成「第二根手指」，拖动和缩放就全乱了
+      if (e.isPrimary) resetAll()
+      // 只有「手势的第一根手指」决定这次是不是画布手势
+      if (pointers.current.size === 0) fromCanvas = host.contains(e.target as Node)
+      if (!fromCanvas) return
       pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
 
       if (pointers.current.size === 2) {
@@ -166,11 +198,7 @@ export function CanvasStage(props: Props) {
           zoom: live.current.zoom,
           pan: live.current.pan,
         }
-        orbit.current = null
-        pointDrag.current = null
-        panDrag.current = null
-        // 第二根手指落下：撤掉左键平移，交给捏合手势
-        pendingPan.current = null
+        stopObjectDrag()
         return
       }
 
@@ -180,6 +208,7 @@ export function CanvasStage(props: Props) {
     }
 
     const onMove = (e: PointerEvent) => {
+      if (!fromCanvas) return
       if (pointers.current.has(e.pointerId)) {
         pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
       }
@@ -192,14 +221,17 @@ export function CanvasStage(props: Props) {
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
         const cam = live.current.camera
         if (cam) {
-          props.onCamera({ ...cam, zoom: Math.min(4, Math.max(0.3, cam.zoom * (dist / p.dist))) })
+          propsRef.current.onCamera({
+            ...cam,
+            zoom: Math.min(4, Math.max(0.3, cam.zoom * (dist / p.dist))),
+          })
           return
         }
         const zoom = Math.min(4, Math.max(0.3, p.zoom * (dist / p.dist)))
         const k = zoom / p.zoom
         const c = center()
-        props.onZoom(zoom)
-        props.onPan({
+        propsRef.current.onZoom(zoom)
+        propsRef.current.onPan({
           x: mid.x - c.x - (p.mid.x - c.x - p.pan.x) * k,
           y: mid.y - c.y - (p.mid.y - c.y - p.pan.y) * k,
         })
@@ -208,7 +240,7 @@ export function CanvasStage(props: Props) {
 
       if (panDrag.current) {
         e.preventDefault()
-        props.onPan({
+        propsRef.current.onPan({
           x: panDrag.current.pan.x + (e.clientX - panDrag.current.x),
           y: panDrag.current.pan.y + (e.clientY - panDrag.current.y),
         })
@@ -218,18 +250,33 @@ export function CanvasStage(props: Props) {
     const onUp = (e: PointerEvent) => {
       pointers.current.delete(e.pointerId)
       if (pointers.current.size < 2) pinch.current = null
-      if (pointers.current.size === 0) panDrag.current = null
+      if (pointers.current.size === 0) {
+        panDrag.current = null
+        fromCanvas = false
+      }
     }
 
-    el.addEventListener('pointerdown', onDown, true)
-    el.addEventListener('pointermove', onMove, { capture: true, passive: false })
-    el.addEventListener('pointerup', onUp, true)
-    el.addEventListener('pointercancel', onUp, true)
+    const onCancel = (e: PointerEvent) => {
+      onUp(e)
+      stopObjectDrag()
+    }
+
+    const onBlur = () => {
+      resetAll()
+      stopObjectDrag()
+    }
+
+    window.addEventListener('pointerdown', onDown, true)
+    window.addEventListener('pointermove', onMove, { capture: true, passive: false })
+    window.addEventListener('pointerup', onUp, true)
+    window.addEventListener('pointercancel', onCancel, true)
+    window.addEventListener('blur', onBlur)
     return () => {
-      el.removeEventListener('pointerdown', onDown, true)
-      el.removeEventListener('pointermove', onMove, true)
-      el.removeEventListener('pointerup', onUp, true)
-      el.removeEventListener('pointercancel', onUp, true)
+      window.removeEventListener('pointerdown', onDown, true)
+      window.removeEventListener('pointermove', onMove, true)
+      window.removeEventListener('pointerup', onUp, true)
+      window.removeEventListener('pointercancel', onCancel, true)
+      window.removeEventListener('blur', onBlur)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -1588,6 +1635,7 @@ export function CanvasStage(props: Props) {
 
       {props.objects.length === 0 && !props.camera && (
         <div className="empty">
+          <div className="empty__card">
           <p className="empty__text">在左下角输入表达式画函数，或从工具栏选一个工具开始作图。</p>
           <p className="empty__hint">
             也可以按 <kbd>Ctrl</kbd>+<kbd>K</kbd> 打开命令面板、<kbd>Ctrl</kbd>+<kbd>/</kbd> 打开符号键盘，
@@ -1603,6 +1651,7 @@ export function CanvasStage(props: Props) {
             <button className="btn" onClick={() => props.onEmptyAction('force')}>
               放置力
             </button>
+          </div>
           </div>
         </div>
       )}

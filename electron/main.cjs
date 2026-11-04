@@ -7,6 +7,20 @@ const { registerUpdateIpc } = require('./update.cjs')
 const { registerStoreIpc } = require('./store.cjs')
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
+
+// Windows 任务栏图标/通知归属：不设的话任务栏会挂到 electron.exe 名下
+if (process.platform === 'win32') app.setAppUserModelId('cn.chordot.desktop')
+
+/** 窗口图标：只有开发时读 build/icon.ico，打包后 exe 自带图标 */
+const windowIcon = (() => {
+  if (app.isPackaged) return undefined
+  const p = path.join(__dirname, '..', 'build', 'icon.ico')
+  try {
+    return fs.existsSync(p) ? p : undefined
+  } catch {
+    return undefined
+  }
+})()
 const DIST = path.join(__dirname, '..', 'dist')
 
 /** 生产环境用自定义协议加载渲染进程：file:// 下 ES module 会被 CORS 拦截 */
@@ -82,6 +96,7 @@ function createWindow() {
     show: false,
     backgroundColor: '#FAFAF8',
     title: '弦点 / Chordot',
+    ...(windowIcon ? { icon: windowIcon } : {}),
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#F2F0EC',
