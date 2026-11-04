@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.tmp/
+*.log
+.DS_Store
+Thumbs.db
+
+# 打包产物
+release/
+release-*/
+*.exe
+*.blockmap
+
+# 项目内部记录
+.workbuddy-ai/

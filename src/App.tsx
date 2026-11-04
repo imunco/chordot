@@ -1,0 +1,1523 @@
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { CanvasStage } from './components/CanvasStage'
+import { CommandPalette, type PaletteItem } from './components/CommandPalette'
+import { LeftPanel } from './components/LeftPanel'
+import { RightPanel } from './components/RightPanel'
+import { StatusBar } from './components/StatusBar'
+import { SymbolPad } from './components/SymbolPad'
+import { TemplateGallery } from './components/TemplateGallery'
+import { ShapePanel } from './components/ShapePanel'
+import { PenBar } from './components/PenBar'
+import { Shortcuts } from './components/Shortcuts'
+import { Timeline } from './components/Timeline'
+import { shapeById } from './data/shapes'
+import { shape3dById } from './data/shapes3d'
+import type { Template } from './data/templates'
+import { TitleBar } from './components/TitleBar'
+import { Toolbar } from './components/Toolbar'
+import { KernelClient } from './kernel/client'
+import {
+  angleFromPoint,
+  constraintMovers,
+  INCLINE,
+  sampleFunction,
+  seedForConstraint,
+  solveScene,
+} from './kernel/scene'
+import type {
+  Camera,
+  PhysicsForce,
+  SceneSpec,
+  SketchConstraint,
+  SketchConstraintType,
+  SolidShape,
+} from './kernel/types'
+import { baseName as fileName, parseDoc, serializeDoc } from './io/file'
+import { buildIncremental, emptyCache, exposeStats, type BuildCache } from './model/graph'
+import { RigidWorld } from './kernel/rigid'
+import { evalForce } from './model/force'
+import { forceDir } from './model/force3d'
+import type { BodySnapshot } from './kernel/rigid'
+import { measure } from './model/measure'
+import { schemaFor } from './model/props'
+import { dueForCheck, loadSettings, saveSettings, type Settings } from './settings'
+import { Preferences } from './components/Preferences'
+import { Onboarding } from './components/Onboarding'
+import { UpdateDialog } from './components/UpdateDialog'
+import { useUpdater } from './updater'
+import { PX_PER_UNIT } from './model/scale'
+import {
+  conflictScene,
+  inclineScene,
+  inclineSlideScene,
+  initialState,
+  pendulumScene,
+  projectileScene,
+  reducer,
+  sketchScene,
+  solidInclineScene,
+  solidScene,
+  springScene,
+  triangleScene,
+} from './state'
+import type { ToolId } from './state'
+
+interface Toast {
+  id: number
+  text: string
+}
+
+export default function App() {
+  const [state, dispatch] = useReducer(reducer, initialState)
+  const [toasts, setToasts] = useState<Toast[]>([])
+  const [recent, setRecent] = useState<string[]>([])
+  const [settings, setSettings] = useState<Settings>(() => loadSettings())
+  const [prefsOpen, setPrefsOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  // 验证脚本用 ?notour=1 跳过引导，免得遮住要点的按钮
+  const [tourOpen, setTourOpen] = useState(
+    () => !location.search.includes('notour') && !loadSettings().onboarded,
+  )
+  const [updateOpen, setUpdateOpen] = useState(false)
+
+  const patchSettings = (patch: Partial<Settings>) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...patch }
+      saveSettings(next)
+      return next
+    })
+  }
+
+  const updater = useUpdater(settings, patchSettings)
+
+  /* 减弱动效：交给 CSS 变量，一处开关全局生效 */
+  useEffect(() => {
+    document.documentElement.dataset.reduceMotion = settings.reduceMotion ? 'on' : 'off'
+  }, [settings.reduceMotion])
+
+  /* 启动时按提醒频率静默检查一次更新 */
+  useEffect(() => {
+    if (!dueForCheck(loadSettings())) return
+    const timer = window.setTimeout(async () => {
+      const res = await updater.check(true)
+      if (!res?.ok || !res.hasUpdate) return
+      const now = loadSettings()
+      if (now.updateMuted || now.updateFreq === 'never') return
+      if (res.latest && now.updateSkip === res.latest) return
+      setUpdateOpen(true)
+    }, 2600)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  /* 启动时套用「网格默认」设置 */
+  useEffect(() => {
+    if (state.grid !== settings.grid) dispatch({ type: 'grid' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const [touch, setTouch] = useState(
+    () =>
+      loadSettings().touchDefault ||
+      (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true),
+  )
+
+  /* 只要出现过真实触摸，就切到触控模式（放大命中区） */
+  useEffect(() => {
+    const on = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') setTouch(true)
+    }
+    window.addEventListener('pointerdown', on, true)
+    return () => window.removeEventListener('pointerdown', on, true)
+  }, [])
+
+  useEffect(() => {
+    document.documentElement.dataset.touch = touch ? '1' : '0'
+  }, [touch])
+  const [busy, setBusy] = useState(false)
+  const [slow, setSlow] = useState(false)
+  const seq = useRef(0)
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const stateRef = useRef(state)
+  stateRef.current = state
+
+  const kernel = useRef<KernelClient | null>(null)
+  const queue = useRef<{
+    scene: SceneSpec
+    drag?: { id: string; x: number; y: number }
+    movable?: string[]
+    commit?: boolean
+  } | null>(null)
+  const inflight = useRef(false)
+  /** 上一帧解算用的拖动坐标：松手时据此判断还要不要再解一次 */
+  const solvedFor = useRef<{ id: string; x: number; y: number } | null>(null)
+  const slowTimer = useRef(0)
+
+  const toast = useCallback((text: string) => {
+    const id = ++seq.current
+    setToasts((list) => [...list.slice(-2), { id, text }])
+    window.setTimeout(() => setToasts((list) => list.filter((t) => t.id !== id)), 3000)
+  }, [])
+
+  /* 内核：Web Worker 内的几何约束 + 静力学求解 */
+  useEffect(() => {
+    kernel.current = new KernelClient()
+    return () => {
+      kernel.current?.dispose()
+      kernel.current = null
+    }
+  }, [])
+
+  const pump = useCallback(async () => {
+    const next = queue.current
+    const worker = kernel.current
+    if (!next || !worker || inflight.current) return
+    queue.current = null
+    inflight.current = true
+    setBusy(true)
+    slowTimer.current = window.setTimeout(() => setSlow(true), 200)
+    const t0 = performance.now()
+
+    const res = await worker.solve(next.scene, next.drag, next.movable)
+    solvedFor.current = next.drag ?? null
+
+    window.clearTimeout(slowTimer.current)
+    setSlow(false)
+    setBusy(false)
+    inflight.current = false
+
+    dispatch({
+      type: 'solution',
+      solution: res.solution,
+      source: res.solution.source,
+      ms: performance.now() - t0,
+      error: res.ok ? undefined : res.error,
+      syncDoc: !!next.movable || !!next.commit,
+    })
+    if (queue.current) void pump()
+  }, [])
+
+  const requestSolve = useCallback(
+    (
+      scene: SceneSpec,
+      drag?: { id: string; x: number; y: number },
+      movable?: string[],
+      commit?: boolean,
+    ) => {
+      queue.current = { scene, drag, movable, commit }
+      void pump()
+    },
+    [pump],
+  )
+
+  /* 运动仿真：按帧向内核要步进，暂停即停 */
+  useEffect(() => {
+    if (!state.playing) return
+    let raf = 0
+    let last = performance.now()
+    let inflight = false
+    let carry = 0
+    const loop = (now: number) => {
+      carry += Math.min(now - last, 60)
+      last = now
+      if (!inflight && carry >= 8) {
+        const dt = carry
+        carry = 0
+        inflight = true
+        kernel.current?.simAdvance(dt).then((st) => {
+          inflight = false
+          if (st) dispatch({ type: 'sim', state: st })
+        })
+      }
+      raf = requestAnimationFrame(loop)
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [state.playing])
+
+  /** 仿真进行中时，画面用仿真状态覆盖位置与力数值 */
+  const view = useMemo(() => {
+    const scene = state.doc.scene
+    const sim = state.sim
+    if (!sim || scene.kind !== 'incline') {
+      return { scene, solution: state.solution }
+    }
+    const params = {
+      ...scene.params,
+      t: Math.min(1, Math.max(0, sim.x / INCLINE.length)),
+    }
+    const next: SceneSpec = { kind: 'incline', params }
+    const base = solveScene(next)
+    return {
+      scene: next,
+      solution: {
+        ...base,
+        statics: {
+          angleDeg: params.angleDeg,
+          gravity: sim.gravity ?? 0,
+          normal: sim.normal ?? 0,
+          friction: sim.friction ?? 0,
+          net: Math.abs(sim.a) * params.mass,
+          sliding: sim.sliding ?? false,
+        },
+      },
+    }
+  }, [state.doc.scene, state.solution, state.sim])
+
+  const scene3d = state.doc.scene
+  const camera =
+    scene3d.kind === 'solid'
+      ? scene3d.params.camera
+      : scene3d.kind === 'solidIncline'
+        ? scene3d.params.camera
+        : null
+
+
+  const sketchDoc = state.doc.scene.kind === 'sketch' ? state.doc.scene.doc : null
+  const selectedLines = sketchDoc
+    ? state.selected.filter((id) => sketchDoc.segments.some((s) => s.id === id)).length
+    : 0
+  const selectedPoints = sketchDoc
+    ? state.selected.filter((id) => sketchDoc.points.some((p) => p.id === id)).length
+    : 0
+  const selectedCircles = sketchDoc
+    ? state.selected.filter((id) => sketchDoc.circles.some((c) => c.id === id)).length
+    : 0
+
+  /** 约束标记画在线段中点 */
+  const badges = useMemo(() => {
+    if (!sketchDoc) return []
+    const glyph: Record<string, string> = {
+      horizontal: '═',
+      vertical: '║',
+      equal: '=',
+      parallel: '∥',
+      perpendicular: '⊥',
+      'on-line': '∈',
+      midpoint: '◦',
+      tangent: '⌒',
+    }
+    const out: { x: number; y: number; label: string; stack: number }[] = []
+    const used = new Map<string, number>()
+    for (const c of sketchDoc.constraints ?? []) {
+      if ((c.type === 'on-line' || c.type === 'midpoint') && c.points?.[0]) {
+        const p = state.solution.points[c.points[0]] ?? sketchDoc.points.find((q) => q.id === c.points![0])
+        if (!p) continue
+        out.push({ x: p.x, y: p.y, label: c.type === 'midpoint' ? '◦' : '∈', stack: 0 })
+        continue
+      }
+      if (c.type === 'tangent' && c.circles?.[0]) {
+        const circle = sketchDoc.circles.find((q) => q.id === c.circles![0])
+        const center = circle ? (state.solution.points[circle.c] ?? sketchDoc.points.find((q) => q.id === circle.c)) : null
+        if (!center || !circle) continue
+        out.push({ x: center.x, y: center.y - circle.r, label: '⌒', stack: 0 })
+        continue
+      }
+      // 双线约束（等长/平行/垂直）在两条线上都标
+      for (const lineId of c.lines) {
+        const seg = sketchDoc.segments.find((s) => s.id === lineId)
+        if (!seg) continue
+        const a = state.solution.points[seg.a] ?? sketchDoc.points.find((p) => p.id === seg.a)
+        const b = state.solution.points[seg.b] ?? sketchDoc.points.find((p) => p.id === seg.b)
+        if (!a || !b) continue
+        const stack = used.get(seg.id) ?? 0
+        used.set(seg.id, stack + 1)
+        out.push({
+          x: (a.x + b.x) / 2,
+          y: (a.y + b.y) / 2,
+          label: glyph[c.type] ?? '·',
+          stack,
+        })
+      }
+    }
+    return out
+  }, [sketchDoc, state.solution])
+
+  const patchParams = (patch: Record<string, unknown>) => {
+    const scene = state.doc.scene
+    if (scene.kind === 'sketch' || scene.kind === 'triangle') return
+    dispatch({
+      type: 'scene-patch',
+      scene: { ...scene, params: { ...scene.params, ...patch } } as SceneSpec,
+    })
+  }
+
+  const setCamera = (next: Camera) => {
+    const scene = state.doc.scene
+    if (scene.kind === 'solid') {
+      dispatch({ type: 'drag-scene', scene: { kind: 'solid', params: { ...scene.params, camera: next } } })
+    } else if (scene.kind === 'solidIncline') {
+      dispatch({
+        type: 'drag-scene',
+        scene: { kind: 'solidIncline', params: { ...scene.params, camera: next } },
+      })
+    }
+  }
+
+  // 调试钩子：验证脚本可直接读状态
+  ;(window as unknown as { __state?: unknown }).__state = state
+
+  const buildCache = useRef<BuildCache>(emptyCache())
+  const objects = useMemo(() => {
+    const res = buildIncremental(
+      view.scene,
+      view.solution,
+      {
+        hidden: state.doc.hidden,
+        names: state.doc.names,
+        preview: state.forcePreview,
+      },
+      state.sim,
+      buildCache.current,
+    )
+    buildCache.current = res.cache
+    exposeStats(res.stats)
+    return state.doc.deleted.length > 0
+      ? res.objects.filter((o) => !state.doc.deleted.includes(o.id))
+      : res.objects
+  }, [view, state.doc, state.sim, state.forcePreview])
+
+  const selectedSolidId =
+    objects.find((o) => o.kind === 'solid' && o.id === state.selected[state.selected.length - 1])?.id ??
+    null
+  const propSchema = schemaFor(state.doc.scene, selectedSolidId)
+
+  /* 三维物理世界：开启时每帧步进并把位置/姿态写回场景 */
+  const solidPhysics = state.doc.scene.kind === 'solid' ? state.doc.scene.params.physics : undefined
+  const physicsKey = solidPhysics?.enabled
+    ? `on|${solidPhysics.gravity}|${solidPhysics.restitution}|${solidPhysics.friction}|${JSON.stringify(
+        solidPhysics.obstacles ?? [],
+      )}`
+    : 'off'
+  const initialShapes = useRef<SolidShape[] | null>(null)
+  const physRef = useRef<{ world: RigidWorld; history: BodySnapshot[][]; times: number[] } | null>(
+    null,
+  )
+  const physForce = useRef<{ enabled: boolean; expr: string; dir: string } | null>(null)
+  physForce.current = solidPhysics?.force
+    ? { enabled: solidPhysics.force.enabled, expr: solidPhysics.force.expr, dir: solidPhysics.force.dir }
+    : null
+  /** 每个物体自己的变力 */
+  const physPerShape = useRef<{ id: string; force?: PhysicsForce }[]>([])
+  physPerShape.current =
+    state.doc.scene.kind === 'solid'
+      ? state.doc.scene.params.shapes.map((sh) => ({ id: sh.id, force: sh.force }))
+      : []
+  const [physTotal, setPhysTotal] = useState(0)
+  const [physIndex, setPhysIndex] = useState(0)
+
+  useEffect(() => {
+    const scene = state.doc.scene
+    if (scene.kind !== 'solid' || !scene.params.physics?.enabled) {
+      // 关掉物理：回到摆放位置
+      if (initialShapes.current) {
+        dispatch({ type: 'physics-reset', shapes: initialShapes.current })
+        initialShapes.current = null
+      }
+      physRef.current = null
+      setPhysTotal(0)
+      setPhysIndex(0)
+      return
+    }
+    const p = scene.params.physics
+    initialShapes.current = scene.params.shapes.map((sh) => ({ ...sh, rotation: undefined }))
+    const world = new RigidWorld({
+      gravity: p.gravity,
+      restitution: p.restitution,
+      friction: p.friction,
+    })
+    for (const o of p.obstacles ?? []) world.addObstacle(o)
+    for (const sh of scene.params.shapes) world.add(sh)
+    physRef.current = { world, history: [], times: [] }
+    setPhysTotal(0)
+    setPhysIndex(0)
+    dispatch({ type: 'physics-play', playing: true })
+    return () => {
+      world.dispose()
+      physRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [physicsKey])
+
+  useEffect(() => {
+    if (!physRef.current || !state.physicsPlaying) return
+    let raf = 0
+    let last = performance.now()
+    let tAcc = 0
+    const loop = (now: number) => {
+      const dt = (now - last) / 1000
+      last = now
+      const p = physRef.current
+      if (p && dt > 0.001) {
+        const ext = physForce.current
+        if (ext?.enabled) {
+          const { value } = evalForce(ext.expr, 'time', tAcc)
+          const d = forceDir(ext)
+          p.world.applyExternal([d[0] * value, d[1] * value, d[2] * value])
+        }
+        // 逐个物体的变力
+        for (const item of physPerShape.current) {
+          const fo = item.force
+          if (!fo?.enabled) continue
+          const { value } = evalForce(fo.expr, 'time', tAcc)
+          const d = forceDir(fo)
+          p.world.applyExternal([d[0] * value, d[1] * value, d[2] * value], item.id)
+        }
+        p.world.step(dt)
+        const snap = p.world.snapshot()
+        p.history.push(snap)
+        // 记下这一帧真正用的时刻，力箭头按它求值，别再用「帧号 / 60」猜
+        p.times.push(tAcc)
+        tAcc += dt
+        // 最多留 30 秒，够回溯就行
+        if (p.history.length > 1800) {
+          p.history.shift()
+          p.times.shift()
+        }
+        dispatch({ type: 'physics-frame', bodies: snap })
+        setPhysIndex(p.history.length - 1)
+        setPhysTotal(p.history.length)
+      }
+      raf = requestAnimationFrame(loop)
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [state.physicsPlaying, physicsKey])
+
+  /** 拖动时间轴：看历史帧，并自动暂停 */
+  const scrubPhysics = (i: number) => {
+    const p = physRef.current
+    if (!p || p.history.length === 0) return
+    const idx = Math.max(0, Math.min(i, p.history.length - 1))
+    dispatch({ type: 'physics-frame', bodies: p.history[idx] })
+    setPhysIndex(idx)
+    if (state.physicsPlaying) dispatch({ type: 'physics-play', playing: false })
+  }
+
+  /** 回到最新一帧并继续跑 */
+  const goLive = () => {
+    const p = physRef.current
+    if (!p || p.history.length === 0) return
+    dispatch({ type: 'physics-frame', bodies: p.history[p.history.length - 1] })
+    setPhysIndex(p.history.length - 1)
+    dispatch({ type: 'physics-play', playing: true })
+  }
+
+  /* 窗口与界面状态恢复（design.md §4.1） */
+  useEffect(() => {
+    window.chordot
+      ?.getUiState()
+      .then(async (ui) => {
+        if (typeof ui.leftWidth === 'number') dispatch({ type: 'left-width', width: ui.leftWidth })
+        if (typeof ui.rightOpen === 'boolean') dispatch({ type: 'right', open: ui.rightOpen })
+        if (Array.isArray(ui.recent)) setRecent(ui.recent)
+        // 恢复上次打开的课件
+        if (ui.lastFile) {
+          const res = await window.chordot!.openFile(ui.lastFile)
+          if (res.path && res.content) {
+            const parsed = parseDoc(res.content)
+            if ('doc' in parsed) {
+              dispatch({ type: 'opened', doc: parsed.doc, file: fileName(res.path), path: res.path })
+            }
+          }
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    window.chordot?.setUiState({ leftWidth: state.leftWidth, rightOpen: state.rightOpen })
+  }, [state.leftWidth, state.rightOpen])
+
+  useEffect(() => {
+    window.chordot?.setUiState({ dirty: state.dirty })
+  }, [state.dirty])
+
+  const measured = useMemo(
+    () =>
+      measure(
+        objects,
+        state.selected,
+        settings.angleUnit,
+        state.doc.scene.kind === 'incline' || state.doc.scene.kind === 'motion' ? 'm' : 'cm',
+      ),
+    [objects, state.selected, settings.angleUnit],
+  )
+
+  const scaleText = useMemo(() => {
+    if (state.doc.scene.kind === 'solid') return '正交投影 · 拖动旋转 · 滚轮缩放'
+    if (state.doc.scene.kind === 'solidIncline') return '三维斜面 · 拖动旋转 · 滚轮缩放'
+    if (state.doc.scene.kind === 'motion') return '1 格 = 1 m'
+    if (state.mode === 'physics') return `1 cm ≙ ${Math.round(PX_PER_UNIT / settings.forceScale)} N`
+    const s = PX_PER_UNIT * state.zoom
+    const halfW = state.canvas.w / 2 / s
+    const halfH = (state.canvas.h / 2 - 40) / s
+    return `x: ${(-halfW).toFixed(1)}…${halfW.toFixed(1)}　y: ${(-halfH).toFixed(1)}…${(halfH + 1).toFixed(1)}`
+  }, [state.mode, state.zoom, state.canvas, state.doc.scene, settings.forceScale])
+
+  const fit = useCallback(() => {
+    const pts: [number, number][] = []
+    for (const o of objects) {
+      if (o.kind === 'point') pts.push([o.x, o.y])
+      else if (o.kind === 'line') pts.push(o.a, o.b)
+      else if (o.kind === 'polygon') pts.push(...o.points)
+      else if (o.kind === 'circle') {
+        pts.push([o.center[0] - o.r, o.center[1] - o.r], [o.center[0] + o.r, o.center[1] + o.r])
+      }
+    }
+    if (pts.length === 0) {
+      dispatch({ type: 'zoom', zoom: 1 })
+      dispatch({ type: 'pan', pan: { x: 0, y: 0 } })
+      return
+    }
+    const xs = pts.map((p) => p[0])
+    const ys = pts.map((p) => p[1])
+    const w = Math.max(...xs) - Math.min(...xs)
+    const h = Math.max(...ys) - Math.min(...ys)
+    const zoom = Math.min(
+      (state.canvas.w - 140) / Math.max(w * PX_PER_UNIT, 1),
+      (state.canvas.h - 160) / Math.max(h * PX_PER_UNIT, 1),
+    )
+    dispatch({ type: 'zoom', zoom })
+    dispatch({ type: 'pan', pan: { x: 0, y: 0 } })
+  }, [objects, state.canvas])
+
+  const baseName = state.file.replace(/\.chordot$/, '')
+
+  const saveBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000)
+  }
+
+  const serialize = () => {
+    const svg = svgRef.current
+    if (!svg) return null
+    const clone = svg.cloneNode(true) as SVGSVGElement
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    return new XMLSerializer().serializeToString(clone)
+  }
+
+  const exportDrawing = (format: 'svg' | 'png') => {
+    const data = serialize()
+    if (!data) return
+    if (format === 'svg') {
+      saveBlob(new Blob([data], { type: 'image/svg+xml' }), `${baseName}.svg`)
+      toast('已导出 SVG')
+      return
+    }
+    const url = URL.createObjectURL(new Blob([data], { type: 'image/svg+xml;charset=utf-8' }))
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      const scale = 2
+      canvas.width = Math.round(state.canvas.w * scale)
+      canvas.height = Math.round(state.canvas.h * scale)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.fillStyle = '#FAFAF8'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob((blob) => {
+        if (blob) {
+          saveBlob(blob, `${baseName}.png`)
+          toast('已导出 PNG')
+        }
+      }, 'image/png')
+      URL.revokeObjectURL(url)
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      toast('PNG 导出失败')
+    }
+    img.src = url
+  }
+
+  const selectFromCanvas = (ids: string[], kind: 'replace' | 'add' | 'toggle') => {
+    if (kind === 'replace') {
+      dispatch({ type: 'select', ids })
+      return
+    }
+    if (kind === 'add') {
+      dispatch({ type: 'select', ids: Array.from(new Set([...state.selected, ...ids])) })
+      return
+    }
+    const id = ids[0]
+    dispatch({
+      type: 'select',
+      ids: state.selected.includes(id)
+        ? state.selected.filter((s) => s !== id)
+        : [...state.selected, id],
+    })
+  }
+
+  /* 拖动：几何变化交给内核，松开时整段入栈一步 */
+  const handleDragStart = (id: string, p: { x: number; y: number }) => {
+    dispatch({ type: 'drag-start', id, x: p.x, y: p.y })
+  }
+
+  const handleDragMove = (p: { x: number; y: number }) => {
+    const scene = state.doc.scene
+    if (scene.kind === 'incline') {
+      const next: SceneSpec = {
+        kind: 'incline',
+        params: { ...scene.params, angleDeg: angleFromPoint(p) },
+      }
+      dispatch({ type: 'drag-scene', scene: next })
+      requestSolve(next)
+      return
+    }
+    if (scene.kind === 'sketch') {
+      if (!state.drag) return
+      if ((scene.doc.constraints ?? []).length > 0) {
+        dispatch({ type: 'drag-move', x: p.x, y: p.y })
+        requestSolve(scene, { id: state.drag.id, x: p.x, y: p.y })
+        return
+      }
+      dispatch({ type: 'drag-point', id: state.drag.id, x: p.x, y: p.y })
+      return
+    }
+    if (!state.drag) return
+    dispatch({ type: 'drag-move', x: p.x, y: p.y })
+    requestSolve(scene, { id: state.drag.id, x: p.x, y: p.y })
+  }
+
+  const handleDragEnd = (p?: { x: number; y: number }) => {
+    const scene = state.doc.scene
+    const drag = state.drag
+    if (
+      drag &&
+      scene.kind === 'sketch' &&
+      (scene.doc.constraints ?? []).length > 0 &&
+      // 整组拖动（线段/圆/多边形）已经直接写进文档，不需要再解一次
+      scene.doc.points.some((q) => q.id === drag.id)
+    ) {
+      // 松手时按最后一帧的指针位置再解一次：拖动中的回包可能还停在上一帧，
+      // 直接拿 solution 写回文档会让图形回退几像素
+      const at = p ?? drag
+      const last = solvedFor.current
+      // 上一帧就是按这个位置解的，不用再解一次
+      if (!last || last.id !== drag.id || Math.hypot(last.x - at.x, last.y - at.y) > 1e-4) {
+        requestSolve(scene, { id: drag.id, x: at.x, y: at.y }, undefined, true)
+      }
+    }
+    dispatch({ type: 'drag-end' })
+  }
+
+  /** 对当前选中的线段施加约束 */
+  const applyConstraint = (type: SketchConstraintType) => {
+    const scene = state.doc.scene
+    if (scene.kind !== 'sketch') return
+    const lines = state.selected.filter((id) => scene.doc.segments.some((s) => s.id === id))
+    const points = state.selected.filter((id) => scene.doc.points.some((p) => p.id === id))
+
+    const circles = state.selected.filter((id) => scene.doc.circles.some((c) => c.id === id))
+
+    let constraint: SketchConstraint
+    if (type === 'tangent') {
+      if (lines.length !== 1 || circles.length !== 1) {
+        toast('先选中一条线段和一个圆（按住 Shift 加选）')
+        return
+      }
+      constraint = { id: `k${Date.now().toString(36)}`, type, lines, circles }
+    } else if (type === 'midpoint') {
+      if (points.length !== 1 || lines.length !== 1) {
+        toast('先选中一个点和一条线段（按住 Shift 加选）')
+        return
+      }
+      constraint = { id: `k${Date.now().toString(36)}`, type, lines, points }
+    } else if (type === 'on-line') {
+      if (points.length !== 1 || lines.length !== 1) {
+        toast('先选中一个点和一条线段（按住 Shift 加选）')
+        return
+      }
+      constraint = { id: `k${Date.now().toString(36)}`, type, lines, points }
+    } else {
+      const need = type === 'horizontal' || type === 'vertical' ? 1 : 2
+      if (lines.length !== need) {
+        toast(need === 1 ? '先选中一条线段' : '先选中两条线段（按住 Shift 加选）')
+        return
+      }
+      constraint = { id: `k${Date.now().toString(36)}`, type, lines }
+    }
+    dispatch({ type: 'add-constraint', constraint })
+    // 用当前画面坐标做初值，并把无关点交给内核临时固定：新约束只改它该改的图形
+    const solved = state.solution.points
+    const at = (id: string) => solved[id] ?? scene.doc.points.find((p) => p.id === id)
+    const nudge = seedForConstraint(scene.doc, constraint, at)
+    const doc = {
+      ...scene.doc,
+      points: scene.doc.points.map((p) => {
+        const s = solved[p.id]
+        return s ? { ...p, x: s.x, y: s.y } : p
+      }),
+      constraints: [...(scene.doc.constraints ?? []), constraint],
+    }
+    if (nudge) {
+      doc.points = doc.points.map((p) => (nudge[p.id] ? { ...p, ...nudge[p.id] } : p))
+    }
+    requestSolve({ kind: 'sketch', doc }, undefined, constraintMovers(scene.doc, constraint))
+  }
+
+  const toggleMode = () =>
+    dispatch({ type: 'mode', mode: state.mode === 'physics' ? 'math' : 'physics' })
+
+  const loadIncline = () => {
+    dispatch({ type: 'scene', scene: inclineScene(), file: '斜面受力.chordot' })
+  }
+  const loadTriangle = () => {
+    dispatch({ type: 'scene', scene: triangleScene(), file: '约束三角形.chordot' })
+  }
+  const loadSlide = () => {
+    dispatch({ type: 'scene', scene: inclineSlideScene(), file: '斜面下滑.chordot' })
+  }
+  const loadConflict = () => {
+    dispatch({ type: 'scene', scene: conflictScene(), file: '约束冲突.chordot' })
+  }
+  const loadSolid = () => {
+    dispatch({ type: 'scene', scene: solidScene(), file: '正方体.chordot' })
+  }
+  const loadIncline3d = () => {
+    dispatch({ type: 'scene', scene: solidInclineScene(), file: '三维斜面受力.chordot' })
+  }
+  const loadPendulum = () => {
+    dispatch({ type: 'scene', scene: pendulumScene(), file: '单摆.chordot' })
+  }
+  const newSketch = (file = '未命名.chordot') => {
+    dispatch({ type: 'scene', scene: sketchScene(), file })
+  }
+
+  /* ───────── 文件：保存 / 打开 / 新建 ───────── */
+
+  const save = async (saveAs = false): Promise<boolean> => {
+    const api = window.chordot
+    if (!api) {
+      toast('保存需要桌面端环境')
+      return false
+    }
+    const res = await api.saveFile({
+      data: serializeDoc(state.doc),
+      filePath: state.filePath,
+      saveAs,
+    })
+    if (res.canceled) return false
+    if (res.error) {
+      toast(`保存失败：${res.error}`)
+      return false
+    }
+    if (!res.path) return false
+    dispatch({ type: 'saved', path: res.path, file: fileName(res.path) })
+    toast('已保存')
+    window.chordot?.getUiState().then((ui) => setRecent(ui.recent ?? [])).catch(() => {})
+    return true
+  }
+
+  const saveRef = useRef(save)
+  saveRef.current = save
+
+  /** 有未保存修改时先问：取消 / 放弃修改 / 保存 */
+  const confirmDiscard = async (): Promise<boolean> => {
+    if (!state.dirty) return true
+    const api = window.chordot
+    if (!api) return true
+    const choice = await api.confirmUnsaved(state.file)
+    if (choice === 0) return false
+    if (choice === 1) return true
+    return save()
+  }
+
+  const openDoc = async (target?: string) => {
+    const api = window.chordot
+    if (!api) {
+      toast('打开需要桌面端环境')
+      return
+    }
+    if (!target && !(await confirmDiscard())) return
+    const res = await api.openFile(target ?? null)
+    if (res.canceled) return
+    if (res.error || !res.path) {
+      toast(`无法打开：${res.error ?? '未知原因'}`)
+      return
+    }
+    const parsed = parseDoc(res.content ?? '')
+    if ('error' in parsed) {
+      toast(parsed.error)
+      return
+    }
+    dispatch({ type: 'opened', doc: parsed.doc, file: fileName(res.path), path: res.path })
+    toast(`已打开 ${fileName(res.path)}`)
+    window.chordot?.getUiState().then((ui) => setRecent(ui.recent ?? [])).catch(() => {})
+  }
+
+  const loadTemplate = async (t: Template) => {
+    if (!(await confirmDiscard())) return
+    dispatch({ type: 'scene', scene: t.build(), file: t.file })
+    dispatch({ type: 'gallery', open: false })
+    toast(`已载入「${t.name}」`)
+  }
+
+  const newDoc = async () => {
+    if (!(await confirmDiscard())) return
+    newSketch()
+  }
+
+  /* ───────── 运动仿真控制 ───────── */
+
+  const playSim = async () => {
+    const scene = state.doc.scene
+    if (scene.kind !== 'incline' && scene.kind !== 'motion') {
+      toast('当前课件不支持运动仿真')
+      return
+    }
+    if (!state.sim || state.stopped || state.sim.ended) {
+      const st = await kernel.current?.simStart(scene)
+      if (!st) {
+        toast('仿真内核未就绪')
+        return
+      }
+      dispatch({ type: 'sim', state: st })
+      if (!st.sliding && st.a === 0) toast('当前倾角与摩擦系数下物体保持静止')
+      return
+    }
+    dispatch({ type: 'sim-play' })
+  }
+
+  const pauseSim = () => dispatch({ type: 'sim-pause' })
+  const stopSim = () => dispatch({ type: 'sim-stop' })
+  const resetSim = () => dispatch({ type: 'sim-clear' })
+
+  const actionsRef = useRef({ openDoc, newDoc, playSim })
+  actionsRef.current = { openDoc, newDoc, playSim }
+
+  /* 关闭窗口前确认未保存修改 */
+  useEffect(() => {
+    const off = window.chordot?.onRequestClose(async () => {
+      const current = stateRef.current
+      if (current.dirty) {
+        const choice = await window.chordot!.confirmUnsaved(current.file)
+        if (choice === 0) return
+        if (choice === 2 && !(await saveRef.current())) return
+      }
+      window.chordot?.closeWindow()
+    })
+    return () => off?.()
+  }, [])
+
+  /** 表达式 → 函数曲线；解析失败时以教学语言提示并保留输入 */
+  const submitExpression = (expr: string): boolean => {
+    if (state.doc.scene.kind !== 'sketch') {
+      newSketch()
+      toast('已新建空白课件')
+    }
+    const probe = sampleFunction(expr)
+    if (probe.error) {
+      toast(probe.error)
+      return false
+    }
+    dispatch({ type: 'add-function', expr })
+    return true
+  }
+
+  /** 图形库：把图形放到指定世界坐标 */
+  /** 图形库：把平面图形放到指定世界坐标 */
+  const insertShape = (shapeId: string, at: { x: number; y: number }) => {
+    const def = shapeById(shapeId)
+    if (!def) return
+    if (state.doc.scene.kind !== 'sketch') {
+      dispatch({ type: 'scene', scene: sketchScene(), file: '未命名.chordot' })
+    }
+    dispatch({ type: 'insert-shape', shapeId, at: [at.x, at.y] })
+    toast(`已放入「${def.name}」`)
+  }
+
+  /** 图形库：把立体放进三维场景（当前不是三维就新建一个） */
+  const insertSolid = (def3dId: string, at: { x: number; y: number }) => {
+    const def = shape3dById(def3dId)
+    if (!def) return
+    const shape = {
+      id: `s${Date.now().toString(36)}`,
+      name: def.name,
+      type: def.type,
+      center: [at.x, at.y, def.size / 2] as [number, number, number],
+      size: def.size,
+      sides: def.sides,
+    }
+    if (state.doc.scene.kind === 'solid') {
+      dispatch({ type: 'add-solid-shape', shape })
+    } else {
+      dispatch({
+        type: 'scene',
+        scene: {
+          kind: 'solid',
+          params: {
+            shapes: [shape],
+            camera: { azimuth: 42, elevation: 26, zoom: 1, view: 'free', perspective: true, dist: 14 },
+          },
+        },
+        file: '三维场景.chordot',
+      })
+      toast('已切到三维场景（原来的二维内容不保留）')
+      return
+    }
+    toast(`已放入「${def.name}」`)
+  }
+
+  /** 统一入口：2d:xxx / 3d:xxx */
+  const insertAny = (key: string, at: { x: number; y: number }) => {
+    if (key.startsWith('3d:')) insertSolid(key.slice(3), at)
+    else insertShape(key.startsWith('2d:') ? key.slice(3) : key, at)
+  }
+
+  /** 点卡片而不是拖拽时，放到画面中央；连续放多个时错开一点，免得叠在一起 */
+  const insertAtCenter = (key: string) => {
+    const s = 40 * state.zoom
+    const sc = state.doc.scene
+    const seq =
+      sc.kind === 'sketch'
+        ? sc.doc.points.length + sc.doc.circles.length + sc.doc.polygons.length
+        : sc.kind === 'solid'
+          ? sc.params.shapes.length
+          : 0
+    const k = seq % 5
+    insertAny(key, {
+      x: -state.pan.x / s + k * 0.6,
+      y: (40 + state.pan.y) / s - k * 0.6,
+    })
+  }
+
+  const handleCanvasClick = (p: { x: number; y: number }, snapId?: string, keepTool?: boolean) => {
+    if (state.tool === 'force') {
+      const scene = state.doc.scene
+      if (scene.kind !== 'sketch') return
+      // 落在已有点上就把力的作用点吸到那个点
+      const snap = snapId ? objects.find((o) => o.id === snapId) : null
+      const at: [number, number] =
+        snap && snap.kind === 'point' ? [snap.x, snap.y] : [p.x, p.y]
+      const seq = (scene.doc.forces ?? []).length + 1
+      const id = `F${Date.now().toString(36)}`
+      dispatch({
+        type: 'add-force',
+        force: { id, name: `F${seq}`, expr: '10', angle: 0, at, kind: 'constant' },
+      })
+      toast('已添加力，右栏可改大小、方向与变化方式')
+      return
+    }
+    dispatch({ type: 'construct-click', p, snapId, keepTool })
+  }
+
+  const chooseTool = (tool: ToolId) => {
+    // 「添加几何约束」「显示正交分解」不是作图工具，而是打开对应面板
+    if (tool === 'constraint') {
+      if (state.doc.scene.kind !== 'sketch') {
+        toast('几何约束只能用在草图里')
+        return
+      }
+      dispatch({ type: 'right', open: true })
+      dispatch({ type: 'tool', tool: 'select' })
+      toast('在画布上选中线段后，右栏「约束」里点要加的约束')
+      return
+    }
+    if (tool === 'decompose') {
+      const force = objects.find((o) => o.id === state.selected[0] && o.kind === 'force')
+      if (!force) {
+        toast('先在画布上选中一个力，再点正交分解')
+        return
+      }
+      dispatch({ type: 'decompose', id: force.id })
+      return
+    }
+
+    const construction =
+      tool === 'point' || tool === 'line' || tool === 'circle' || tool === 'polygon' || tool === 'force'
+    if (construction && state.doc.scene.kind !== 'sketch') {
+      dispatch({ type: 'scene', scene: sketchScene(), file: '未命名.chordot' })
+      dispatch({ type: 'tool', tool })
+      toast('已新建空白课件')
+      return
+    }
+    dispatch({ type: 'tool', tool })
+  }
+
+  /* 快捷键分层（design.md §6.2） */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      // 数学编辑器也算「正在输入」：否则在里面敲 p / m / 退格会触发工具快捷键
+      const typing =
+        el?.tagName === 'INPUT' ||
+        el?.tagName === 'TEXTAREA' ||
+        el?.tagName === 'MATH-FIELD' ||
+        !!el?.closest?.('math-field')
+
+      if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+        e.preventDefault()
+        dispatch({ type: 'pad', open: !state.padOpen })
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        if (state.selected.length === 0) return
+        e.preventDefault()
+        dispatch({ type: 'duplicate', ids: state.selected })
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        dispatch({ type: 'palette', open: !state.paletteOpen })
+        return
+      }
+      if ((e.key === 'b' || e.key === 'B') && !typing) {
+        dispatch({ type: 'tool', tool: state.tool === 'pen' ? 'select' : 'pen' })
+        return
+      }
+      if ((e.key === 'e' || e.key === 'E') && !typing) {
+        dispatch({ type: 'tool', tool: state.tool === 'eraser' ? 'select' : 'eraser' })
+        return
+      }
+      if (e.key === 'Escape') {
+        if (state.paletteOpen) dispatch({ type: 'palette', open: false })
+        else if (typing) (el as HTMLInputElement).blur()
+        else if (state.picks.length > 0) dispatch({ type: 'construct-cancel' })
+        else {
+          dispatch({ type: 'select', ids: [] })
+          dispatch({ type: 'tool', tool: 'select' })
+        }
+        return
+      }
+      if (typing || state.paletteOpen) return
+
+      const mod = e.ctrlKey || e.metaKey
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        dispatch({ type: e.shiftKey ? 'redo' : 'undo' })
+        return
+      }
+      if (mod && e.key.toLowerCase() === 'y') {
+        e.preventDefault()
+        dispatch({ type: 'redo' })
+        return
+      }
+      if (mod && e.key === '0') {
+        e.preventDefault()
+        fit()
+        return
+      }
+      if (mod && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        void saveRef.current(e.shiftKey)
+        return
+      }
+      if (mod && e.key.toLowerCase() === 'o') {
+        e.preventDefault()
+        void actionsRef.current.openDoc()
+        return
+      }
+      if (mod && e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        void actionsRef.current.newDoc()
+        return
+      }
+      if (mod) return
+
+      if (e.key === ' ') {
+        // 物理世界优先：空格暂停/继续
+        if (state.doc.scene.kind === 'solid' && state.doc.scene.params.physics?.enabled) {
+          e.preventDefault()
+          dispatch({ type: 'physics-play', playing: !state.physicsPlaying })
+          return
+        }
+        if (state.subState === 'kinematics') {
+          e.preventDefault()
+          if (state.playing) dispatch({ type: 'sim-pause' })
+          else void actionsRef.current.playSim()
+        }
+        return
+      }
+
+      if (e.key === 'p' || e.key === 'P') {
+        dispatch({ type: 'right', open: !state.rightOpen })
+      } else if (e.key === 'g' || e.key === 'G') {
+        dispatch({ type: 'grid' })
+      } else if (e.key === 'm' || e.key === 'M') {
+        toggleMode()
+      } else if (e.key === 'd' || e.key === 'D') {
+        const id = state.selected[state.selected.length - 1]
+        const picked = objects.find((o) => o.id === id)
+        if (picked?.kind === 'force') dispatch({ type: 'decompose', id: picked.id })
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault()
+        dispatch({ type: 'delete' })
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    state.paletteOpen,
+    state.padOpen,
+    state.rightOpen,
+    state.mode,
+    state.picks,
+    state.selected,
+    state.subState,
+    state.playing,
+    fit,
+    objects,
+  ])
+
+  const paletteItems: PaletteItem[] = useMemo(
+    () => [
+      { id: 'new', label: '新建课件', hint: 'Ctrl+N', run: () => void newDoc() },
+      { id: 'gallery', label: '模板库…', run: () => dispatch({ type: 'gallery', open: true }) },
+      { id: 'open', label: '打开课件…', hint: 'Ctrl+O', run: () => void openDoc() },
+      { id: 'save', label: '保存', hint: 'Ctrl+S', run: () => void save() },
+      { id: 'save-as', label: '另存为…', hint: 'Ctrl+Shift+S', run: () => void save(true) },
+      { id: 'export-svg', label: '导出 SVG', run: () => exportDrawing('svg') },
+      { id: 'export-png', label: '导出 PNG', run: () => exportDrawing('png') },
+      { id: 'grid', label: state.grid ? '关闭网格' : '打开网格', hint: 'G', run: () => dispatch({ type: 'grid' }) },
+      {
+        id: 'mode',
+        label: state.mode === 'physics' ? '切换到数学模式' : '切换到物理模式',
+        hint: 'M',
+        run: toggleMode,
+      },
+      {
+        id: 'panel',
+        label: state.rightOpen ? '收起属性面板' : '打开属性面板',
+        hint: 'P',
+        run: () => dispatch({ type: 'right', open: !state.rightOpen }),
+      },
+      { id: 'fit', label: '缩放适配', hint: 'Ctrl+0', run: fit },
+      ...recent.map((p) => ({
+        id: `recent:${p}`,
+        label: `最近：${fileName(p)}`,
+        run: () => void openDoc(p),
+      })),
+      { id: 'sample-incline', label: '示例：斜面受力（可拖倾角）', run: loadIncline },
+      { id: 'sample-slide', label: '示例：斜面下滑（可跑运动仿真）', run: loadSlide },
+      { id: 'sample-triangle', label: '示例：约束三角形（可拖顶点）', run: loadTriangle },
+      { id: 'sample-conflict', label: '示例：约束冲突', run: loadConflict },
+      { id: 'sample-solid', label: '示例：正方体（三维，可旋转）', run: loadSolid },
+      { id: 'sample-incline3d', label: '示例：三维斜面受力', run: loadIncline3d },
+      { id: 'sample-pendulum', label: '示例：单摆（动力学）', run: loadPendulum },
+      {
+        id: 'sample-spring',
+        label: '示例：弹簧振子',
+        run: () => dispatch({ type: 'scene', scene: springScene(), file: '弹簧振子.chordot' }),
+      },
+      {
+        id: 'sample-projectile',
+        label: '示例：平抛运动',
+        run: () => dispatch({ type: 'scene', scene: projectileScene(), file: '平抛运动.chordot' }),
+      },
+      { id: 'prefs', label: '首选项', run: () => setPrefsOpen(true) },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.grid, state.mode, state.rightOpen, fit, toast, recent],
+  )
+
+  const maxLeftWidth = Math.max(200, window.innerWidth - 480 - (state.rightOpen ? 280 : 0) - 2)
+
+  return (
+    <div className="app">
+      <TitleBar file={state.file} dirty={state.dirty} />
+
+      <Toolbar
+        mode={state.mode}
+        tool={state.tool}
+        grid={state.grid}
+        pad={state.padOpen}
+        onTogglePad={() => dispatch({ type: 'pad', open: !state.padOpen })}
+        shapes={state.shapesOpen}
+        onToggleShapes={() => dispatch({ type: 'shapes', open: !state.shapesOpen })}
+        canUndo={state.past.length > 0}
+        canRedo={state.future.length > 0}
+        onUndo={() => dispatch({ type: 'undo' })}
+        onRedo={() => dispatch({ type: 'redo' })}
+        onTool={chooseTool}
+        onToggleGrid={() => dispatch({ type: 'grid' })}
+        onFit={fit}
+        onExport={exportDrawing}
+        onCommand={(cmd) => {
+          if (cmd === 'open') void openDoc()
+          else if (cmd === 'save') void save()
+          else if (cmd === 'saveAs') void save(true)
+          else if (cmd === 'clear') void newDoc()
+          else if (cmd === 'samples') loadIncline()
+          else if (cmd === 'triangle') loadTriangle()
+          else if (cmd === 'slide') loadSlide()
+          else if (cmd === 'conflict') loadConflict()
+          else if (cmd === 'solid') loadSolid()
+          else if (cmd === 'pendulum') loadPendulum()
+          else if (cmd === 'incline3d') loadIncline3d()
+          else if (cmd === 'gallery') dispatch({ type: 'gallery', open: true })
+          else if (cmd === 'palette') dispatch({ type: 'palette', open: true })
+          else if (cmd === 'shortcuts') setShortcutsOpen(true)
+          else setPrefsOpen(true)
+        }}
+      />
+
+      <div className="workspace">
+        <LeftPanel
+          objects={objects}
+          selected={state.selected}
+          width={Math.min(state.leftWidth, maxLeftWidth)}
+          onSelect={(ids) => dispatch({ type: 'select', ids })}
+          onToggleVisible={(id) => dispatch({ type: 'toggle-visible', id })}
+          onOpenProps={(id) => {
+            dispatch({ type: 'select', ids: [id] })
+            dispatch({ type: 'right', open: true })
+          }}
+          onResize={(width) => dispatch({ type: 'left-width', width: Math.min(width, maxLeftWidth) })}
+          onDelete={() => dispatch({ type: 'delete' })}
+          onHide={() => {
+            for (const id of state.selected) dispatch({ type: 'toggle-visible', id })
+          }}
+          onGroup={() => toast('分组在第二阶段接入')}
+          onDuplicate={(ids) => dispatch({ type: 'duplicate', ids })}
+          onDeleteIds={(ids) => {
+            dispatch({ type: 'select', ids })
+            dispatch({ type: 'delete' })
+          }}
+          onColor={(id, color) => dispatch({ type: 'set-color', id, color })}
+          onSubmitExpr={submitExpression}
+        />
+
+        <div className="canvas-col">
+          <CanvasStage
+          objects={objects}
+          selected={state.selected}
+          grid={state.grid}
+          zoom={state.zoom}
+          mode={state.mode}
+          tool={state.tool}
+          scaleText={scaleText}
+          draggingId={state.drag?.id ?? null}
+          picks={state.picks}
+          decomposed={state.decomposed}
+          annotation={measured?.annotation ?? null}
+          conflictIds={state.solution.conflict?.ids ?? []}
+          badges={badges}
+          pan={state.pan}
+          onPan={(pan) => dispatch({ type: 'pan', pan })}
+          touch={touch}
+          pxPerN={settings.forceScale}
+          showTicks={settings.showTicks}
+          gridStep={settings.gridStep}
+          curveWidth={settings.curveWidth}
+          camera={camera}
+          solidIncline={
+            state.doc.scene.kind === 'solidIncline' ? state.doc.scene.params : null
+          }
+          solidPhysics={solidPhysics?.enabled ?? false}
+          solidObstacles={solidPhysics?.enabled ? (solidPhysics.obstacles ?? []) : []}
+          solidPhysicsInfo={
+            solidPhysics?.enabled
+              ? {
+                  gravity: solidPhysics.gravity,
+                  global: solidPhysics.force,
+                  time: physRef.current?.times[physIndex] ?? 0,
+                }
+              : null
+          }
+          strokes={state.doc.strokes ?? []}
+          penColor={state.penColor}
+          penWidth={state.penWidth}
+          onStrokeCommit={(stroke) => dispatch({ type: 'stroke-add', stroke })}
+          onStrokeErase={(id) => dispatch({ type: 'stroke-erase', id })}
+          onDragPoints={(moves) => dispatch({ type: 'drag-points', moves })}
+          onCamera={setCamera}
+          onCameraStart={() => dispatch({ type: 'drag-start', id: '__camera', x: 0, y: 0 })}
+          onCameraEnd={() => dispatch({ type: 'drag-end' })}
+          forceScale={state.playing ? 0.4 : 1}
+          svgRef={svgRef}
+          onSelect={selectFromCanvas}
+          onClearSelection={() => dispatch({ type: 'select', ids: [] })}
+          onCanvasSize={(w, h) => dispatch({ type: 'canvas', w, h })}
+          onZoom={(zoom) => dispatch({ type: 'zoom', zoom })}
+          onCanvasClick={handleCanvasClick}
+          onEmptyAction={(action) => {
+            if (action === 'expr') {
+              document.querySelector<HTMLInputElement>('.left__input')?.focus()
+            } else if (action === 'point') {
+              chooseTool('point')
+            } else {
+              loadIncline()
+              dispatch({ type: 'right', open: true })
+            }
+          }}
+          onDragStart={handleDragStart}
+          onDragMove={handleDragMove}
+            onDragEnd={handleDragEnd}
+          onDropShape={(id, at) => insertAny(id, at)}
+          />
+          {state.tool === 'pen' && (
+            <PenBar
+              color={state.penColor}
+              width={state.penWidth}
+              onChange={(patch) => dispatch({ type: 'pen', ...patch })}
+              onClear={() => dispatch({ type: 'strokes-clear' })}
+            />
+          )}
+          {solidPhysics?.enabled && (
+            <Timeline
+              playing={state.physicsPlaying}
+              index={physIndex}
+              total={physTotal}
+              time={physRef.current?.times[physIndex] ?? 0}
+              onToggle={() => dispatch({ type: 'physics-play', playing: !state.physicsPlaying })}
+              onScrub={scrubPhysics}
+              onLive={goLive}
+            />
+          )}
+          {state.shapesOpen && (
+            <ShapePanel
+              onInsert={insertAtCenter}
+              onClose={() => dispatch({ type: 'shapes', open: false })}
+            />
+          )}
+          {state.padOpen && <SymbolPad onClose={() => dispatch({ type: 'pad', open: false })} />}
+        </div>
+
+        {state.rightOpen && (
+          <RightPanel
+            objects={objects}
+            selected={state.selected}
+            mode={state.mode}
+            subState={state.subState}
+            onSubState={(sub) => dispatch({ type: 'substate', sub })}
+            onClose={() => dispatch({ type: 'right', open: false })}
+            onRename={(id, name) => dispatch({ type: 'rename', id, name })}
+            decomposed={state.decomposed}
+            measure={measured}
+            propSchema={propSchema}
+            onPatchParams={patchParams}
+            forcePreview={state.forcePreview}
+            onPreviewForce={(value) => dispatch({ type: 'force-preview', value })}
+            onPatchForce={(id, patch) => dispatch({ type: 'patch-force', id, patch })}
+            constraints={sketchDoc ? (sketchDoc.constraints ?? []) : null}
+            selectedLines={selectedLines}
+            selectedPoints={selectedPoints}
+            selectedCircles={selectedCircles}
+            onAddConstraint={applyConstraint}
+            onRemoveConstraint={(id) => dispatch({ type: 'remove-constraint', id })}
+            simModel={
+              state.doc.scene.kind === 'motion'
+                ? state.doc.scene.params.model
+                : state.doc.scene.kind === 'incline'
+                  ? 'incline'
+                  : null
+            }
+            conflict={state.solution.conflict ?? null}
+            onSelectConflict={(ids: string[]) => dispatch({ type: 'select', ids })}
+            onEditFunction={(id: string, expr: string) => {
+              const probe = sampleFunction(expr)
+              if (probe.error) {
+                toast(probe.error)
+                return false
+              }
+              dispatch({ type: 'edit-function', id, expr })
+              return true
+            }}
+            sim={state.sim}
+            playing={state.playing}
+            onToggleDecompose={(id) => dispatch({ type: 'decompose', id })}
+            onPlay={() => void playSim()}
+            onPause={pauseSim}
+            onStop={stopSim}
+            onReset={resetSim}
+          />
+        )}
+      </div>
+
+      <StatusBar
+        mode={state.mode}
+        selectedCount={state.selected.length}
+        picks={state.picks.length}
+        zoom={state.zoom}
+        scaleText={scaleText}
+        busy={busy}
+        slow={slow}
+        solveMs={state.lastMs}
+        source={state.lastSource}
+        onToggleMode={toggleMode}
+      />
+
+      {prefsOpen && (
+        <Preferences
+          settings={settings}
+          onChange={patchSettings}
+          onClose={() => setPrefsOpen(false)}
+          onReplayTour={() => {
+            setPrefsOpen(false)
+            setTourOpen(true)
+          }}
+          updater={updater.state}
+          onCheckUpdate={() => updater.check(false)}
+          onDownload={() => void updater.download()}
+          onInstall={() => void updater.install()}
+          onToast={toast}
+        />
+      )}
+
+      {tourOpen && (
+        <Onboarding
+          onDone={() => {
+            patchSettings({ onboarded: true })
+            setTourOpen(false)
+          }}
+        />
+      )}
+
+      {updateOpen && updater.state.result?.hasUpdate && (
+        <UpdateDialog
+          result={updater.state.result}
+          downloading={updater.state.downloading}
+          received={updater.state.received}
+          total={updater.state.total}
+          mirror={updater.state.mirror}
+          filePath={updater.state.filePath}
+          error={updater.state.error}
+          onDownload={() => void updater.download()}
+          onInstall={() => void updater.install()}
+          onLater={() => setUpdateOpen(false)}
+          onSkipVersion={() => {
+            patchSettings({ updateSkip: updater.state.result?.latest ?? '' })
+            setUpdateOpen(false)
+            toast('这个版本不再提醒')
+          }}
+          onMute={() => {
+            patchSettings({ updateMuted: true, updateAuto: false })
+            setUpdateOpen(false)
+            toast('已关闭更新提醒，可在设置里重新打开')
+          }}
+          onClose={() => setUpdateOpen(false)}
+        />
+      )}
+
+      {shortcutsOpen && <Shortcuts onClose={() => setShortcutsOpen(false)} />}
+
+      {state.galleryOpen && (
+        <TemplateGallery
+          scene={state.doc.scene}
+          file={state.file}
+          onPick={(t) => void loadTemplate(t)}
+          onClose={() => dispatch({ type: 'gallery', open: false })}
+        />
+      )}
+
+      {state.paletteOpen && (
+        <CommandPalette items={paletteItems} onClose={() => dispatch({ type: 'palette', open: false })} />
+      )}
+
+      <div className="toasts" aria-live="polite">
+        {toasts.map((t) => (
+          <div className="toast" key={t.id}>
+            {t.text}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}

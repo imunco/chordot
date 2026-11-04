@@ -1,0 +1,59 @@
+:root {
+  /* 色彩令牌 —— design.md §8.1 */
+  --canvas-bg: #fafaf8;
+  --panel-bg: #f2f0ec;
+  --surface: #ffffff;
+  --border: #d8d4ce;
+  --border-strong: #c9c4bc;
+  --text-primary: #1f1f1d;
+  --text-secondary: #5c5a56;
+  --text-disabled: #9e9a94;
+  --accent: #3d5a66;
+  --accent-soft: rgba(61, 90, 102, 0.1);
+  --hover: rgba(31, 31, 29, 0.05);
+  --gravity: #3a3a38;
+  --normal: #4a6b8a;
+  --friction: #9a5b4a;
+  --tension: #4a6b55;
+  --net-force: #b08a3e;
+  --warning: #b08a3e;
+  --grid: #e8e5e0;
+  --axis: #5c5a56;
+
+  /* 字体 */
+  --font-ui: 'IBM Plex Sans SC', 'IBM Plex Sans', 'Noto Sans SC', 'Source Han Sans SC',
+    'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+  --font-math: 'IBM Plex Math', 'Cambria Math', 'Latin Modern Math', Georgia, serif;
+  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
+
+  /* 间距 / 圆角 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-max: 10px;
+
+  /* 浮起层阴影（唯一允许的阴影） */
+  --shadow-float: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+  /* 过渡：仅颜色 / 透明度 / 面板展开，120ms */
+  --t: 120ms ease;
+
+  /* 结构尺寸 */
+  --titlebar-h: 36px;
+  --toolbar-h: 48px;
+  --statusbar-h: 28px;
+  --left-w: 240px;
+  --right-w: 280px;
+  --canvas-min: 480px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t: 0ms linear;
+  }
+}
