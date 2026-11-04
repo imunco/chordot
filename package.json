@@ -70,9 +70,9 @@
     },
     "files": [
       "dist/**/*",
-      "electron/main.cjs",
-      "electron/preload.cjs",
-      "electron/file-ipc.cjs",
+      "electron/*.cjs",
+      "!electron/verify-*.cjs",
+      "!electron/screenshot.cjs",
       "package.json",
       "!node_modules/**/*"
     ],
