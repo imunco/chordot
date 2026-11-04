@@ -1,7 +1,33 @@
 import { useMemo } from 'react'
 import type { Camera } from '../kernel/types'
 import { buildIncline3D } from '../model/incline3d'
-import { projectMesh, projectPoint3, projectVector, type Vec3 } from '../model/solid'
+import { projectMesh, projectPoint3, projectVector, type FaceView, type Vec3 } from '../model/solid'
+
+/** 曲面平滑着色（和 CanvasStage 里同一套做法） */
+function faceDefs(prefix: string, faces: FaceView[]) {
+  const items = faces
+    .map((f, i) =>
+      f.grad ? (
+        <linearGradient
+          key={i}
+          id={`${prefix}-${i}`}
+          gradientUnits="userSpaceOnUse"
+          x1={f.grad.x1}
+          y1={f.grad.y1}
+          x2={f.grad.x2}
+          y2={f.grad.y2}
+        >
+          <stop offset="0%" stopColor={f.grad.from} />
+          <stop offset="100%" stopColor={f.grad.to} />
+        </linearGradient>
+      ) : null,
+    )
+    .filter(Boolean)
+  return items.length > 0 ? <defs>{items}</defs> : null
+}
+
+const faceFill = (prefix: string, f: FaceView, i: number) =>
+  f.grad ? `url(#${prefix}-${i})` : f.shade
 
 const FONT = "'Noto Serif SC', 'Source Han Serif SC', serif"
 
@@ -88,12 +114,31 @@ export function SolidIncline({
   return (
     <g data-incline3d>
       {/* 楔形 */}
-      {wedge.faces.map((f, i) => (
-        <polygon
-          key={`wf${i}`}
-          points={f.points.map((p) => p.join(',')).join(' ')}
-          fill={f.shade}
-          stroke="none"
+      {faceDefs('iw', wedge.faces)}
+      {wedge.faces.map((f, i) => {
+        const fill = faceFill('iw', f, i)
+        return (
+          <polygon
+            key={`wf${i}`}
+            points={f.points.map((p) => p.join(',')).join(' ')}
+            fill={fill}
+            stroke={fill}
+            strokeWidth={0.6}
+            strokeLinejoin="round"
+          />
+        )
+      })}
+      {wedge.hiddenEdges.map((e, i) => (
+        <line
+          key={`wh${i}`}
+          x1={e.a[0]}
+          y1={e.a[1]}
+          x2={e.b[0]}
+          y2={e.b[1]}
+          stroke="#3d5a66"
+          strokeWidth={0.9}
+          strokeOpacity={0.3}
+          strokeDasharray="3 3"
         />
       ))}
       {wedge.edges.map((e, i) => (
@@ -116,12 +161,31 @@ export function SolidIncline({
       </text>
 
       {/* 物块 */}
-      {block.faces.map((f, i) => (
-        <polygon
-          key={`bf${i}`}
-          points={f.points.map((p) => p.join(',')).join(' ')}
-          fill={f.shade}
-          stroke="none"
+      {faceDefs('ib', block.faces)}
+      {block.faces.map((f, i) => {
+        const fill = faceFill('ib', f, i)
+        return (
+          <polygon
+            key={`bf${i}`}
+            points={f.points.map((p) => p.join(',')).join(' ')}
+            fill={fill}
+            stroke={fill}
+            strokeWidth={0.6}
+            strokeLinejoin="round"
+          />
+        )
+      })}
+      {block.hiddenEdges.map((e, i) => (
+        <line
+          key={`bh${i}`}
+          x1={e.a[0]}
+          y1={e.a[1]}
+          x2={e.b[0]}
+          y2={e.b[1]}
+          stroke="#3d5a66"
+          strokeWidth={0.9}
+          strokeOpacity={0.3}
+          strokeDasharray="3 3"
         />
       ))}
       {block.edges.map((e, i) => (

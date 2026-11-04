@@ -21,6 +21,18 @@ export interface PropGroup {
   fields: Field[]
 }
 
+/** 绕竖直轴（z）的偏航角，单位度；任意四元数都能读 */
+function yawDeg(q?: [number, number, number, number]): number {
+  if (!q) return 0
+  const [x, y, z, w] = q
+  return (Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)) * 180) / Math.PI
+}
+
+function quatYaw(deg: number): [number, number, number, number] {
+  const a = (deg * Math.PI) / 360
+  return [0, 0, Math.sin(a), Math.cos(a)]
+}
+
 const num = (
   key: string,
   label: string,
@@ -228,6 +240,17 @@ export function schemaFor(scene: SceneSpec, selectedId?: string | null): PropGro
           (v) => ({
             shapes: scene.params.shapes.map((s, j) =>
               j === i ? { ...s, center: [s.center[0], s.center[1], v] } : s,
+            ),
+          }),
+        ),
+        num(
+          `rot-${shape.id}`,
+          '旋转',
+          () => Math.round(yawDeg(shape.rotation)),
+          { unit: '°', min: -180, max: 180, step: 5 },
+          (v) => ({
+            shapes: scene.params.shapes.map((s, j) =>
+              j === i ? { ...s, rotation: quatYaw(v) } : s,
             ),
           }),
         ),

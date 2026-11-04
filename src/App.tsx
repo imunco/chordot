@@ -931,6 +931,13 @@ export default function App() {
       toast('当前课件不支持运动仿真')
       return
     }
+    // 物块被隐藏了就别再跑仿真：看不见的运动没有意义，也容易误判
+    const hiddenBlock =
+      state.doc.hidden['blk'] || (scene.kind === 'motion' && state.doc.hidden['ball'])
+    if (hiddenBlock) {
+      toast('物块已隐藏，先点左栏的眼睛图标显示它')
+      return
+    }
     if (!state.sim || state.stopped || state.sim.ended) {
       const st = await kernel.current?.simStart(scene)
       if (!st) {
@@ -996,11 +1003,22 @@ export default function App() {
   const insertSolid = (def3dId: string, at: { x: number; y: number }) => {
     const def = shape3dById(def3dId)
     if (!def) return
+    // 和已有立体重叠时自动往右让位，连放几个不会叠成一坨
+    const existing = state.doc.scene.kind === 'solid' ? state.doc.scene.params.shapes : []
+    let cx = at.x
+    let cy = at.y
+    for (let guard = 0; guard < 12; guard++) {
+      const hit = existing.some(
+        (s) => Math.hypot(s.center[0] - cx, s.center[1] - cy) < (s.size + def.size) * 0.45,
+      )
+      if (!hit) break
+      cx += def.size * 0.9
+    }
     const shape = {
       id: `s${Date.now().toString(36)}`,
       name: def.name,
       type: def.type,
-      center: [at.x, at.y, def.size / 2] as [number, number, number],
+      center: [cx, cy, def.size / 2] as [number, number, number],
       size: def.size,
       sides: def.sides,
     }
@@ -1045,6 +1063,30 @@ export default function App() {
       x: -state.pan.x / s + k * 0.6,
       y: (40 + state.pan.y) / s - k * 0.6,
     })
+  }
+
+  /** 改线段长度 / 角度：起点不动，只挪终点 */
+  const editLine = (id: string, patch: { length?: number; angleDeg?: number }) => {
+    const scene = state.doc.scene
+    if (scene.kind !== 'sketch') return
+    const seg = scene.doc.segments.find((s) => s.id === id)
+    if (!seg) return
+    const pa = scene.doc.points.find((p) => p.id === seg.a)
+    const pb = scene.doc.points.find((p) => p.id === seg.b)
+    if (!pa || !pb) return
+    const dx = pb.x - pa.x
+    const dy = pb.y - pa.y
+    const len = patch.length ?? Math.hypot(dx, dy)
+    const ang =
+      patch.angleDeg !== undefined ? (patch.angleDeg * Math.PI) / 180 : Math.atan2(dy, dx)
+    const nx = pa.x + len * Math.cos(ang)
+    const ny = pa.y + len * Math.sin(ang)
+    const doc = {
+      ...scene.doc,
+      points: scene.doc.points.map((p) => (p.id === pb.id ? { ...p, x: nx, y: ny } : p)),
+    }
+    dispatch({ type: 'drag-points', moves: [{ id: pb.id, x: nx, y: ny }] })
+    requestSolve({ kind: 'sketch', doc }, undefined, [pb.id])
   }
 
   const handleCanvasClick = (p: { x: number; y: number }, snapId?: string, keepTool?: boolean) => {
@@ -1092,9 +1134,9 @@ export default function App() {
     const construction =
       tool === 'point' || tool === 'line' || tool === 'circle' || tool === 'polygon' || tool === 'force'
     if (construction && state.doc.scene.kind !== 'sketch') {
-      dispatch({ type: 'scene', scene: sketchScene(), file: '未命名.chordot' })
-      dispatch({ type: 'tool', tool })
-      toast('已新建空白课件')
+      // 以前这里会直接换一张空白草图，等于把当前课件清空了。
+      // 现在只提示，不动文档：要作图请显式「文件 → 新建」。
+      toast('当前是受力/三维场景，手工作图请先「文件 → 新建」')
       return
     }
     dispatch({ type: 'tool', tool })
@@ -1489,7 +1531,8 @@ export default function App() {
           onCamera={setCamera}
           onCameraStart={() => dispatch({ type: 'drag-start', id: '__camera', x: 0, y: 0 })}
           onCameraEnd={() => dispatch({ type: 'drag-end' })}
-          forceScale={state.playing ? 0.4 : 1}
+          // 播放/暂停用同一套标尺：同一根力箭头长度必须一致，否则会误读成力变了
+          forceScale={1}
           svgRef={svgRef}
           onSelect={selectFromCanvas}
           onClearSelection={() => dispatch({ type: 'select', ids: [] })}
@@ -1570,6 +1613,7 @@ export default function App() {
             }
             conflict={state.solution.conflict ?? null}
             onSelectConflict={(ids: string[]) => dispatch({ type: 'select', ids })}
+            onEditLine={editLine}
             onEditFunction={(id: string, expr: string) => {
               const probe = sampleFunction(expr)
               if (probe.error) {

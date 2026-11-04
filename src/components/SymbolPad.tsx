@@ -152,30 +152,109 @@ function insertText(text: string) {
   target.setSelectionRange(caret, caret)
 }
 
+/** 退格：数学编辑器交给 MathLive，普通输入框删光标前一个字符 */
+function backspace() {
+  const active = document.activeElement
+  const mf = asMathField(active) ?? document.querySelector<MathfieldElement>('math-field.left__input')
+  if (mf) {
+    mf.focus()
+    mf.executeCommand('deleteBackward')
+    return
+  }
+  const target =
+    active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')
+      ? (active as HTMLInputElement | HTMLTextAreaElement)
+      : document.querySelector<HTMLInputElement>('.left__input')
+  if (!target) return
+  const start = target.selectionStart ?? target.value.length
+  const end = target.selectionEnd ?? start
+  const from = start === end ? Math.max(0, start - 1) : start
+  const next = target.value.slice(0, from) + target.value.slice(end)
+  const proto = target instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement
+  const setter = Object.getOwnPropertyDescriptor(proto.prototype, 'value')?.set
+  setter?.call(target, next)
+  target.dispatchEvent(new Event('input', { bubbles: true }))
+  target.focus()
+  target.setSelectionRange(from, from)
+}
+
+const PAD_POS_KEY = 'chordot.pad.pos'
+
 export function SymbolPad({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState(TABS[0].id)
   const current = TABS.find((t) => t.id === tab) ?? TABS[0]
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
-  const drag = useRef<{ dx: number; dy: number } | null>(null)
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem(PAD_POS_KEY)
+      if (!raw) return null
+      const p = JSON.parse(raw) as { x: number; y: number }
+      // 窗口变小后旧坐标可能落到屏幕外
+      if (p.x > window.innerWidth - 60 || p.y > window.innerHeight - 40) return null
+      return p
+    } catch {
+      return null
+    }
+  })
+  /**
+   * 拖动状态。按下时只记录起点，不动位置——否则「点一下把手」也会跳到别处
+   * （以前 pointerdown 里立刻 setPos，而 .pad 是 absolute，坐标系和 clientX/Y 不是一套，
+   * 表现就是点一下就闪到右下角）。
+   */
+  const drag = useRef<{
+    startX: number
+    startY: number
+    left: number
+    top: number
+    w: number
+    h: number
+    moved: boolean
+  } | null>(null)
 
   const startDrag = (e: React.PointerEvent) => {
     const box = (e.currentTarget as Element).closest('.pad') as HTMLElement | null
     if (!box) return
     const r = box.getBoundingClientRect()
-    drag.current = { dx: e.clientX - r.left, dy: e.clientY - r.top }
-    setPos({ x: r.left, y: r.top })
-    try {
-      ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
-    } catch {
-      /* 合成事件忽略 */
+    const d = {
+      startX: e.clientX,
+      startY: e.clientY,
+      left: r.left,
+      top: r.top,
+      w: r.width,
+      h: r.height,
+      moved: false,
     }
-  }
-  const moveDrag = (e: React.PointerEvent) => {
-    if (!drag.current) return
-    setPos({ x: e.clientX - drag.current.dx, y: e.clientY - drag.current.dy })
-  }
-  const endDrag = () => {
-    drag.current = null
+    drag.current = d
+
+    // 监听挂到 window 上：不依赖 pointer capture，触控/合成事件都稳
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - d.startX
+      const dy = ev.clientY - d.startY
+      if (!d.moved && Math.hypot(dx, dy) < 4) return
+      d.moved = true
+      const x = Math.min(Math.max(8, d.left + dx), Math.max(8, window.innerWidth - d.w - 8))
+      const y = Math.min(Math.max(8, d.top + dy), Math.max(8, window.innerHeight - d.h - 8))
+      setPos({ x, y })
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+      drag.current = null
+      if (d.moved) {
+        try {
+          const el = box.getBoundingClientRect()
+          localStorage.setItem(
+            PAD_POS_KEY,
+            JSON.stringify({ x: Math.round(el.left), y: Math.round(el.top) }),
+          )
+        } catch {
+          /* 隐私模式忽略 */
+        }
+      }
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
   }
 
   return (
@@ -187,10 +266,11 @@ export function SymbolPad({ onClose }: { onClose: () => void }) {
         <span
           className="pad__grip"
           title="拖动移动键盘"
-          onPointerDown={startDrag}
-          onPointerMove={moveDrag}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
+          onPointerDown={(e) => {
+            e.preventDefault()
+            startDrag(e)
+          }}
+
         >
           ⠿
         </span>
@@ -216,12 +296,21 @@ export function SymbolPad({ onClose }: { onClose: () => void }) {
             key={k}
             className="pad__key"
             title={k}
-            onMouseDown={(e) => e.preventDefault()}
+            onPointerDown={(e) => e.preventDefault()}
+            onContextMenu={(e) => e.preventDefault()}
             onClick={() => insertText(k)}
           >
             {k}
           </button>
         ))}
+        <button
+          className="pad__key pad__key--wide"
+          title="退格"
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={() => backspace()}
+        >
+          ⌫
+        </button>
       </div>
     </div>
   )

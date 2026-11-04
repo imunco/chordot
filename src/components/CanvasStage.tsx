@@ -17,6 +17,35 @@ import type {
 } from '../kernel/types'
 import type { ToolId } from '../state'
 import { GripIcon } from './icons'
+/** 曲面平滑着色：每个面带一段 linearGradient，fill 指向它 */
+function faceDefs(prefix: string, faces: { grad?: { from: string; to: string; x1: number; y1: number; x2: number; y2: number } }[]) {
+  const items = faces
+    .map((f, i) =>
+      f.grad ? (
+        <linearGradient
+          key={i}
+          id={`${prefix}-${i}`}
+          gradientUnits="userSpaceOnUse"
+          x1={f.grad.x1}
+          y1={f.grad.y1}
+          x2={f.grad.x2}
+          y2={f.grad.y2}
+        >
+          <stop offset="0%" stopColor={f.grad.from} />
+          <stop offset="100%" stopColor={f.grad.to} />
+        </linearGradient>
+      ) : null,
+    )
+    .filter(Boolean)
+  return items.length > 0 ? <defs>{items}</defs> : null
+}
+
+const faceFill = (
+  prefix: string,
+  f: { shade: string; grad?: unknown },
+  i: number,
+) => (f.grad ? `url(#${prefix}-${i})` : f.shade)
+
 const FONT = "'IBM Plex Sans SC','Microsoft YaHei',sans-serif"
 const MATH_FONT = "'Cambria Math','IBM Plex Math',Georgia,serif"
 
@@ -1027,18 +1056,72 @@ export function CanvasStage(props: Props) {
               </g>
             )
           }
+          if (o.kind === 'solid' && o.shape.type === 'sphere') {
+            // 球单独画：一个圆 + 径向渐变，永远光滑，也不会有细分网格的接缝
+            const c = o.shape.center
+            const r = o.shape.size / 2
+            const [cx, cy] = projectPoint3(c, props.camera!, toScreen)
+            const [ex, ey] = projectPoint3([c[0] + r, c[1], c[2]], props.camera!, toScreen)
+            const rad = Math.hypot(ex - cx, ey - cy) || 1
+            const gid = `sphere-${o.id}`
+            return (
+              <g key={o.id} data-id={o.id} onPointerDown={(e) => handleObjectDown(e, o.id)}>
+                <defs>
+                  <radialGradient id={gid} cx="35%" cy="30%" r="78%">
+                    <stop offset="0%" stopColor="#fbfaf7" />
+                    <stop offset="55%" stopColor="#e9e6e1" />
+                    <stop offset="100%" stopColor="#c9c4bc" />
+                  </radialGradient>
+                </defs>
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={rad}
+                  fill={`url(#${gid})`}
+                  stroke="#3d5a66"
+                  strokeOpacity={0.4}
+                  strokeWidth={0.9}
+                />
+                {sel && (
+                  <circle
+                    data-ui="1"
+                    cx={cx}
+                    cy={cy}
+                    r={rad + 3}
+                    fill="none"
+                    stroke="#3D5A66"
+                    strokeOpacity={0.22}
+                    strokeWidth={5}
+                  />
+                )}
+              </g>
+            )
+          }
           if (o.kind === 'solid') {
             const view = projectSolid(o.shape, props.camera!, toScreen)
             return (
               <g key={o.id} data-id={o.id} onPointerDown={(e) => handleObjectDown(e, o.id)}>
-                {view.faces.map((f, i) => (
-                  <polygon
-                    key={`f${i}`}
-                    points={f.points.map((p) => p.join(',')).join(' ')}
-                    fill={f.shade}
-                    stroke="none"
-                  />
-                ))}
+                {/* 先用浅灰把轮廓填满：面与面之间的抗锯齿缝隙不会露出纸面白 */}
+                <polygon
+                  points={view.outline.map((p) => p.join(',')).join(' ')}
+                  fill="#e6e4e0"
+                  stroke="none"
+                />
+                {faceDefs(`sf-${o.id}`, view.faces)}
+                {view.faces.map((f, i) => {
+                  const fill = faceFill(`sf-${o.id}`, f, i)
+                  return (
+                    <polygon
+                      key={`f${i}`}
+                      points={f.points.map((p) => p.join(',')).join(' ')}
+                      fill={fill}
+                      // 同色描边 0.6px：填掉相邻面之间的抗锯齿白缝，曲面才连续
+                      stroke={fill}
+                      strokeWidth={0.6}
+                      strokeLinejoin="round"
+                    />
+                  )
+                })}
                 {sel &&
                   view.edges.map((e, i) => (
                     <line
@@ -1054,6 +1137,15 @@ export function CanvasStage(props: Props) {
                       strokeLinecap="round"
                     />
                   ))}
+                {/* 轮廓：凸包描边，曲面边缘不会毛毛的 */}
+                <polygon
+                  points={view.outline.map((p) => p.join(',')).join(' ')}
+                  fill="none"
+                  stroke="#3d5a66"
+                  strokeOpacity={0.35}
+                  strokeWidth={0.8}
+                  strokeLinejoin="round"
+                />
                 {view.hiddenEdges.map((e, i) => (
                   <line
                     key={`h${i}`}

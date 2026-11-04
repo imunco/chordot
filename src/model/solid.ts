@@ -5,6 +5,10 @@ export type Vec3 = [number, number, number]
 export interface Mesh {
   vertices: Vec3[]
   faces: number[][]
+  /** 逐顶点法线：曲面（球/圆柱/圆锥）用它做平滑着色 */
+  normals?: Vec3[]
+  /** 曲面标记：true 时按顶点法线做渐变，false 时整面纯色 */
+  smooth?: boolean
 }
 
 const DEG = Math.PI / 180
@@ -19,8 +23,64 @@ function ring(n: number, radius: number, z: number): Vec3[] {
   return out
 }
 
+/** 圆柱：侧面 / 顶盖 / 底盖各用一套顶点，法线分开，着色才平滑 */
+function cylinderMesh(n: number, h: number): Mesh {
+  const vertices: Vec3[] = []
+  const normals: Vec3[] = []
+  const push = (r: number, z: number, nz: number) => {
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2
+      const c = Math.cos(a)
+      const s = Math.sin(a)
+      vertices.push([c * r, s * r, z])
+      normals.push(nz === 0 ? [c, s, 0] : [0, 0, nz])
+    }
+  }
+  push(h, -h, 0) // 侧面下沿
+  push(h, h, 0) // 侧面上沿
+  push(h, h, 1) // 顶盖
+  push(h, -h, -1) // 底盖
+
+  const faces: number[][] = []
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    faces.push([i, j, j + n, i + n])
+  }
+  faces.push([...Array(n).keys()].map((i) => 2 * n + i))
+  faces.push([...Array(n).keys()].map((i) => 3 * n + i).reverse())
+  return { vertices, faces, normals, smooth: true }
+}
+
+/** 圆锥：底面半径 h、高 2h；侧面法线按斜率给，顶盖/底面单独拆 */
+function coneMesh(n: number, h: number): Mesh {
+  const vertices: Vec3[] = []
+  const normals: Vec3[] = []
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2
+    const c = Math.cos(a)
+    const s = Math.sin(a)
+    vertices.push([c * h, s * h, -h])
+    normals.push(normalize([c * 2, s * 2, 1]))
+  }
+  const apex = vertices.length
+  vertices.push([0, 0, h])
+  normals.push([0, 0, 1])
+
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2
+    vertices.push([Math.cos(a) * h, Math.sin(a) * h, -h])
+    normals.push([0, 0, -1])
+  }
+
+  const faces: number[][] = []
+  for (let i = 0; i < n; i++) faces.push([i, (i + 1) % n, apex])
+  faces.push([...Array(n).keys()].map((i) => apex + 1 + i).reverse())
+  return { vertices, faces, normals, smooth: true }
+}
+
 function translate(mesh: Mesh, center: Vec3): Mesh {
   return {
+    ...mesh,
     vertices: mesh.vertices.map((v) => [v[0] + center[0], v[1] + center[1], v[2] + center[2]] as Vec3),
     faces: mesh.faces,
   }
@@ -45,7 +105,26 @@ export function rotateMesh(mesh: Mesh, q: [number, number, number, number], cent
       pz + w * tz + (x * ty - y * tx) + center[2],
     ]
   }
-  return { vertices: mesh.vertices.map(rot), faces: mesh.faces }
+  return {
+    ...mesh,
+    vertices: mesh.vertices.map(rot),
+    faces: mesh.faces,
+    normals: mesh.normals
+      ? mesh.normals.map((n) => {
+          const px = n[0]
+          const py = n[1]
+          const pz = n[2]
+          const tx = 2 * (y * pz - z * py)
+          const ty = 2 * (z * px - x * pz)
+          const tz = 2 * (x * py - y * px)
+          return [
+            px + w * tx + (y * tz - z * ty),
+            py + w * ty + (z * tx - x * tz),
+            pz + w * tz + (x * ty - y * tx),
+          ] as Vec3
+        })
+      : undefined,
+  }
 }
 
 export function buildMesh(shape: SolidShape): Mesh {
@@ -77,6 +156,7 @@ export function buildMesh(shape: SolidShape): Mesh {
 
     case 'pyramid': {
       const n = Math.max(3, shape.sides ?? 4)
+      if (n >= 12) return translate(coneMesh(Math.max(32, n), h), shape.center)
       const base = ring(n, h, -h)
       const vertices: Vec3[] = [...base, [0, 0, h]]
       const faces: number[][] = [base.map((_, i) => i).reverse()]
@@ -88,6 +168,8 @@ export function buildMesh(shape: SolidShape): Mesh {
 
     case 'prism': {
       const n = Math.max(3, shape.sides ?? 6)
+      // 圆柱：侧面、顶盖、底盖各用一套顶点，法线分开，着色才平滑
+      if (n >= 12) return translate(cylinderMesh(Math.max(32, n), h), shape.center)
       const bottom = ring(n, h, -h)
       const top = ring(n, h, h)
       const vertices: Vec3[] = [...bottom, ...top]
@@ -138,10 +220,12 @@ export function buildMesh(shape: SolidShape): Mesh {
     }
 
     case 'sphere': {
-      const slices = 24
-      const stacks = 12
+      const slices = 40
+      const stacks = 20
       const vertices: Vec3[] = []
-      for (let i = 0; i <= stacks; i++) {
+      // 极点单独给顶点，否则第一/最后一圈会缩成一个点，退化四边形算不出法线
+      vertices.push([0, 0, h])
+      for (let i = 1; i < stacks; i++) {
         const phi = (i / stacks) * Math.PI
         const r = Math.sin(phi) * h
         const z = Math.cos(phi) * h
@@ -150,18 +234,35 @@ export function buildMesh(shape: SolidShape): Mesh {
           vertices.push([Math.cos(a) * r, Math.sin(a) * r, z])
         }
       }
+      vertices.push([0, 0, -h])
+
+      const ringStart = (i: number) => 1 + (i - 1) * slices
+      const south = vertices.length - 1
       const faces: number[][] = []
-      for (let i = 0; i < stacks; i++) {
+      // 顶盖三角扇
+      for (let j = 0; j < slices; j++) {
+        const j2 = (j + 1) % slices
+        faces.push([0, ringStart(1) + j, ringStart(1) + j2])
+      }
+      // 中间四边形
+      for (let i = 1; i < stacks - 1; i++) {
         for (let j = 0; j < slices; j++) {
           const j2 = (j + 1) % slices
-          const a = i * slices + j
-          const b = i * slices + j2
-          const c = (i + 1) * slices + j2
-          const d = (i + 1) * slices + j
+          const a = ringStart(i) + j
+          const b = ringStart(i) + j2
+          const c = ringStart(i + 1) + j2
+          const d = ringStart(i + 1) + j
           faces.push([a, b, c, d])
         }
       }
-      return translate({ vertices, faces }, shape.center)
+      // 底盖三角扇
+      for (let j = 0; j < slices; j++) {
+        const j2 = (j + 1) % slices
+        faces.push([south, ringStart(stacks - 1) + j2, ringStart(stacks - 1) + j])
+      }
+
+      const normals = vertices.map((v) => normalize(v))
+      return translate({ vertices, faces, normals, smooth: true }, shape.center)
     }
 
     default:
@@ -204,6 +305,8 @@ function normalize(v: Vec3): Vec3 {
 export interface FaceView {
   points: [number, number][]
   shade: string
+  /** 平滑着色：面内从 from 到 to 的线性渐变（屏幕坐标） */
+  grad?: { from: string; to: string; x1: number; y1: number; x2: number; y2: number }
   depth: number
 }
 
@@ -214,17 +317,47 @@ export interface SolidView {
   /** 被挡住的棱（虚线） */
   hiddenEdges: { a: [number, number]; b: [number, number] }[]
   vertices: { x: number; y: number }[]
+  /** 屏幕轮廓（凸包）：画一圈细线，边缘更干净 */
+  outline: [number, number][]
 }
 
 const LIGHT = normalize([0.45, -0.7, 0.75])
 
-/** 明暗：法向与光线夹角，映射到极浅的灰阶（保持纸面质感） */
+/** 顶点位置 → 边的 key（量化后排序，两个方向视为同一条边） */
+function edgeKey(p: Vec3, q: Vec3): string {
+  const f = (v: Vec3) => v.map((x) => x.toFixed(4)).join(',')
+  const a = f(p)
+  const b = f(q)
+  return a < b ? `${a}|${b}` : `${b}|${a}`
+}
+
+/** 明暗：法向与光线夹角，映射到浅灰阶（纸面质感，但要有足够对比才像立体） */
 function shadeColor(k: number): string {
+  // t=0（背光/边缘）→ 中灰；t=1（正对光）→ 近白。
+  // 边缘不能是白的，否则球体会和纸面背景糊在一起。
   const t = Math.min(1, Math.max(0, k))
-  const r = Math.round(255 - t * 30)
-  const g = Math.round(253 - t * 33)
-  const b = Math.round(249 - t * 34)
-  return `rgb(${r},${g},${b})`
+  const v = Math.round(198 + t * 48)
+  return `rgb(${v},${v - 2},${v - 5})`
+}
+
+/** 屏幕顶点凸包：给立体补一圈细轮廓，边缘不会毛毛躁躁 */
+function convexHull(points: { x: number; y: number }[]): [number, number][] {
+  const pts = [...points].sort((a, b) => (a.x === b.x ? a.y - b.y : a.x - b.x))
+  if (pts.length < 3) return pts.map((p) => [p.x, p.y] as [number, number])
+  const cross = (o: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+  const lower: { x: number; y: number }[] = []
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop()
+    lower.push(p)
+  }
+  const upper: { x: number; y: number }[] = []
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i]
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop()
+    upper.push(p)
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)].map((p) => [p.x, p.y] as [number, number])
 }
 
 /** 正交/透视投影 + 背面剔除 + 画家算法排序（任意网格） */
@@ -245,10 +378,18 @@ export function projectMesh(
     return { x, y, depth: z }
   })
 
-  const visible: { idx: number[]; depth: number; shade: string; normal: Vec3 }[] = []
-  /** 正面边（实线）与背面边（虚线）分开收集 */
-  const frontEdges = new Map<string, { a: number; b: number }>()
-  const backEdges = new Map<string, { a: number; b: number }>()
+  const visible: {
+    idx: number[]
+    depth: number
+    shade: string
+    grad?: FaceView['grad']
+    normal: Vec3
+  }[] = []
+  /** 边 → 相邻面法线（按几何位置合并，曲面拆开的顶点也能对上） */
+  const edgeMap = new Map<
+    string,
+    { a: number; b: number; normals: Vec3[]; front: number; back: number }
+  >()
 
   for (const face of mesh.faces) {
     const p0 = mesh.vertices[face[0]]
@@ -256,16 +397,62 @@ export function projectMesh(
     const p2 = mesh.vertices[face[2]]
     const normal = normalize(cross(sub(p1, p0), sub(p2, p0)))
     const facing = dot(normal, dir)
-    const bucket = facing > 0.001 ? frontEdges : backEdges
+
+    // 按「几何位置」记边：曲面拆顶点后索引不同，位置相同要合并成一条
     for (let i = 0; i < face.length; i++) {
       const a = face[i]
       const b = face[(i + 1) % face.length]
-      const key = a < b ? `${a}-${b}` : `${b}-${a}`
-      if (!bucket.has(key)) bucket.set(key, { a, b })
+      const key = edgeKey(mesh.vertices[a], mesh.vertices[b])
+      const rec = edgeMap.get(key) ?? { a, b, normals: [], front: 0, back: 0 }
+      rec.normals.push(normal)
+      if (facing > 0.001) rec.front += 1
+      else rec.back += 1
+      edgeMap.set(key, rec)
     }
+
     if (facing <= 0.001) continue // 背面剔除（凸体成立）
     const depth = face.reduce((sum, i) => sum + flat[i].depth, 0) / face.length
-    visible.push({ idx: face, depth, shade: shadeColor(dot(normal, LIGHT)), normal })
+
+    // 曲面：用逐顶点法线取面内最亮/最暗两端，做成线性渐变，曲面才连续。
+    // 颜色基准也用顶点平均，别用面法线——极点处三角扇很窄，用面法线会出现亮环。
+    let grad: FaceView['grad'] | undefined
+    let shadeK = dot(normal, LIGHT)
+    if (mesh.smooth && mesh.normals) {
+      let hi = 0
+      let lo = 0
+      let hiK = -2
+      let loK = 2
+      let sum = 0
+      face.forEach((vi, n) => {
+        const k = dot(mesh.normals![vi] ?? normal, LIGHT)
+        sum += k
+        if (k > hiK) {
+          hiK = k
+          hi = n
+        }
+        if (k < loK) {
+          loK = k
+          lo = n
+        }
+      })
+      shadeK = sum / face.length
+      // 只在面够大、明暗差够明显时才拉渐变；小球面/极点扇用平均色，避免出现亮环
+      if (hiK - loK > 0.08) {
+        const a = flat[face[hi]]
+        const b = flat[face[lo]]
+        if (Math.hypot(a.x - b.x, a.y - b.y) > 14) {
+          grad = { from: shadeColor(hiK), to: shadeColor(loK), x1: a.x, y1: a.y, x2: b.x, y2: b.y }
+        }
+      }
+    }
+
+    visible.push({
+      idx: face,
+      depth,
+      shade: shadeColor(shadeK),
+      grad,
+      normal,
+    })
   }
   visible.sort((a, b) => a.depth - b.depth)
 
@@ -274,22 +461,41 @@ export function projectMesh(
     b: [flat[e.b].x, flat[e.b].y] as [number, number],
   })
 
-  // 看得见的棱：属于正面的边（实线）
-  const edges = [...frontEdges.values()].map(toLine)
-  // 被挡住的棱：只属于背面的边（虚线），跟随视角实时变化
-  const hiddenEdges = [...backEdges.entries()]
-    .filter(([key]) => !frontEdges.has(key))
-    .map(([, e]) => toLine(e))
+  // 只画「硬边」：相邻面法线夹角够大，或只有一张面用到它。
+  // 球/圆柱细分出来的边夹角很小，全画出来就是线框，曲面也就不光滑了。
+  const SMOOTH_DEG = 60
+  const cosLimit = Math.cos((SMOOTH_DEG * Math.PI) / 180)
+  const edges: { a: [number, number]; b: [number, number] }[] = []
+  const hiddenEdges: { a: [number, number]; b: [number, number] }[] = []
+  for (const rec of edgeMap.values()) {
+    // 曲面（球）不画任何内部边：轮廓由凸包描边负责，内部再多一条线都像裂痕
+    if (mesh.smooth && rec.normals.length < 2) continue
+    let hard = !mesh.smooth && rec.normals.length < 2
+    for (let i = 0; i < rec.normals.length && !hard; i++) {
+      for (let j = i + 1; j < rec.normals.length; j++) {
+        if (dot(rec.normals[i], rec.normals[j]) < cosLimit) {
+          hard = true
+          break
+        }
+      }
+    }
+    if (!hard) continue
+    const line = toLine(rec)
+    if (rec.front > 0) edges.push(line)
+    else hiddenEdges.push(line)
+  }
 
   return {
     faces: visible.map((f) => ({
       points: f.idx.map((i) => [flat[i].x, flat[i].y] as [number, number]),
       shade: f.shade,
+      grad: f.grad,
       depth: f.depth,
     })),
     edges,
     hiddenEdges,
     vertices: flat.map((p) => ({ x: p.x, y: p.y })),
+    outline: convexHull(flat),
   }
 }
 

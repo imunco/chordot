@@ -75,6 +75,9 @@ function inclineObjects(scene: Extract<SceneSpec, { kind: 'incline' }>, solution
       : '沿接触面，由平衡条件确定',
   }
 
+  // 接触面光滑（μ=0）时不存在摩擦力，别画一根 0 N 的箭头
+  const hasFriction = (scene.params.mu ?? 0) > 1e-6 && (st?.friction ?? 0) > 1e-6
+
   return [
     {
       id: 'gnd',
@@ -111,7 +114,7 @@ function inclineObjects(scene: Extract<SceneSpec, { kind: 'incline' }>, solution
     },
     gravity,
     normal,
-    friction,
+    ...(hasFriction ? [friction] : []),
   ]
 }
 
@@ -408,6 +411,8 @@ export function buildObjects(
   return base.map((o) => ({
     ...o,
     name: overrides.names[o.id] ?? o.name,
-    visible: overrides.hidden[o.id] ? false : o.visible,
+    // 父对象被隐藏时子对象（力、轨迹…）一起隐藏，否则会出现「物块没了、力还挂着」
+    visible:
+      overrides.hidden[o.id] || (o.parentId && overrides.hidden[o.parentId]) ? false : o.visible,
   }))
 }

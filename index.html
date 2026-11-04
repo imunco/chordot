@@ -5,9 +5,74 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:5173 http://127.0.0.1:5173" />
     <title>弦点 / Chordot</title>
+    <style>
+      /* 启动占位：React 挂载前就画出来，避免白屏 */
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: #fafaf8;
+        font-family: 'IBM Plex Sans SC', 'Microsoft YaHei', sans-serif;
+        color: #8a867f;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #boot svg {
+        width: 64px;
+        height: 64px;
+      }
+      #boot .boot__name {
+        font-size: 15px;
+        letter-spacing: 0.12em;
+        color: #5c5a56;
+      }
+      #boot .boot__bar {
+        width: 132px;
+        height: 2px;
+        border-radius: 2px;
+        background: #e6e3de;
+        overflow: hidden;
+      }
+      #boot .boot__bar i {
+        display: block;
+        width: 40%;
+        height: 100%;
+        border-radius: 2px;
+        background: #3d5a66;
+        animation: boot-slide 1s ease-in-out infinite;
+      }
+      @keyframes boot-slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(350%);
+        }
+      }
+      #boot .boot__hint {
+        font-size: 11px;
+        color: #b0aca4;
+        letter-spacing: 0.06em;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="boot" aria-hidden="true">
+      <svg viewBox="0 0 64 64" fill="none">
+        <rect x="4" y="4" width="56" height="56" rx="13" fill="#F8F6F1" stroke="#D8D4CE" stroke-width="2" />
+        <circle cx="31" cy="33" r="18" fill="none" stroke="#3D5A66" stroke-width="3.4" />
+        <line x1="17" y1="44" x2="47" y2="21" stroke="#9A5B4A" stroke-width="3.2" stroke-linecap="round" />
+        <circle cx="47" cy="21" r="4" fill="#3D5A66" />
+      </svg>
+      <div class="boot__name">弦 点</div>
+      <div class="boot__bar"><i></i></div>
+      <div class="boot__hint">正在准备画布…</div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -152,8 +152,8 @@ function sendMenu(action, arg) {
 
 function buildMenu() {
   buildAppMenu({ sendMenu, recent: () => readState().recent })
-  // 菜单栏默认隐藏（Alt 可唤出），快捷键仍然生效
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setMenuBarVisibility(false)
+  // 菜单栏常显：触控用户没有 Alt 键，藏起来等于没有菜单
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setMenuBarVisibility(true)
 }
 
 ipcMain.handle('ui:get-state', () => {

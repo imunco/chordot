@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { computeNet } from '../model/net'
 import { FORCE_LABEL } from '../model/types'
 import type { ForceObj, ForceType, GeoObj, Mode, SubState } from '../model/types'
@@ -34,6 +34,8 @@ interface Props {
   conflict: { ids: string[]; reason: string } | null
   onSelectConflict: (ids: string[]) => void
   onEditFunction: (id: string, expr: string) => boolean
+  /** 改线段长度 / 角度（保持起点不动） */
+  onEditLine: (id: string, patch: { length?: number; angleDeg?: number }) => void
   onSubState: (s: SubState) => void
   onClose: () => void
   onRename: (id: string, name: string) => void
@@ -53,6 +55,55 @@ const CONSTRAINT_LABEL: Record<SketchConstraintType, string> = {
   'on-line': '点在线上',
   midpoint: '中点',
   tangent: '相切',
+}
+
+/** 失焦或回车才提交的数字输入：边输边改会把 "1" 当成 1 米 */
+function NumField({
+  value,
+  unit,
+  onCommit,
+  min,
+  max,
+  step = 0.1,
+}: {
+  value: number
+  unit?: string
+  onCommit: (v: number) => void
+  min?: number
+  max?: number
+  step?: number
+}) {
+  const [text, setText] = useState(String(Number(value.toFixed(3))))
+  useEffect(() => setText(String(Number(value.toFixed(3)))), [value])
+  const commit = () => {
+    const n = Number(text)
+    if (!Number.isFinite(n)) {
+      setText(String(Number(value.toFixed(3))))
+      return
+    }
+    const clamped = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n))
+    onCommit(clamped)
+    setText(String(Number(clamped.toFixed(3))))
+  }
+  return (
+    <span className="numfield">
+      <input
+        className="numfield__input"
+        type="number"
+        value={text}
+        step={step}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            ;(e.target as HTMLInputElement).blur()
+          }
+        }}
+      />
+      {unit && <span className="numfield__unit">{unit}</span>}
+    </span>
+  )
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -165,6 +216,41 @@ export function RightPanel(props: Props) {
             {target.error && <p className="hint">{target.error}</p>}
           </div>
         )}
+
+        {target && target.kind === 'line' &&
+          (() => {
+            const dx = target.b[0] - target.a[0]
+            const dy = target.b[1] - target.a[1]
+            const len = Math.hypot(dx, dy)
+            const ang = (Math.atan2(dy, dx) * 180) / Math.PI
+            return (
+              <div className="lineedit">
+                <h4 className="fgroup__title">线段</h4>
+                <div className="props__row">
+                  <span>长度</span>
+                  <NumField
+                    value={len}
+                    unit="cm"
+                    min={0.05}
+                    max={200}
+                    onCommit={(v) => props.onEditLine(target.id, { length: v })}
+                  />
+                </div>
+                <div className="props__row">
+                  <span>角度</span>
+                  <NumField
+                    value={ang}
+                    unit="°"
+                    step={1}
+                    min={-360}
+                    max={360}
+                    onCommit={(v) => props.onEditLine(target.id, { angleDeg: v })}
+                  />
+                </div>
+                <p className="hint">改长度或角度时，起点不动，终点跟着走。</p>
+              </div>
+            )
+          })()}
 
         {target && target.kind === 'force' && target.expr !== undefined && (
           <div className="forceedit">
