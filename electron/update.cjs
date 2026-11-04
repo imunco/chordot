@@ -28,6 +28,9 @@ const MIRRORS = [
   { id: '7ed', name: 'gh.7ed.net', prefix: 'https://gh.7ed.net/' },
 ]
 
+/** 版本号：测试时可用 CHORDOT_FAKE_VERSION 冒充旧版本 */
+const currentVersion = () => process.env.CHORDOT_FAKE_VERSION || app.getVersion()
+
 const withTimeout = async (fn, ms) => {
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), ms)
@@ -101,12 +104,12 @@ let downloadAbort = null
 
 function registerUpdateIpc({ getWindow }) {
   ipcMain.handle('update:info', () => ({
-    version: app.getVersion(),
+    version: currentVersion(),
     mirrors: MIRRORS.map((m) => ({ id: m.id, name: m.name })),
   }))
 
   ipcMain.handle('update:check', async (_e, opts = {}) => {
-    const current = app.getVersion()
+    const current = currentVersion()
     try {
       const { status, body } = await fetchJson(API)
       if (status === 404) {
@@ -203,7 +206,7 @@ function registerUpdateIpc({ getWindow }) {
 
   ipcMain.handle('app:about', () => ({
     name: app.getName(),
-    version: app.getVersion(),
+    version: currentVersion(),
     electron: process.versions.electron,
     chrome: process.versions.chrome,
     node: process.versions.node,
