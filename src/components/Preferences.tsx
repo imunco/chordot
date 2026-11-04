@@ -12,6 +12,7 @@ interface Props {
   onReplayTour: () => void
   updater: UpdaterState
   onCheckUpdate: () => Promise<UpdateCheckResult | null>
+  onProbe: () => Promise<{ id: string; name: string; ms: number }[]>
   onDownload: () => void
   onInstall: () => void
   onToast: (text: string) => void
@@ -64,12 +65,15 @@ export function Preferences({
   onReplayTour,
   updater,
   onCheckUpdate,
+  onProbe,
   onDownload,
   onInstall,
   onToast,
 }: Props) {
   const [tab, setTab] = useState<Tab>('general')
   const [mirrors, setMirrors] = useState<{ id: string; name: string }[]>(MIRROR_FALLBACK)
+  const [probe, setProbe] = useState<{ id: string; name: string; ms: number }[] | null>(null)
+  const [probing, setProbing] = useState(false)
   const [about, setAbout] = useState<{
     name: string
     version: string
@@ -280,6 +284,34 @@ export function Preferences({
                   {updater.checking ? '检查中…' : '检查更新'}
                 </button>
               </Row>
+
+              <Row label="镜像测速" hint="并发探测全部镜像，看哪个最快">
+                <button
+                  className="btn"
+                  disabled={probing || !updater.result?.assets?.length}
+                  onClick={async () => {
+                    setProbing(true)
+                    const list = await onProbe()
+                    setProbe(list)
+                    setProbing(false)
+                    if (!list.length) onToast('测速失败，检查网络后重试')
+                  }}
+                >
+                  {probing ? '测速中…' : '开始测速'}
+                </button>
+              </Row>
+
+              {probe && (
+                <div className="prefs__probe">
+                  {probe.slice(0, 6).map((m, i) => (
+                    <div key={m.id} className="prefs__proberow" data-best={i === 0 || undefined}>
+                      <span className="prefs__probemark">{i === 0 ? '最快' : i + 1}</span>
+                      <span className="prefs__probename">{m.name}</span>
+                      <span className="prefs__probems">{m.ms} ms</span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {res?.hasUpdate && (
                 <div className="prefs__card">

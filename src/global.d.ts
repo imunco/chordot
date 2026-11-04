@@ -54,6 +54,11 @@ declare global {
           error?: string
         }>
         cancel: () => Promise<boolean>
+        probe: (url: string) => Promise<{
+          ok: boolean
+          list: { id: string; name: string; ms: number }[]
+          error?: string
+        }>
         install: (filePath: string) => Promise<{ ok: boolean; error?: string }>
         openRelease: (url: string) => Promise<boolean>
         onProgress: (

@@ -42,9 +42,22 @@ npm run build      # 类型检查 + 打包前端到 dist/
 npm run preview    # 用构建产物启动
 ```
 
+## 安装与更新
+
+到 [Releases](https://github.com/imunco/chordot/releases) 下载：
+
+- `Chordot-x.y.z-x64-setup.exe` —— 安装版，**可选安装位置**，自动创建桌面与开始菜单快捷方式
+- `Chordot-x.y.z-x64-portable.exe` —— 免安装，双击即用
+
+首次启动会有 8 步引导教学，之后可在「设置 → 个性化 → 引导教学」重新观看。
+
+程序启动时会自动检查更新，发现新版本弹窗提示，可选「忽略本次更新 / 下次提醒我 / 不再提醒」。
+下载走 GitHub Releases，内置 12 个国内镜像，**并发测速自动选最快的一个**；
+检查频率、下载源、开关都在「设置 → 更新」里。
+
 ## 验证
 
-二十四套端到端脚本，全部基于真实 Electron 窗口驱动 UI 并断言结果：
+二十六套端到端脚本，全部基于真实 Electron 窗口驱动 UI 并断言结果：
 
 ```bash
 npm run verify:kernel && npm run verify:construct && npm run verify:file
@@ -73,7 +86,7 @@ electron/       主进程、预加载、文件 IPC、验证脚本
 
 ## 已知边界
 
-- 约束求解基于 planegcs，相切约束有约 0.07 单位残差
+- 约束求解基于 planegcs，相切已能做到 0 残差（线固定、圆心落位）
 - 「水平」约束只约束方向，不约束长度
 - 自定义模板存在 localStorage，换机器会丢
 - 三维物理只有地面、斜面与墙，没有绳子/铰链

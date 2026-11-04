@@ -41,11 +41,21 @@ export function UpdateDialog(p: Props) {
 
         <div className="update__notes">
           {p.result.notes ? (
-            p.result.notes.split('\n').filter(Boolean).map((line, i) => (
-              <p key={i} className="update__line">
-                {line.replace(/^[-*]\s*/, '')}
-              </p>
-            ))
+            p.result.notes
+              .split('\n')
+              .map((l) => l.trim())
+              .filter(Boolean)
+              .map((line, i) =>
+                line.startsWith('#') ? (
+                  <div key={i} className="update__section">
+                    {line.replace(/^#+\s*/, '')}
+                  </div>
+                ) : (
+                  <p key={i} className="update__line">
+                    {line.replace(/^[-*]\s*/, '')}
+                  </p>
+                ),
+              )
           ) : (
             <p className="update__line update__line--muted">这个版本没有写更新说明。</p>
           )}

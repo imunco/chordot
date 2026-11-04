@@ -81,12 +81,13 @@ export default function App() {
   const [updateOpen, setUpdateOpen] = useState(false)
 
   const patchSettings = (patch: Partial<Settings>) => {
-    setSettings((prev) => {
-      const next = { ...prev, ...patch }
-      saveSettings(next)
-      return next
-    })
+    setSettings((prev) => ({ ...prev, ...patch }))
   }
+
+  /* 设置落盘放在 effect 里：state updater 必须是纯函数，不能顺手写 localStorage */
+  useEffect(() => {
+    saveSettings(settings)
+  }, [settings])
 
   const updater = useUpdater(settings, patchSettings)
 
@@ -1455,6 +1456,7 @@ export default function App() {
           }}
           updater={updater.state}
           onCheckUpdate={() => updater.check(false)}
+          onProbe={() => updater.probe()}
           onDownload={() => void updater.download()}
           onInstall={() => void updater.install()}
           onToast={toast}

@@ -37,7 +37,9 @@
     "verify:groups": "npm run build && electron electron/verify-groups.cjs",
     "verify:dyn": "npm run build && electron electron/verify-dyn.cjs",
     "verify:shapeforce": "npm run build && electron electron/verify-shapeforce.cjs",
-    "dist": "npm run build && electron-builder --win"
+    "dist": "npm run build && electron-builder --win",
+    "verify:tour": "npm run build && electron electron/verify-tour.cjs",
+    "verify:update": "npm run build && electron electron/verify-update.cjs"
   },
   "dependencies": {
     "@salusoft89/planegcs": "^1.3.0",

@@ -117,9 +117,24 @@ export function useUpdater(settings: Settings, patch: (p: Partial<Settings>) => 
     setState((s) => ({ ...s, downloading: false }))
   }, [])
 
+  /** 只测速：把每个镜像的响应耗时排出来 */
+  const probe = useCallback(async () => {
+    const api = window.chordot?.update
+    const asset = state.result?.assets?.find((a) => /\.exe$/i.test(a.name)) ?? state.result?.assets?.[0]
+    if (!api || !asset) return []
+    setState((s) => ({ ...s, checking: true, error: null }))
+    const out = await api.probe(asset.url)
+    setState((s) => ({
+      ...s,
+      checking: false,
+      error: out.ok ? null : (out.error ?? '测速失败'),
+    }))
+    return out.list ?? []
+  }, [state.result])
+
   const dismiss = useCallback(() => {
     setState((s) => ({ ...s, result: null, error: null }))
   }, [])
 
-  return { state, check, download, install, cancel, dismiss }
+  return { state, check, download, install, cancel, dismiss, probe }
 }

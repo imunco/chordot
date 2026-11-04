@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('chordot', {
     check: (opts) => ipcRenderer.invoke('update:check', opts),
     download: (payload) => ipcRenderer.invoke('update:download', payload),
     cancel: () => ipcRenderer.invoke('update:cancel'),
+    probe: (url) => ipcRenderer.invoke('update:probe', url),
     install: (filePath) => ipcRenderer.invoke('update:install', filePath),
     openRelease: (url) => ipcRenderer.invoke('update:openRelease', url),
     onProgress: (cb) => {

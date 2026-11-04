@@ -71,12 +71,8 @@ function compareVersions(a, b) {
   return 0
 }
 
-/** 并发测速：谁先吐响应头谁赢 */
-async function pickMirror(url, preferred) {
-  if (preferred && preferred !== 'auto') {
-    const hit = MIRRORS.find((m) => m.id === preferred)
-    if (hit) return { ...hit, ms: 0, url: hit.prefix + url }
-  }
+/** 所有镜像并发探一次，按响应耗时升序返回能用的 */
+async function probeAll(url) {
   const results = await Promise.all(
     MIRRORS.map(async (m) => {
       const target = m.prefix + url
@@ -90,13 +86,22 @@ async function pickMirror(url, preferred) {
           // 206 / 200 都算通；4xx 直接判死
           return res.status < 400
         }, 3500)
-        return ok ? { ...m, ms: Date.now() - t0, url: target } : null
+        return ok ? { id: m.id, name: m.name, ms: Date.now() - t0, url: target } : null
       } catch {
         return null
       }
     }),
   )
-  const alive = results.filter(Boolean).sort((a, b) => a.ms - b.ms)
+  return results.filter(Boolean).sort((a, b) => a.ms - b.ms)
+}
+
+/** 并发测速：谁先吐响应头谁赢 */
+async function pickMirror(url, preferred) {
+  if (preferred && preferred !== 'auto') {
+    const hit = MIRRORS.find((m) => m.id === preferred)
+    if (hit) return { ...hit, ms: 0, url: hit.prefix + url }
+  }
+  const alive = await probeAll(url)
   return alive[0] ?? null
 }
 
@@ -186,6 +191,13 @@ function registerUpdateIpc({ getWindow }) {
     } finally {
       downloadAbort = null
     }
+  })
+
+  /** 只测速不下载：设置页的「测速」用它 */
+  ipcMain.handle('update:probe', async (_e, url) => {
+    if (!url) return { ok: false, error: '缺少下载地址' }
+    const list = await probeAll(url)
+    return { ok: list.length > 0, list: list.map(({ id, name, ms }) => ({ id, name, ms })) }
   })
 
   ipcMain.handle('update:cancel', () => {
