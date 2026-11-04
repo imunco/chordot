@@ -33,4 +33,13 @@ contextBridge.exposeInMainWorld('chordot', {
     },
   },
   about: () => ipcRenderer.invoke('app:about'),
+
+  /** 本地持久化：localStorage 之外再落一份 JSON */
+  store: {
+    get: (name) => ipcRenderer.invoke('store:get', name),
+    set: (name, payload) => ipcRenderer.invoke('store:set', name, payload),
+    dir: () => ipcRenderer.invoke('store:dir'),
+    open: () => ipcRenderer.invoke('store:open'),
+    dump: () => ipcRenderer.invoke('store:dump'),
+  },
 })

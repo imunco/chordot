@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const { pathToFileURL } = require('node:url')
 const { registerFileIpc } = require('./file-ipc.cjs')
 const { registerUpdateIpc } = require('./update.cjs')
+const { registerStoreIpc } = require('./store.cjs')
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
 const DIST = path.join(__dirname, '..', 'dist')
@@ -189,6 +190,7 @@ app.whenReady().then(() => {
 
   registerFileIpc({ addRecent })
   registerUpdateIpc({ getWindow: () => mainWindow })
+  registerStoreIpc()
   createWindow()
   buildMenu()
   app.on('activate', () => {

@@ -65,6 +65,13 @@ declare global {
           cb: (p: { phase: string; received?: number; total?: number; mirror?: string; ms?: number }) => void,
         ) => () => void
       }
+      store?: {
+        get: (name: string) => Promise<{ savedAt?: number; data?: unknown } | null>
+        set: (name: string, payload: unknown) => Promise<boolean>
+        dir: () => Promise<string>
+        open: () => Promise<string | null>
+        dump: () => Promise<{ name: string; content: string }[]>
+      }
       about?: () => Promise<{
         name: string
         version: string

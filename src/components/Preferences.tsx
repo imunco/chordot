@@ -73,6 +73,7 @@ export function Preferences({
   const [tab, setTab] = useState<Tab>('general')
   const [mirrors, setMirrors] = useState<{ id: string; name: string }[]>(MIRROR_FALLBACK)
   const [probe, setProbe] = useState<{ id: string; name: string; ms: number }[] | null>(null)
+  const [dataDir, setDataDir] = useState('')
   const [probing, setProbing] = useState(false)
   const [about, setAbout] = useState<{
     name: string
@@ -95,6 +96,10 @@ export function Preferences({
     window.chordot
       ?.about?.()
       .then(setAbout)
+      .catch(() => {})
+    window.chordot?.store
+      ?.dir()
+      .then(setDataDir)
       .catch(() => {})
   }, [])
 
@@ -372,6 +377,15 @@ export function Preferences({
                   再看一遍引导
                 </button>
               </div>
+              {dataDir && (
+                <div className="about__data">
+                  <div className="about__datatitle">本机数据目录</div>
+                  <code className="about__path">{dataDir}</code>
+                  <button className="btn about__open" onClick={() => void window.chordot?.store?.open()}>
+                    打开文件夹
+                  </button>
+                </div>
+              )}
               <div className="about__copy">© 2026 奇点未码工作室 · 保留所有权利</div>
             </div>
           )}

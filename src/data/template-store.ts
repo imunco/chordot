@@ -1,3 +1,4 @@
+import { mirror } from '../persist'
 import type { SceneSpec } from '../kernel/types'
 import type { TemplateCategory } from './templates'
 
@@ -29,6 +30,9 @@ function write(key: string, value: unknown) {
   } catch {
     /* 隐私模式等场景静默失败 */
   }
+  // 同步镜像到 userData/data/*.json
+  if (key === CUSTOM_KEY) mirror('templates', value)
+  else if (key === FAV_KEY) mirror('favorites', value)
 }
 
 export function loadCustom(): CustomTemplate[] {

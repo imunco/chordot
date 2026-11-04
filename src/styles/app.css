@@ -2708,3 +2708,35 @@ math-field.fexpr__input {
 .prefs__probems {
   font-variant-numeric: tabular-nums;
 }
+
+.about__data {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3);
+  width: 100%;
+  max-width: 420px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: #fcfbf8;
+}
+
+.about__datatitle {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.about__path {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding-bottom: 2px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.about__open {
+  margin-top: 8px;
+}

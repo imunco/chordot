@@ -1,3 +1,5 @@
+import { mirror } from './persist'
+
 const KEY = 'chordot.settings'
 
 export interface Settings {
@@ -91,6 +93,8 @@ export function saveSettings(s: Settings) {
   } catch {
     /* 隐私模式等场景静默失败 */
   }
+  // 再镜像一份到 userData/data/settings.json
+  mirror('settings', s)
 }
 
 /** 按提醒频率判断现在该不该自动检查 */
