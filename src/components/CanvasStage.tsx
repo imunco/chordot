@@ -614,7 +614,7 @@ export function CanvasStage(props: Props) {
       let at: [number, number] | null = null
       for (let i = run.length - 1; i >= 0; i--) {
         const [px, py] = toScreen(run[i])
-        if (px >= 2 && px <= size.w - 40 && py >= 12 && py <= size.h - 4) {
+        if (px >= 2 && px <= size.w - 40 && py >= 18 && py <= size.h - 6) {
           at = [px, py]
           break
         }
@@ -976,7 +976,9 @@ export function CanvasStage(props: Props) {
             const [x2, y2] = toScreen(o.b)
             return (
               <g key={o.id} data-id={o.id} onPointerDown={(e) => handleObjectDown(e, o.id)} style={{ cursor: 'default' }}>
-                {sel && <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#3D5A66" strokeOpacity={0.22} strokeWidth={6} />}
+                {sel && (
+                  <line data-ui="1" x1={x1} y1={y1} x2={x2} y2={y2} stroke="#3D5A66" strokeOpacity={0.22} strokeWidth={6} />
+                )}
                 <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={o.color} strokeWidth={1.5} />
                 <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={hitStroke} />
               </g>
@@ -987,7 +989,9 @@ export function CanvasStage(props: Props) {
             const d = pts.map((p) => p.join(',')).join(' ')
             return (
               <g key={o.id} data-id={o.id} onPointerDown={(e) => handleObjectDown(e, o.id)}>
-                {sel && <polygon points={d} fill="none" stroke="#3D5A66" strokeOpacity={0.22} strokeWidth={6} />}
+                {sel && (
+                  <polygon data-ui="1" points={d} fill="none" stroke="#3D5A66" strokeOpacity={0.22} strokeWidth={6} />
+                )}
                 <polygon points={d} fill={o.color} fillOpacity={0.1} stroke={o.color} strokeWidth={1.5} />
               </g>
             )
@@ -997,7 +1001,9 @@ export function CanvasStage(props: Props) {
             const r = o.r * s
             return (
               <g key={o.id} data-id={o.id} onPointerDown={(e) => handleObjectDown(e, o.id)}>
-                {sel && <circle cx={px} cy={py} r={r} fill="none" stroke="#3D5A66" strokeOpacity={0.22} strokeWidth={6} />}
+                {sel && (
+                  <circle data-ui="1" cx={px} cy={py} r={r} fill="none" stroke="#3D5A66" strokeOpacity={0.22} strokeWidth={6} />
+                )}
                 <circle cx={px} cy={py} r={r} fill={o.color} fillOpacity={0.05} stroke={o.color} strokeWidth={1.5} />
               </g>
             )
@@ -1007,7 +1013,7 @@ export function CanvasStage(props: Props) {
             return (
               <g key={o.id} data-id={o.id} onPointerDown={(e) => handleObjectDown(e, o.id)}>
                 {sel && (
-                  <polyline points={d} fill="none" stroke="#3D5A66" strokeOpacity={0.22} strokeWidth={5} strokeLinejoin="round" />
+                  <polyline data-ui="1" points={d} fill="none" stroke="#3D5A66" strokeOpacity={0.22} strokeWidth={5} strokeLinejoin="round" />
                 )}
                 <polyline
                   points={d}
@@ -1037,6 +1043,7 @@ export function CanvasStage(props: Props) {
                   view.edges.map((e, i) => (
                     <line
                       key={`sh${i}`}
+                      data-ui="1"
                       x1={e.a[0]}
                       y1={e.a[1]}
                       x2={e.b[0]}
@@ -1160,7 +1167,9 @@ export function CanvasStage(props: Props) {
                 startPointDrag(e, o)
               }}
             >
-              {sel && <circle cx={px} cy={py} r={9} fill="none" stroke="#3D5A66" strokeOpacity={0.22} strokeWidth={6} />}
+              {sel && (
+                <circle data-ui="1" cx={px} cy={py} r={9} fill="none" stroke="#3D5A66" strokeOpacity={0.22} strokeWidth={6} />
+              )}
               <circle
                 cx={px}
                 cy={py}
@@ -1169,6 +1178,7 @@ export function CanvasStage(props: Props) {
                 stroke={sel ? '#3D5A66' : o.color}
                 strokeWidth={1.5}
               />
+              {(!labelPlace.get(o.id)?.hide || sel) && (
               <text
                 x={px + (labelPlace.get(o.id)?.dx ?? 8)}
                 y={py + (labelPlace.get(o.id)?.dy ?? -8)}
@@ -1183,6 +1193,7 @@ export function CanvasStage(props: Props) {
               >
                 {o.name}
               </text>
+              )}
               <circle
                 cx={px}
                 cy={py}
@@ -1208,6 +1219,7 @@ export function CanvasStage(props: Props) {
             if (props.tool === 'circle') {
               return (
                 <circle
+                  data-ui="1"
                   cx={ax}
                   cy={ay}
                   r={Math.hypot(hx - ax, hy - ay)}
@@ -1222,6 +1234,7 @@ export function CanvasStage(props: Props) {
             const path = [...picked.map((p) => toScreen([p.x, p.y])), [hx, hy] as [number, number]]
             return (
               <polyline
+                data-ui="1"
                 points={path.map((p) => p.join(',')).join(' ')}
                 fill="none"
                 stroke="#3D5A66"
@@ -1403,7 +1416,7 @@ export function CanvasStage(props: Props) {
           return (
             <g key={f.id} data-id={f.id} onPointerDown={(e) => pick(e, f.id)}>
               {sel && (
-                <line x1={sx} y1={sy} x2={tx} y2={ty} stroke="#3D5A66" strokeOpacity={0.2} strokeWidth={7} strokeLinecap="round" />
+                <line data-ui="1" x1={sx} y1={sy} x2={tx} y2={ty} stroke="#3D5A66" strokeOpacity={0.2} strokeWidth={7} strokeLinecap="round" />
               )}
               <line x1={sx} y1={sy} x2={tx} y2={ty} stroke={f.color} strokeWidth={1.5} strokeLinecap="round" />
               <polygon points={`${tx},${ty} ${h1[0]},${h1[1]} ${h2[0]},${h2[1]}`} fill={f.color} />
@@ -1424,8 +1437,8 @@ export function CanvasStage(props: Props) {
               </text>
               {sel && (
                 <>
-                  <circle cx={sx} cy={sy} r={4} fill="#FFFFFF" stroke="#3D5A66" strokeWidth={1.5} />
-                  <circle cx={tx} cy={ty} r={4} fill="#FFFFFF" stroke="#3D5A66" strokeWidth={1.5} />
+                  <circle data-ui="1" cx={sx} cy={sy} r={4} fill="#FFFFFF" stroke="#3D5A66" strokeWidth={1.5} />
+                  <circle data-ui="1" cx={tx} cy={ty} r={4} fill="#FFFFFF" stroke="#3D5A66" strokeWidth={1.5} />
                 </>
               )}
             </g>
@@ -1581,6 +1594,7 @@ export function CanvasStage(props: Props) {
             return (
               <polyline
                 key={st.id}
+                data-ui={st === draft ? '1' : undefined}
                 points={d}
                 fill="none"
                 stroke={st.color}

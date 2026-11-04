@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Settings } from '../settings'
 import type { UpdaterState } from '../updater'
 import { CloseIcon } from './icons'
+import { useEscape } from './useEscape'
 
 type Tab = 'general' | 'look' | 'update' | 'about'
 
@@ -16,6 +17,8 @@ interface Props {
   onDownload: () => void
   onInstall: () => void
   onToast: (text: string) => void
+  /** 打开时停在哪一页（菜单「关于」直接跳过去） */
+  initialTab?: Tab
 }
 
 const TABS: { id: Tab; label: string }[] = [
@@ -69,8 +72,10 @@ export function Preferences({
   onDownload,
   onInstall,
   onToast,
+  initialTab = 'general',
 }: Props) {
-  const [tab, setTab] = useState<Tab>('general')
+  const [tab, setTab] = useState<Tab>(initialTab)
+  useEscape(true, onClose)
   const [mirrors, setMirrors] = useState<{ id: string; name: string }[]>(MIRROR_FALLBACK)
   const [probe, setProbe] = useState<{ id: string; name: string; ms: number }[] | null>(null)
   const [dataDir, setDataDir] = useState('')

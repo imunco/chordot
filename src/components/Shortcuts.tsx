@@ -44,7 +44,10 @@ const GROUPS: { title: string; rows: [string, string][] }[] = [
   },
 ]
 
+import { useEscape } from './useEscape'
+
 export function Shortcuts({ onClose }: { onClose: () => void }) {
+  useEscape(true, onClose)
   return (
     <div className="gallery" role="dialog" aria-label="快捷键" onClick={onClose}>
       <div className="prefs shortcuts" onClick={(e) => e.stopPropagation()}>

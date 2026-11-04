@@ -116,8 +116,40 @@ function registerFileIpc({ addRecent }) {
     return { files, path: files[0]?.path, content: files[0]?.content }
   })
 
+  /** 导出图片：原生另存为对话框 + 直接写文件 */
+  ipcMain.handle('file:export', async (e, payload) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const { data, encoding = 'utf8', name = '未命名.png', format = 'png' } = payload ?? {}
+    const ext = format === 'svg' ? 'svg' : 'png'
+    const filters =
+      format === 'svg'
+        ? [{ name: 'SVG 矢量图', extensions: ['svg'] }]
+        : [{ name: 'PNG 图片', extensions: ['png'] }]
+    let target = process.env.CHORDOT_TEST_EXPORT
+
+    if (!target) {
+      const res = await dialog.showSaveDialog(win, {
+        title: '导出图片',
+        defaultPath: path.join(app.getPath('pictures'), name),
+        filters,
+      })
+      if (res.canceled || !res.filePath) return { canceled: true }
+      target = res.filePath.endsWith(`.${ext}`) ? res.filePath : `${res.filePath}.${ext}`
+    }
+
+    try {
+      const buf = encoding === 'base64' ? Buffer.from(String(data), 'base64') : Buffer.from(String(data), 'utf8')
+      fs.writeFileSync(target, buf)
+      return { path: target }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
   /** 未保存修改的确认：仅用于不可逆操作，默认焦点在“取消” */
   ipcMain.handle('dialog:confirm-unsaved', async (e, name) => {
+    // 测试接缝：0 取消 / 1 放弃 / 2 保存
+    if (process.env.CHORDOT_TEST_CONFIRM) return Number(process.env.CHORDOT_TEST_CONFIRM)
     const win = BrowserWindow.fromWebContents(e.sender)
     const res = await dialog.showMessageBox(win, {
       type: 'warning',

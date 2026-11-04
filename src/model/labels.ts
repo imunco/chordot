@@ -12,6 +12,8 @@ export interface LabelPlacement {
   dx: number
   dy: number
   anchor: LabelAnchor
+  /** 八个候选位置都被占：先不画，免得糊成一团（选中的点仍会画） */
+  hide?: boolean
 }
 
 export interface LabelPoint {
@@ -64,13 +66,18 @@ export function placeLabels(points: LabelPoint[]): Map<string, LabelPlacement> {
 
   for (const p of points) {
     const w = Math.max(8, p.name.length * CHAR_W)
-    let chosen = CANDIDATES[0]
+    let chosen: LabelPlacement | null = null
     for (const c of CANDIDATES) {
       const box = boxOf(p.x, p.y, w, c)
       if (!taken.some((t) => hits(box, t))) {
         chosen = c
         break
       }
+    }
+    if (!chosen) {
+      // 挤到没地方放：跳过不画，别把整片区域涂成一团
+      out.set(p.id, { ...CANDIDATES[0], hide: true })
+      continue
     }
     const finalBox = boxOf(p.x, p.y, w, chosen)
     taken.push(finalBox)

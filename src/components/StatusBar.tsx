@@ -11,6 +11,10 @@ interface Props {
   slow: boolean
   solveMs: number
   source: Solution['source'] | null
+  /** 选中两个点时直接在状态栏给出距离，不用打开右栏 */
+  measureText?: string
+  /** 右栏是否展开：没展开时提示按 P */
+  rightOpen: boolean
   onToggleMode: () => void
 }
 
@@ -24,6 +28,8 @@ export function StatusBar({
   slow,
   solveMs,
   source,
+  measureText,
+  rightOpen,
   onToggleMode,
 }: Props) {
   return (
@@ -34,11 +40,23 @@ export function StatusBar({
         </button>
         {busy && <span className="calc-dot" data-slow={slow} />}
         <span className="sep">·</span>
-        <span>{selectedCount > 0 ? `已选 ${selectedCount} 个对象` : '未选中对象'}</span>
+        <span>
+          {selectedCount > 0
+            ? `已选 ${selectedCount} 个对象${rightOpen ? '' : '（按 P 看属性）'}`
+            : '未选中对象'}
+        </span>
         {picks > 0 && (
           <>
             <span className="sep">·</span>
             <span>构造中，已拾取 {picks} 点（Esc 取消）</span>
+          </>
+        )}
+        {measureText && (
+          <>
+            <span className="sep">·</span>
+            <span className="statusbar__measure" title="两点距离">
+              {measureText}
+            </span>
           </>
         )}
         {!busy && source && (

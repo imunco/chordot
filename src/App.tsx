@@ -73,6 +73,7 @@ export default function App() {
   const [recent, setRecent] = useState<string[]>([])
   const [settings, setSettings] = useState<Settings>(() => loadSettings())
   const [prefsOpen, setPrefsOpen] = useState(false)
+  const [prefsTab, setPrefsTab] = useState<'general' | 'look' | 'update' | 'about'>('general')
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   // 验证脚本用 ?notour=1 跳过引导，免得遮住要点的按钮
   const [tourOpen, setTourOpen] = useState(
@@ -427,7 +428,11 @@ export default function App() {
       friction: p.friction,
     })
     for (const o of p.obstacles ?? []) world.addObstacle(o)
-    for (const sh of scene.params.shapes) world.add(sh)
+    for (const sh of scene.params.shapes) {
+      // 埋进地面的物体一开物理就会被接触求解弹飞，先抬到基准面上
+      const half = sh.size / 2
+      world.add({ ...sh, center: [sh.center[0], sh.center[1], Math.max(sh.center[2], half)] })
+    }
     physRef.current = { world, history: [], times: [] }
     setPhysTotal(0)
     setPhysIndex(0)
@@ -564,6 +569,8 @@ export default function App() {
       else if (o.kind === 'circle') {
         pts.push([o.center[0] - o.r, o.center[1] - o.r], [o.center[0] + o.r, o.center[1] + o.r])
       }
+      // 函数曲线不参与适配：默认采样区间很宽，算进来会把视图缩到 30%，
+      // 反而不如保持 1:1 的常规坐标系
     }
     if (pts.length === 0) {
       dispatch({ type: 'zoom', zoom: 1 })
@@ -572,15 +579,37 @@ export default function App() {
     }
     const xs = pts.map((p) => p[0])
     const ys = pts.map((p) => p[1])
-    const w = Math.max(...xs) - Math.min(...xs)
-    const h = Math.max(...ys) - Math.min(...ys)
+    const minX = Math.min(...xs)
+    const maxX = Math.max(...xs)
+    const minY = Math.min(...ys)
+    const maxY = Math.max(...ys)
+    const w = maxX - minX
+    const h = maxY - minY
     const zoom = Math.min(
-      (state.canvas.w - 140) / Math.max(w * PX_PER_UNIT, 1),
-      (state.canvas.h - 160) / Math.max(h * PX_PER_UNIT, 1),
+      4,
+      Math.max(
+        0.3,
+        Math.min(
+          (state.canvas.w - 140) / Math.max(w * PX_PER_UNIT, 1),
+          (state.canvas.h - 160) / Math.max(h * PX_PER_UNIT, 1),
+        ),
+      ),
     )
+    // 把内容包围盒的中心挪到画布中心，而不是把世界原点放中间
+    const midX = (minX + maxX) / 2
+    const midY = (minY + maxY) / 2
     dispatch({ type: 'zoom', zoom })
-    dispatch({ type: 'pan', pan: { x: 0, y: 0 } })
+    dispatch({ type: 'pan', pan: { x: -midX * PX_PER_UNIT * zoom, y: midY * PX_PER_UNIT * zoom } })
   }, [objects, state.canvas])
+
+  /* 新建 / 打开 / 套模板后自动适配视图：样例不该歪在角落里 */
+  const fitRef = useRef(fit)
+  fitRef.current = fit
+  useEffect(() => {
+    if (state.fitToken === 0) return
+    const timer = window.setTimeout(() => fitRef.current(), 80)
+    return () => window.clearTimeout(timer)
+  }, [state.fitToken])
 
   const baseName = state.file.replace(/\.chordot$/, '')
 
@@ -597,16 +626,42 @@ export default function App() {
     const svg = svgRef.current
     if (!svg) return null
     const clone = svg.cloneNode(true) as SVGSVGElement
+    // 选中光晕、构造预览、手绘草稿都是界面反馈，别导出到图里
+    clone.querySelectorAll('[data-ui]').forEach((el) => el.remove())
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
     return new XMLSerializer().serializeToString(clone)
+  }
+
+  /** 导出：桌面端走原生另存为，浏览器端退回下载 */
+  const saveExport = async (
+    data: string,
+    encoding: 'utf8' | 'base64',
+    filename: string,
+    format: 'png' | 'svg',
+  ) => {
+    const api = window.chordot
+    if (api?.exportFile) {
+      const res = await api.exportFile({ data, encoding, name: filename, format })
+      if (res.canceled) return
+      if (res.error) {
+        toast(`导出失败：${res.error}`)
+        return
+      }
+      toast(`已导出 ${filename}`)
+      return
+    }
+    const blob =
+      encoding === 'base64'
+        ? await (await fetch(`data:application/octet-stream;base64,${data}`)).blob()
+        : new Blob([data], { type: format === 'svg' ? 'image/svg+xml' : 'text/plain' })
+    saveBlob(blob, filename)
   }
 
   const exportDrawing = (format: 'svg' | 'png') => {
     const data = serialize()
     if (!data) return
     if (format === 'svg') {
-      saveBlob(new Blob([data], { type: 'image/svg+xml' }), `${baseName}.svg`)
-      toast('已导出 SVG')
+      void saveExport(data, 'utf8', `${baseName}.svg`, 'svg')
       return
     }
     const url = URL.createObjectURL(new Blob([data], { type: 'image/svg+xml;charset=utf-8' }))
@@ -622,10 +677,14 @@ export default function App() {
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
       canvas.toBlob((blob) => {
-        if (blob) {
-          saveBlob(blob, `${baseName}.png`)
-          toast('已导出 PNG')
+        if (!blob) return
+        const reader = new FileReader()
+        reader.onload = () => {
+          const raw = String(reader.result)
+          const base64 = raw.slice(raw.indexOf(',') + 1)
+          void saveExport(base64, 'base64', `${baseName}.png`, 'png')
         }
+        reader.readAsDataURL(blob)
       }, 'image/png')
       URL.revokeObjectURL(url)
     }
@@ -1052,12 +1111,21 @@ export default function App() {
         el?.tagName === 'MATH-FIELD' ||
         !!el?.closest?.('math-field')
 
+      // 弹窗打开时画布快捷键一律不响应（Esc 由弹窗自己处理）
+      if (prefsOpen || shortcutsOpen || tourOpen || updateOpen || state.galleryOpen) return
+
+      if (e.key === 'F1') {
+        e.preventDefault()
+        setShortcutsOpen(true)
+        return
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key === '/') {
         e.preventDefault()
         dispatch({ type: 'pad', open: !state.padOpen })
         return
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && !typing) {
         if (state.selected.length === 0) return
         e.preventDefault()
         dispatch({ type: 'duplicate', ids: state.selected })
@@ -1086,24 +1154,9 @@ export default function App() {
         }
         return
       }
-      if (typing || state.paletteOpen) return
-
       const mod = e.ctrlKey || e.metaKey
-      if (mod && e.key.toLowerCase() === 'z') {
-        e.preventDefault()
-        dispatch({ type: e.shiftKey ? 'redo' : 'undo' })
-        return
-      }
-      if (mod && e.key.toLowerCase() === 'y') {
-        e.preventDefault()
-        dispatch({ type: 'redo' })
-        return
-      }
-      if (mod && e.key === '0') {
-        e.preventDefault()
-        fit()
-        return
-      }
+
+      // 文件与视图类快捷键在输入框里也要生效：写到一半按 Ctrl+S 不该没反应
       if (mod && e.key.toLowerCase() === 's') {
         e.preventDefault()
         void saveRef.current(e.shiftKey)
@@ -1117,6 +1170,25 @@ export default function App() {
       if (mod && e.key.toLowerCase() === 'n') {
         e.preventDefault()
         void actionsRef.current.newDoc()
+        return
+      }
+      if (mod && e.key === '0') {
+        e.preventDefault()
+        fit()
+        return
+      }
+
+      // 其余快捷键在输入框里让位给文字编辑（Ctrl+Z 撤销的是输入，不是图形）
+      if (typing || state.paletteOpen) return
+
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        dispatch({ type: e.shiftKey ? 'redo' : 'undo' })
+        return
+      }
+      if (mod && e.key.toLowerCase() === 'y') {
+        e.preventDefault()
+        dispatch({ type: 'redo' })
         return
       }
       if (mod) return
@@ -1163,6 +1235,11 @@ export default function App() {
     state.selected,
     state.subState,
     state.playing,
+    state.galleryOpen,
+    prefsOpen,
+    shortcutsOpen,
+    tourOpen,
+    updateOpen,
     fit,
     objects,
   ])
@@ -1217,6 +1294,81 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [state.grid, state.mode, state.rightOpen, fit, toast, recent],
   )
+
+  /* 应用菜单（Alt 唤出菜单栏）：用 ref 拿最新的处理函数，effect 只挂一次 */
+  const menuHandler = useRef<(action: string, arg?: string) => void>(() => {})
+  menuHandler.current = (action, arg) => {
+    switch (action) {
+      case 'new':
+        void newDoc()
+        break
+      case 'open':
+        void openDoc()
+        break
+      case 'open-recent':
+        if (arg) void openDoc(arg)
+        break
+      case 'clear-recent':
+        setRecent([])
+        window.chordot?.setUiState({ recent: [] })
+        toast('已清除最近打开列表')
+        break
+      case 'save':
+        void save()
+        break
+      case 'save-as':
+        void save(true)
+        break
+      case 'export-png':
+        exportDrawing('png')
+        break
+      case 'export-svg':
+        exportDrawing('svg')
+        break
+      case 'undo':
+        dispatch({ type: 'undo' })
+        break
+      case 'redo':
+        dispatch({ type: 'redo' })
+        break
+      case 'prefs':
+        setPrefsTab('general')
+        setPrefsOpen(true)
+        break
+      case 'about':
+        setPrefsTab('about')
+        setPrefsOpen(true)
+        break
+      case 'shortcuts':
+        setShortcutsOpen(true)
+        break
+      case 'tour':
+        setTourOpen(true)
+        break
+      case 'data-dir':
+        void window.chordot?.store?.open()
+        break
+      case 'check-update':
+        void (async () => {
+          const res = await updater.check(false)
+          if (!res) return
+          if (!res.ok) {
+            toast(res.error ?? '检查更新失败，稍后再试')
+            return
+          }
+          if (!res.hasUpdate) {
+            toast(`已是最新版本 ${res.current}`)
+            return
+          }
+          setUpdateOpen(true)
+        })()
+        break
+      default:
+        break
+    }
+  }
+
+  useEffect(() => window.chordot?.onMenu((action, arg) => menuHandler.current(action, arg)), [])
 
   const maxLeftWidth = Math.max(200, window.innerWidth - 480 - (state.rightOpen ? 280 : 0) - 2)
 
@@ -1282,6 +1434,12 @@ export default function App() {
             dispatch({ type: 'delete' })
           }}
           onColor={(id, color) => dispatch({ type: 'set-color', id, color })}
+          // 空草图已经有画布中央的引导卡，左栏不再重复；三维场景才需要一句说明
+          emptyHint={
+            state.doc.scene.kind === 'solid' || state.doc.scene.kind === 'solidIncline'
+              ? '三维场景：拖动旋转视角，滚轮缩放'
+              : undefined
+          }
           onSubmitExpr={submitExpression}
         />
 
@@ -1442,11 +1600,18 @@ export default function App() {
         slow={slow}
         solveMs={state.lastMs}
         source={state.lastSource}
+        measureText={
+          measured && state.selected.length === 2
+            ? `距离 ${measured.rows[0]?.value ?? ''}`
+            : undefined
+        }
+        rightOpen={state.rightOpen}
         onToggleMode={toggleMode}
       />
 
       {prefsOpen && (
         <Preferences
+          initialTab={prefsTab}
           settings={settings}
           onChange={patchSettings}
           onClose={() => setPrefsOpen(false)}

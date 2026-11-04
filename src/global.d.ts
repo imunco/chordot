@@ -23,6 +23,12 @@ declare global {
         filePath?: string | null,
       ) => Promise<{ path?: string; content?: string; canceled?: boolean; error?: string }>
       confirmUnsaved: (name: string) => Promise<number>
+      exportFile: (payload: {
+        data: string
+        encoding?: 'utf8' | 'base64'
+        name?: string
+        format?: 'png' | 'svg'
+      }) => Promise<{ path?: string; canceled?: boolean; error?: string }>
       exportPack: (payload: {
         data: string
         name?: string
@@ -36,6 +42,7 @@ declare global {
       }>
       closeWindow: () => void
       onRequestClose: (cb: () => void) => () => void
+      onMenu: (cb: (action: string, arg?: string) => void) => () => void
       update?: {
         info: () => Promise<{
           version: string

@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { hydrate } from './persist'
 import './styles/tokens.css'
 import './styles/app.css'
@@ -13,7 +14,9 @@ async function boot() {
   await Promise.race([hydrate(), new Promise((r) => setTimeout(r, 1200))])
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </StrictMode>,
   )
 }

@@ -65,6 +65,8 @@ export interface State {
   padOpen: boolean
   galleryOpen: boolean
   shapesOpen: boolean
+  /** 每次整份文档被换掉（新建 / 打开 / 套模板）时 +1，用于自动适配视图 */
+  fitToken: number
   canvas: { w: number; h: number }
   /** 拖动中的点，用于内核请求 */
   drag: { id: string; x: number; y: number } | null
@@ -268,7 +270,8 @@ export function solidScene(): SceneSpec {
   return {
     kind: 'solid',
     params: {
-      shapes: [{ id: 's1', name: '正方体', type: 'cube', center: [0, 0, 0], size: 4 }],
+      // 立方体坐在基准面上（z = 半边长），不然一半埋进地面
+      shapes: [{ id: 's1', name: '正方体', type: 'cube', center: [0, 0, 2], size: 4 }],
       camera: { azimuth: 45, elevation: 25, zoom: 1, view: 'free', perspective: true, dist: 14 },
     },
   }
@@ -296,6 +299,7 @@ export const initialState: State = {
   paletteOpen: false,
   padOpen: false,
   galleryOpen: false,
+  fitToken: 0,
   shapesOpen: false,
   canvas: { w: 800, h: 600 },
   drag: null,
@@ -1066,7 +1070,9 @@ export function reducer(state: State, action: Action): State {
         dirty: false,
         mode:
           action.scene.kind === 'incline' || action.scene.kind === 'motion' ? 'physics' : 'math',
-        subState: 'statics',
+        // 动力学样例直接进运动学面板，否则用户找不到「播放」
+        subState: action.scene.kind === 'motion' ? 'kinematics' : 'statics',
+        fitToken: state.fitToken + 1,
         tool: 'select',
         picks: [],
         decomposed: [],
@@ -1107,6 +1113,7 @@ export function reducer(state: State, action: Action): State {
             ? 'physics'
             : 'math',
         subState: action.doc.scene.kind === 'motion' ? 'kinematics' : 'statics',
+        fitToken: state.fitToken + 1,
         tool: 'select',
         zoom: 1,
         solveError: null,

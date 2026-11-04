@@ -32,7 +32,10 @@ interface Row extends Template {
   custom?: boolean
 }
 
+import { useEscape } from './useEscape'
+
 export function TemplateGallery({ scene, file, onPick, onClose }: Props) {
+  useEscape(true, onClose)
   const [query, setQuery] = useState('')
   const [cat, setCat] = useState<string>('全部')
   const [sub, setSub] = useState<string>('全部')

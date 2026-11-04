@@ -1,9 +1,10 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, screen } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, net, protocol, screen } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
 const { pathToFileURL } = require('node:url')
 const { registerFileIpc } = require('./file-ipc.cjs')
 const { registerUpdateIpc } = require('./update.cjs')
+const { buildAppMenu } = require('./menu.cjs')
 const { registerStoreIpc } = require('./store.cjs')
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
@@ -144,22 +145,15 @@ function createWindow() {
   }
 }
 
+/** 把菜单动作转给渲染层（Alt 唤出菜单栏，或点菜单项） */
+function sendMenu(action, arg) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:menu', action, arg)
+}
+
 function buildMenu() {
-  const menu = Menu.buildFromTemplate([
-    {
-      label: '视图',
-      submenu: [
-        { role: 'reload', label: '重新加载' },
-        { role: 'forceReload', label: '强制重新加载' },
-        { role: 'toggleDevTools', label: '开发者工具' },
-        { type: 'separator' },
-        { role: 'resetZoom', label: '重置界面缩放' },
-      ],
-    },
-  ])
-  Menu.setApplicationMenu(menu)
-  // 菜单栏隐藏但保留快捷键
-  if (mainWindow) mainWindow.setMenuBarVisibility(false)
+  buildAppMenu({ sendMenu, recent: () => readState().recent })
+  // 菜单栏默认隐藏（Alt 可唤出），快捷键仍然生效
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setMenuBarVisibility(false)
 }
 
 ipcMain.handle('ui:get-state', () => {
@@ -178,6 +172,7 @@ ipcMain.on('ui:set-state', (_e, patch) => {
   if (!patch || typeof patch !== 'object') return
   if ('dirty' in patch) runtimeDirty = Boolean(patch.dirty)
   writeState(patch)
+  if ('recent' in patch && app.isReady()) buildMenu()
 })
 
 ipcMain.on('app:close', () => {
@@ -190,6 +185,8 @@ function addRecent(filePath) {
   const s = readState()
   const recent = [filePath, ...(Array.isArray(s.recent) ? s.recent : []).filter((p) => p !== filePath)]
   writeState({ recent: recent.slice(0, 8), lastFile: filePath })
+  // 菜单里的「最近打开」跟着更新
+  if (app.isReady()) buildMenu()
 }
 
 app.whenReady().then(() => {

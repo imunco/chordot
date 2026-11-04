@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('chordot', {
   saveFile: (payload) => ipcRenderer.invoke('file:save', payload),
   openFile: (filePath) => ipcRenderer.invoke('file:open', filePath),
   confirmUnsaved: (name) => ipcRenderer.invoke('dialog:confirm-unsaved', name),
+  exportFile: (payload) => ipcRenderer.invoke('file:export', payload),
   exportPack: (payload) => ipcRenderer.invoke('pack:export', payload),
   importPack: () => ipcRenderer.invoke('pack:import'),
   closeWindow: () => ipcRenderer.send('app:close'),
@@ -15,6 +16,12 @@ contextBridge.exposeInMainWorld('chordot', {
     const handler = () => cb()
     ipcRenderer.on('app:request-close', handler)
     return () => ipcRenderer.removeListener('app:request-close', handler)
+  },
+  /** 应用菜单动作（新建/打开/保存/撤销/设置/关于…） */
+  onMenu: (cb) => {
+    const handler = (_e, action, arg) => cb(action, arg)
+    ipcRenderer.on('app:menu', handler)
+    return () => ipcRenderer.removeListener('app:menu', handler)
   },
 
   /** 更新：检查 / 下载 / 安装 / 进度 */

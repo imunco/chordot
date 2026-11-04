@@ -30,6 +30,8 @@ interface Props {
   onDuplicate: (ids: string[]) => void
   onDeleteIds: (ids: string[]) => void
   onColor: (id: string, color: string) => void
+  /** 列表为空时给一句说明（三维场景和空草图说的不是一回事） */
+  emptyHint?: string
 }
 
 function kindIcon(kind: GeoObj['kind']) {
@@ -131,6 +133,9 @@ export function LeftPanel(props: Props) {
       )}
 
       <div className="left__list">
+        {rows.length === 0 && props.emptyHint && (
+          <p className="left__empty">{props.emptyHint}</p>
+        )}
         {rows.map(({ obj, depth, newGroup }) => (
           <div
             key={obj.id}

@@ -212,6 +212,7 @@ export function Onboarding({ onDone }: Props) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
+        e.stopPropagation()
         onDone()
       } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
         e.preventDefault()

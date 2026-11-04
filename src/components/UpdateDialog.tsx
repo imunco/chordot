@@ -1,5 +1,7 @@
 import { CloseIcon } from './icons'
 
+import { useEscape } from './useEscape'
+
 interface Props {
   result: UpdateCheckResult
   downloading: boolean
@@ -19,6 +21,7 @@ interface Props {
 const mb = (n: number) => (n > 0 ? `${(n / 1048576).toFixed(1)} MB` : '')
 
 export function UpdateDialog(p: Props) {
+  useEscape(true, p.onClose)
   const total = p.total || 0
   const pct = total > 0 ? Math.min(100, Math.round((p.received / total) * 100)) : 0
   const ready = Boolean(p.filePath)

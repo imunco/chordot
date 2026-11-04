@@ -20,7 +20,8 @@ export function CommandPalette({ items, onClose }: Props) {
   const list = useMemo(() => {
     const key = query.trim().toLowerCase()
     const matched = key ? items.filter((i) => i.label.toLowerCase().includes(key)) : items
-    return matched.slice(0, 8)
+    // 列表本身可滚动，不再截断——命令面板不该「只显示前 8 条」
+    return matched
   }, [query, items])
 
   useEffect(() => {
