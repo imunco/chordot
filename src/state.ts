@@ -1,6 +1,7 @@
 import { solveScene } from './kernel/scene'
 import { nextCurveColor } from './model/palette'
 import { shapeById } from './data/shapes'
+import { quadDragMoves, quadFitMoves, lockedQuadOf } from './model/quad'
 import { emptySketch } from './kernel/types'
 import type {
   MotionModel,
@@ -12,6 +13,7 @@ import type {
   SketchConstraint,
   SketchDoc,
   SketchForce,
+  SketchPolygon,
   Solution,
   Stroke,
 } from './kernel/types'
@@ -147,6 +149,9 @@ export type Action =
   | { type: 'physics-frame'; bodies: { id: string; position: [number, number, number]; quaternion: [number, number, number, number] }[] }
   | { type: 'physics-reset'; shapes: SolidShape[] }
   | { type: 'drag-points'; moves: { id: string; x: number; y: number }[] }
+  /** 绕某点旋转选中对象（不传 center 就用选中点的重心） */
+  | { type: 'rotate-objects'; ids: string[]; angleDeg: number; center?: [number, number] }
+  | { type: 'patch-polygon'; id: string; patch: Partial<SketchPolygon> }
   | { type: 'stroke-add'; stroke: Stroke }
   | { type: 'stroke-erase'; id: string }
   | { type: 'strokes-clear' }
@@ -469,14 +474,97 @@ export function reducer(state: State, action: Action): State {
     case 'drag-point': {
       const scene = state.doc.scene
       if (scene.kind !== 'sketch') return state
+      const locked = lockedQuadOf(scene.doc, action.id)
+      const moves = locked
+        ? quadDragMoves(scene.doc, locked.poly, locked.index, { x: action.x, y: action.y })
+        : null
+      const byId = new Map((moves ?? []).map((m) => [m.id, m]))
       const doc: SketchDoc = {
         ...scene.doc,
-        points: scene.doc.points.map((p) =>
-          p.id === action.id ? { ...p, x: action.x, y: action.y } : p,
-        ),
+        points: scene.doc.points.map((p) => {
+          if (p.id === action.id) return { ...p, x: action.x, y: action.y }
+          const m = byId.get(p.id)
+          return m ? { ...p, x: m.x, y: m.y } : p
+        }),
       }
       const next: SceneSpec = { kind: 'sketch', doc }
       return { ...state, doc: { ...state.doc, scene: next }, solution: solveScene(next) }
+    }
+
+    /** 绕某点旋转：几何课里「把三角形转 90°」这类操作 */
+    case 'rotate-objects': {
+      const scene = state.doc.scene
+      if (scene.kind !== 'sketch') return state
+      const ids = new Set<string>()
+      for (const id of action.ids) {
+        if (scene.doc.points.some((p) => p.id === id)) {
+          ids.add(id)
+          continue
+        }
+        const seg = scene.doc.segments.find((s) => s.id === id)
+        if (seg) {
+          ids.add(seg.a)
+          ids.add(seg.b)
+          continue
+        }
+        const poly = scene.doc.polygons.find((g) => g.id === id)
+        if (poly) {
+          poly.points.forEach((pid) => ids.add(pid))
+          continue
+        }
+        const cir = scene.doc.circles.find((c) => c.id === id)
+        if (cir) ids.add(cir.c)
+      }
+      const moving = scene.doc.points.filter((p) => ids.has(p.id))
+      if (moving.length === 0) return state
+      // 默认绕包围盒中心转，和画布上的旋转手柄一致
+      const xs = moving.map((p) => p.x)
+      const ys = moving.map((p) => p.y)
+      const cx = action.center?.[0] ?? (Math.min(...xs) + Math.max(...xs)) / 2
+      const cy = action.center?.[1] ?? (Math.min(...ys) + Math.max(...ys)) / 2
+      const rad = (action.angleDeg * Math.PI) / 180
+      const cos = Math.cos(rad)
+      const sin = Math.sin(rad)
+      const doc: SketchDoc = {
+        ...scene.doc,
+        points: scene.doc.points.map((p) =>
+          ids.has(p.id)
+            ? {
+                ...p,
+                x: cx + (p.x - cx) * cos - (p.y - cy) * sin,
+                y: cy + (p.x - cx) * sin + (p.y - cy) * cos,
+              }
+            : p,
+        ),
+      }
+      return commitScene(state, { kind: 'sketch', doc })
+    }
+
+    /** 多边形属性（四边形锁定纵横比）：改比例时顺手把四个角重排成矩形 */
+    case 'patch-polygon': {
+      const scene = state.doc.scene
+      if (scene.kind !== 'sketch') return state
+      let doc: SketchDoc = {
+        ...scene.doc,
+        polygons: scene.doc.polygons.map((g) =>
+          g.id === action.id ? { ...g, ...action.patch } : g,
+        ),
+      }
+      const poly = doc.polygons.find((g) => g.id === action.id)
+      if (poly && action.patch.ratio !== undefined) {
+        const moves = quadFitMoves(doc, poly, action.patch.ratio)
+        if (moves) {
+          const byId = new Map(moves.map((m) => [m.id, m]))
+          doc = {
+            ...doc,
+            points: doc.points.map((p) => {
+              const m = byId.get(p.id)
+              return m ? { ...p, x: m.x, y: m.y } : p
+            }),
+          }
+        }
+      }
+      return commitScene(state, { kind: 'sketch', doc })
     }
 
     /** 整组平移：一次挪动一组点（拖动多边形/线段/圆的本体） */

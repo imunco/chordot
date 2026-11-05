@@ -2927,3 +2927,37 @@ math-field.fexpr__input {
   padding: var(--sp-2) var(--sp-3) var(--sp-3);
   border-bottom: 1px solid var(--border);
 }
+
+/* 旋转 / 四边形：和线段编辑同一套排版 */
+.rotedit,
+.quadedit {
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.rotedit .props__row,
+.quadedit .props__row {
+  padding: 0;
+}
+
+.rotedit__btns {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rotedit__btn {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.rotedit__btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

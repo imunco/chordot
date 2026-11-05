@@ -6,7 +6,7 @@ import type { ForceObj, ForceType, GeoObj, Mode, SubState } from '../model/types
 import type { SimState } from '../kernel/types'
 import type { MeasureResult } from '../model/measure'
 import type { PropGroup } from '../model/props'
-import type { SketchConstraint, SketchConstraintType } from '../kernel/types'
+import type { SketchConstraint, SketchConstraintType, SketchPolygon } from '../kernel/types'
 import { MathInput } from './MathInput'
 import { CloseIcon } from './icons'
 
@@ -26,6 +26,11 @@ interface Props {
   onPreviewForce: (value: number) => void
   onPatchForce: (id: string, patch: Record<string, unknown>) => void
   constraints: SketchConstraint[] | null
+  /** 草图多边形（四边形纵横比锁定状态存在这里） */
+  polygons: SketchPolygon[] | null
+  onPatchPolygon: (id: string, patch: Partial<SketchPolygon>) => void
+  /** 绕选区中心旋转（度，正数为逆时针） */
+  onRotate: (deg: number) => void
   selectedLines: number
   selectedPoints: number
   selectedCircles: number
@@ -269,6 +274,14 @@ export function RightPanel(props: Props) {
   const [detail, setDetail] = useState(false)
   const selectedForceId = target?.kind === 'force' ? target.id : null
 
+  /** 能不能旋转：草图层里选中了带点的对象（力/曲线/立体不参与） */
+  const canRotate =
+    !props.propSchema &&
+    props.selected.some((id) => {
+      const o = props.objects.find((q) => q.id === id)
+      return !!o && o.kind !== 'force' && o.kind !== 'function' && o.kind !== 'solid'
+    })
+
   return (
     <aside className="right">
       <header className="right__header">
@@ -367,6 +380,66 @@ export function RightPanel(props: Props) {
               </div>
             )
           })()}
+
+        {target && target.kind === 'polygon' &&
+          (() => {
+            const poly = props.polygons?.find((g) => g.id === target.id)
+            if (!poly || poly.points.length !== 4) return null
+            const [p0, p1, p2] = target.points
+            const w = Math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+            const h = Math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+            const aspect = h > 1e-6 ? w / h : 1
+            const locked = typeof poly.ratio === 'number'
+            return (
+              <div className="quadedit">
+                <h4 className="fgroup__title">四边形</h4>
+                <div className="props__row">
+                  <span>锁定纵横比</span>
+                  <button
+                    className="props__toggle"
+                    data-on={locked}
+                    onClick={() =>
+                      props.onPatchPolygon(poly.id, {
+                        ratio: locked ? undefined : Number(aspect.toFixed(3)),
+                      })
+                    }
+                  >
+                    {locked ? '是' : '否'}
+                  </button>
+                </div>
+                <div className="props__row">
+                  <span>宽高比</span>
+                  <NumField
+                    value={locked ? poly.ratio! : aspect}
+                    min={0.05}
+                    max={20}
+                    step={0.1}
+                    onCommit={(v) => props.onPatchPolygon(poly.id, { ratio: v })}
+                  />
+                </div>
+                <p className="hint">
+                  开启后拖任一顶点都保持矩形（对角顶点不动）；宽高比填 1 就是正方形。
+                </p>
+              </div>
+            )
+          })()}
+
+        {canRotate && (
+          <div className="rotedit">
+            <h4 className="fgroup__title">旋转</h4>
+            <div className="props__row">
+              <span>绕选区中心</span>
+              <span className="rotedit__btns">
+                {[-90, -15, 15, 90].map((d) => (
+                  <button key={d} className="rotedit__btn" onClick={() => props.onRotate(d)}>
+                    {d > 0 ? `+${d}°` : `${d}°`}
+                  </button>
+                ))}
+              </span>
+            </div>
+            <p className="hint">拖选区上方的手柄可自由旋转，按住 Shift 吸附 15°。</p>
+          </div>
+        )}
 
         {target && target.kind === 'force' && target.expr !== undefined && (
           <div className="forceedit">

@@ -47,6 +47,11 @@ export interface SketchCircle {
 export interface SketchPolygon {
   id: string
   points: string[]
+  /**
+   * 四边形锁定纵横比：拖动任一顶点时，把图形保持成矩形（宽/高 = ratio）。
+   * undefined = 不锁定。只对 4 个点的多边形生效。
+   */
+  ratio?: number
 }
 
 export interface SketchFunction {

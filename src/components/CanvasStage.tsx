@@ -188,6 +188,15 @@ export function CanvasStage(props: Props) {
   const erasing = useRef(false)
   /** 橡皮光标圈（屏幕坐标） */
   const [eraseAt, setEraseAt] = useState<[number, number] | null>(null)
+  /** 旋转手柄拖动中 */
+  const rotating = useRef<{
+    center: [number, number]
+    start: number
+    base: { id: string; x: number; y: number }[]
+    handle: [number, number]
+  } | null>(null)
+  /** 拖动中的旋转角度（度），给手柄旁的数字用 */
+  const [rotAngle, setRotAngle] = useState<number | null>(null)
   const pendingPan = useRef<{
     x: number
     y: number
@@ -213,11 +222,16 @@ export function CanvasStage(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  /* 换工具时收起橡皮状态：否则光标圈和「按住」标记会留到下一次 */
+  /* 换工具时收起橡皮 / 旋转状态：否则光标圈和「按住」标记会留到下一次 */
   useEffect(() => {
-    if (props.tool === 'eraser') return
-    erasing.current = false
-    setEraseAt(null)
+    if (props.tool !== 'eraser') {
+      erasing.current = false
+      setEraseAt(null)
+    }
+    if (props.tool !== 'select') {
+      rotating.current = null
+      setRotAngle(null)
+    }
   }, [props.tool])
 
   /* 手势：双指缩放（围绕捏合中点）、双指平移、中键/Alt 拖拽平移 */
@@ -249,6 +263,7 @@ export function CanvasStage(props: Props) {
       panDrag.current = null
       // 手指滑出窗口收不到 pointerup 时，别让橡皮一直挂在「按住」状态
       erasing.current = false
+      rotating.current = null
       fromCanvas = false
     }
 
@@ -464,6 +479,26 @@ export function CanvasStage(props: Props) {
   }
 
   const movePoint = (e: React.PointerEvent) => {
+    if (rotating.current) {
+      const r = rotating.current
+      const w = toWorld(e)
+      let ang = Math.atan2(w.y - r.center[1], w.x - r.center[0]) - r.start
+      if (e.shiftKey) {
+        const step = Math.PI / 12 // 15°
+        ang = Math.round(ang / step) * step
+      }
+      const cos = Math.cos(ang)
+      const sin = Math.sin(ang)
+      props.onDragPoints(
+        r.base.map((b) => ({
+          id: b.id,
+          x: r.center[0] + (b.x - r.center[0]) * cos - (b.y - r.center[1]) * sin,
+          y: r.center[1] + (b.x - r.center[0]) * sin + (b.y - r.center[1]) * cos,
+        })),
+      )
+      setRotAngle((ang * 180) / Math.PI)
+      return
+    }
     if (erasing.current) {
       const p = strokePoint(e)
       setEraseAt(screenOf(e))
@@ -513,6 +548,12 @@ export function CanvasStage(props: Props) {
   }
 
   const endPointDrag = (e: React.PointerEvent) => {
+    if (rotating.current) {
+      rotating.current = null
+      setRotAngle(null)
+      props.onDragEnd(toWorld(e))
+      return
+    }
     if (shapeDrag.current) {
       shapeDrag.current = null
       props.onDragEnd(toWorld(e))
@@ -760,6 +801,59 @@ export function CanvasStage(props: Props) {
     ...props.objects.filter((o) => o.kind === 'point'),
   ]
   const forces = props.objects.filter((o): o is ForceObj => o.kind === 'force')
+
+  /**
+   * 选中对象能否旋转：取它们背后的点，≥2 个点才画手柄。
+   * 只对二维草图生效（三维有自己的相机轨道）。
+   */
+  const rotTarget = (() => {
+    if (props.tool !== 'select' || props.camera || props.selected.length === 0) return null
+    const picked = new Set(props.selected)
+    const map = new Map<string, { id: string; x: number; y: number }>()
+    for (const o of props.objects) {
+      if (!picked.has(o.id) || !o.visible) continue
+      if (o.kind === 'force' || o.kind === 'function' || o.kind === 'solid') continue
+      if (o.kind === 'point') {
+        map.set(o.id, { id: o.id, x: o.x, y: o.y })
+        continue
+      }
+      for (const id of o.anchorIds ?? []) {
+        const q = props.objects.find((z) => z.id === id)
+        if (q && q.kind === 'point') map.set(q.id, { id: q.id, x: q.x, y: q.y })
+      }
+    }
+    const pts = [...map.values()]
+    if (pts.length < 2) return null
+    const xs = pts.map((p) => p.x)
+    const ys = pts.map((p) => p.y)
+    const center: [number, number] = [
+      (Math.min(...xs) + Math.max(...xs)) / 2,
+      (Math.min(...ys) + Math.max(...ys)) / 2,
+    ]
+    return { pts, center, top: Math.max(...ys) }
+  })()
+
+  const startRotate = (e: React.PointerEvent) => {
+    const t = rotTarget
+    if (!t) return
+    e.stopPropagation()
+    e.preventDefault()
+    const w = toWorld(e)
+    const [hx, hy] = toScreen([t.center[0], t.top])
+    rotating.current = {
+      center: t.center,
+      start: Math.atan2(w.y - t.center[1], w.x - t.center[0]),
+      base: t.pts,
+      handle: [hx, Math.max(24, hy - 26)],
+    }
+    setRotAngle(0)
+    props.onDragStart('__rotate', { x: t.center[0], y: t.center[1] })
+    try {
+      ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+    } catch {
+      /* 合成事件忽略 */
+    }
+  }
 
   // 地面阴影：所有立体先落影，再画物体，影子永远在物体下方
   const shadows: { id: string; points: [number, number][]; alpha: number }[] = []
@@ -1846,6 +1940,66 @@ export function CanvasStage(props: Props) {
             />
           </g>
         )}
+        {/* 旋转手柄：选中对象后出现在包围盒上方 */}
+        {rotTarget &&
+          (() => {
+            const [hx, hy] =
+              rotating.current?.handle ??
+              (() => {
+                const [x, y] = toScreen([rotTarget.center[0], rotTarget.top])
+                return [x, Math.max(24, y - 26)] as [number, number]
+              })()
+            const [cx0, cy0] = toScreen(rotTarget.center)
+            return (
+              <g data-ui="1" data-rotate>
+                <line
+                  x1={cx0}
+                  y1={cy0}
+                  x2={hx}
+                  y2={hy}
+                  stroke="#3d5a66"
+                  strokeOpacity={0.22}
+                  strokeDasharray="3 3"
+                  pointerEvents="none"
+                />
+                <circle
+                  cx={hx}
+                  cy={hy}
+                  r={11}
+                  fill="rgba(250,250,248,0.94)"
+                  stroke="#3d5a66"
+                  strokeOpacity={0.55}
+                  strokeWidth={1}
+                  style={{ cursor: 'grab' }}
+                  onPointerDown={startRotate}
+                />
+                <path
+                  d={`M${hx - 3.5} ${hy + 2.9} A4.6 4.6 0 1 1 ${hx + 4} ${hy + 2.3}`}
+                  fill="none"
+                  stroke="#3d5a66"
+                  strokeOpacity={0.85}
+                  strokeWidth={1.3}
+                  strokeLinecap="round"
+                  pointerEvents="none"
+                />
+                {rotAngle !== null && (
+                  <text
+                    x={hx + 16}
+                    y={hy + 1}
+                    fontSize={11.5}
+                    fill="#3d5a66"
+                    stroke="#FAFAF8"
+                    strokeWidth={3}
+                    style={{ paintOrder: 'stroke' }}
+                    fontFamily={FONT}
+                    dominantBaseline="middle"
+                  >
+                    {rotAngle.toFixed(0)}°
+                  </text>
+                )}
+              </g>
+            )
+          })()}
       </svg>
 
       <div className="canvas__scale">{props.scaleText}</div>

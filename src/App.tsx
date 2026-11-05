@@ -1601,6 +1601,11 @@ export default function App() {
             onPreviewForce={(value) => dispatch({ type: 'force-preview', value })}
             onPatchForce={(id, patch) => dispatch({ type: 'patch-force', id, patch })}
             constraints={sketchDoc ? (sketchDoc.constraints ?? []) : null}
+            polygons={sketchDoc ? (sketchDoc.polygons ?? []) : null}
+            onPatchPolygon={(id, patch) => dispatch({ type: 'patch-polygon', id, patch })}
+            onRotate={(deg) =>
+              dispatch({ type: 'rotate-objects', ids: state.selected, angleDeg: deg })
+            }
             selectedLines={selectedLines}
             selectedPoints={selectedPoints}
             selectedCircles={selectedCircles}

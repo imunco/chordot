@@ -22,16 +22,48 @@ export interface PropGroup {
   fields: Field[]
 }
 
-/** 绕竖直轴（z）的偏航角，单位度；任意四元数都能读 */
-function yawDeg(q?: [number, number, number, number]): number {
-  if (!q) return 0
-  const [x, y, z, w] = q
-  return (Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)) * 180) / Math.PI
+/**
+ * 四元数 ↔ 三轴角度（ZYX：先滚转、再俯仰、最后偏航）。
+ * 立体光有偏航只能原地打转，圆柱要「躺下」得靠俯仰。
+ */
+interface Euler {
+  yaw: number
+  pitch: number
+  roll: number
 }
 
-function quatYaw(deg: number): [number, number, number, number] {
-  const a = (deg * Math.PI) / 360
-  return [0, 0, Math.sin(a), Math.cos(a)]
+function eulerDeg(q?: [number, number, number, number]): Euler {
+  if (!q) return { yaw: 0, pitch: 0, roll: 0 }
+  const [x, y, z, w] = q
+  const r00 = 1 - 2 * (y * y + z * z)
+  const r10 = 2 * (x * y + w * z)
+  const r20 = 2 * (x * z - w * y)
+  const r21 = 2 * (y * z + w * x)
+  const r22 = 1 - 2 * (x * x + y * y)
+  const D = 180 / Math.PI
+  return {
+    yaw: Math.atan2(r10, r00) * D,
+    pitch: Math.asin(Math.max(-1, Math.min(1, -r20))) * D,
+    roll: Math.atan2(r21, r22) * D,
+  }
+}
+
+function quatEuler(e: Euler): [number, number, number, number] {
+  const y = (e.yaw * Math.PI) / 180 / 2
+  const p = (e.pitch * Math.PI) / 180 / 2
+  const r = (e.roll * Math.PI) / 180 / 2
+  const cy = Math.cos(y)
+  const sy = Math.sin(y)
+  const cp = Math.cos(p)
+  const sp = Math.sin(p)
+  const cr = Math.cos(r)
+  const sr = Math.sin(r)
+  return [
+    cy * cp * sr - sy * sp * cr,
+    cy * sp * cr + sy * cp * sr,
+    sy * cp * cr - cy * sp * sr,
+    cy * cp * cr + sy * sp * sr,
+  ]
 }
 
 const num = (
@@ -257,16 +289,21 @@ export function schemaFor(scene: SceneSpec, selectedId?: string | null): PropGro
             ),
           }),
         ),
-        num(
-          `rot-${shape.id}`,
-          '旋转',
-          () => Math.round(yawDeg(shape.rotation)),
-          { unit: '°', min: -180, max: 180, step: 5 },
-          (v) => ({
-            shapes: scene.params.shapes.map((s, j) =>
-              j === i ? { ...s, rotation: quatYaw(v) } : s,
-            ),
-          }),
+        // 三个轴都能转：偏航之外补上俯仰 / 翻滚，圆柱才能「躺下」
+        ...(['yaw', 'pitch', 'roll'] as const).map((axis) =>
+          num(
+            `rot-${axis}-${shape.id}`,
+            axis === 'yaw' ? '旋转' : axis === 'pitch' ? '俯仰' : '翻滚',
+            () => Math.round(eulerDeg(shape.rotation)[axis]),
+            { unit: '°', min: -180, max: 180, step: 5 },
+            (v) => ({
+              shapes: scene.params.shapes.map((s, j) =>
+                j === i
+                  ? { ...s, rotation: quatEuler({ ...eulerDeg(s.rotation), [axis]: v }) }
+                  : s,
+              ),
+            }),
+          ),
         ),
         ...(shape.id === selectedId ? forceFields(shape) : []),
       ],
