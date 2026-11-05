@@ -61,6 +61,12 @@ app.whenReady().then(async () => {
   }
 
   const report = {}
+  const failures = []
+  const check = (ok, msg) => {
+    if (ok) return
+    failures.push(msg)
+    console.log('VERIFY FAILED ' + msg)
+  }
   const step = async (label, code) => {
     try {
       report[label] = await js(code)
@@ -133,14 +139,21 @@ app.whenReady().then(async () => {
     await wait(400)
     await step(
       'strokes',
-      `(() => (window.__state.doc.strokes ?? []).map(s => ({ space: s.space, n: s.points.length })))()`,
+      `(() => (window.__state.doc.strokes ?? []).map(s => ({ space: s.space, n: s.points.length, mode: s.mode ?? 'pen' })))()`,
     )
-    await step('strokeEls', `document.querySelectorAll('[data-strokes] polyline').length`)
+    await step(
+      'strokeEls',
+      `document.querySelectorAll('[data-strokes] path, [data-strokes] circle').length`,
+    )
+    await step(
+      'smooth',
+      `document.querySelector('[data-strokes] path')?.getAttribute('d')?.includes('Q') ?? false`,
+    )
 
     /* 先切回选择工具，再旋转相机（画笔状态下拖动是画线） */
     await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', bubbles: true }))`)
     await wait(250)
-    const firstPoint = `document.querySelector('[data-strokes] polyline')?.getAttribute('points')?.split(' ')[0] ?? null`
+    const firstPoint = `document.querySelector('[data-strokes] path')?.getAttribute('d')?.slice(0, 40) ?? null`
     const beforeRot = await js(firstPoint)
     await js(`(() => {
       const svg = document.querySelector('.canvas__svg');
@@ -165,19 +178,87 @@ app.whenReady().then(async () => {
     await step('eraserActive', `window.__state.tool`)
     await step('strokesBeforeErase', `(window.__state.doc.strokes ?? []).length`)
     await js(`(() => {
-      const pl = document.querySelector('[data-strokes] polyline');
-      if (!pl) return 'no-stroke';
-      const pts = pl.getAttribute('points').split(' ').map(s => s.split(',').map(Number));
-      const mid = pts[Math.floor(pts.length / 2)];
+      const st = (window.__state.doc.strokes ?? [])[0];
+      if (!st) return 'no-stroke';
+      const mid = st.points[Math.floor(st.points.length / 2)];
       const svg = document.querySelector('.canvas__svg');
       const r = svg.getBoundingClientRect();
-      const opt = { bubbles: true, cancelable: true, clientX: r.left + mid[0], clientY: r.top + mid[1], pointerId: 6, isPrimary: true, pointerType: 'mouse', button: 0 };
-      svg.dispatchEvent(new PointerEvent('pointerdown', opt));
-      svg.dispatchEvent(new PointerEvent('pointerup', opt));
+      const opt = (x, y) => ({ bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 6, isPrimary: true, pointerType: 'mouse', button: 0 });
+      svg.dispatchEvent(new PointerEvent('pointerdown', opt(r.left + mid[0], r.top + mid[1])));
+      svg.dispatchEvent(new PointerEvent('pointerup', opt(r.left + mid[0], r.top + mid[1])));
       return 'ok';
     })()`)
     await wait(400)
     await step('strokesAfterErase', `(window.__state.doc.strokes ?? []).length`)
+    check(report.smooth === true, '笔迹没有平滑成曲线（d 里没有 Q）')
+    check(
+      report.strokesAfterErase < report.strokesBeforeErase,
+      '橡皮单击没有擦掉批注',
+    )
+
+    /* ============ 4. 荧光笔 / 点一下成圆点 / 橡皮拖动连擦 ============ */
+    await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', bubbles: true }))`)
+    await wait(250)
+    await js(
+      `[...document.querySelectorAll('.penbar__mode')].find(b => b.textContent.includes('荧光'))?.click()`,
+    )
+    await wait(200)
+    await js(`(() => {
+      const svg = document.querySelector('.canvas__svg');
+      const r = svg.getBoundingClientRect();
+      const opt = (x, y) => ({ bubbles: true, cancelable: true, clientX: r.left + x, clientY: r.top + y, pointerId: 7, isPrimary: true, pointerType: 'mouse', button: 0, buttons: 1 });
+      svg.dispatchEvent(new PointerEvent('pointerdown', opt(300, 500)));
+      for (let i = 1; i <= 8; i++) svg.dispatchEvent(new PointerEvent('pointermove', opt(300 + i * 14, 500)));
+      svg.dispatchEvent(new PointerEvent('pointerup', opt(412, 500)));
+      return true;
+    })()`)
+    await wait(350)
+    report.marker = await js(`(() => {
+      const s = (window.__state.doc.strokes ?? []).find(x => x.mode === 'marker');
+      return s ? { width: s.width, mode: s.mode } : null;
+    })()`)
+    check(!!report.marker && report.marker.width > 6, '荧光笔没有按倍数加粗')
+    check(
+      (await js(
+        `[...document.querySelectorAll('[data-strokes] path')].some(p => +p.getAttribute('stroke-opacity') < 1)`,
+      )) === true,
+      '荧光笔没有半透明效果',
+    )
+
+    /* 点一下 = 圆点 */
+    await js(
+      `[...document.querySelectorAll('.penbar__mode')].find(b => b.textContent === '笔')?.click()`,
+    )
+    await wait(150)
+    await js(`(() => {
+      const svg = document.querySelector('.canvas__svg');
+      const r = svg.getBoundingClientRect();
+      const opt = { bubbles: true, cancelable: true, clientX: r.left + 620, clientY: r.top + 520, pointerId: 8, isPrimary: true, pointerType: 'mouse', button: 0 };
+      svg.dispatchEvent(new PointerEvent('pointerdown', opt));
+      svg.dispatchEvent(new PointerEvent('pointerup', opt));
+      return true;
+    })()`)
+    await wait(300)
+    report.dot = await js(`document.querySelectorAll('[data-strokes] circle').length`)
+    check(report.dot >= 1, '点一下没有留下圆点')
+
+    /* 橡皮按住拖动：一笔擦不到，横向拖过去应该连擦多条 */
+    await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }))`)
+    await wait(250)
+    const dragBefore = await js(`(window.__state.doc.strokes ?? []).length`)
+    await js(`(() => {
+      const svg = document.querySelector('.canvas__svg');
+      const r = svg.getBoundingClientRect();
+      const opt = (x, y) => ({ bubbles: true, cancelable: true, clientX: r.left + x, clientY: r.top + y, pointerId: 9, isPrimary: true, pointerType: 'mouse', button: 0, buttons: 1 });
+      svg.dispatchEvent(new PointerEvent('pointerdown', opt(280, 500)));
+      for (let x = 280; x <= 640; x += 16) svg.dispatchEvent(new PointerEvent('pointermove', opt(x, 500)));
+      svg.dispatchEvent(new PointerEvent('pointerup', opt(640, 500)));
+      return true;
+    })()`)
+    await wait(450)
+    const dragAfter = await js(`(window.__state.doc.strokes ?? []).length`)
+    report.dragErase = { before: dragBefore, after: dragAfter }
+    check(dragAfter <= dragBefore - 1, '橡皮拖动没有连续擦除')
 
     const shot = await win.webContents.capturePage()
     fs.writeFileSync(path.join(outDir, 'annotate.png'), shot.toPNG())
@@ -186,6 +267,7 @@ app.whenReady().then(async () => {
   }
 
   report.consoleErrors = errors.slice(0, 6)
+  report.failures = failures
   console.log('RESULT ' + JSON.stringify(report, null, 2))
   clearTimeout(watchdog)
   app.quit()

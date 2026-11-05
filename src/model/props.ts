@@ -5,7 +5,8 @@ export type FieldValue = number | boolean | string
 export interface Field {
   key: string
   label: string
-  kind: 'number' | 'toggle' | 'select' | 'action' | 'text'
+  /** vec：三维方向向量（"1,-1,0"），右栏带方向预览 + 非法描红 */
+  kind: 'number' | 'toggle' | 'select' | 'action' | 'text' | 'vec'
   unit?: string
   min?: number
   max?: number
@@ -49,6 +50,20 @@ const num = (
   step: extra.step ?? 0.1,
   get,
   set: (v) => (map ? map(Number(v)) : { [key]: Number(v) }),
+})
+
+/** 三维方向向量输入：右栏渲染成「文本框 + 等轴投影箭头」 */
+const vec = (
+  key: string,
+  label: string,
+  get: () => string,
+  map: (v: string) => Record<string, unknown>,
+): Field => ({
+  key,
+  label,
+  kind: 'vec',
+  get,
+  set: (v) => map(String(v)),
 })
 
 /** 依据场景类型生成属性表单；草图与三角形返回 null（它们按对象编辑） */
@@ -211,13 +226,12 @@ export function schemaFor(scene: SceneSpec, selectedId?: string | null): PropGro
         get: () => shape.force?.dir ?? 'x+',
         set: (v) => patchShape(shape.id, { force: withForce(shape.force, { dir: String(v) }) }),
       },
-      {
-        key: `sf-vec-${shape.id}`,
-        label: '自定义方向',
-        kind: 'text',
-        get: () => shape.force?.vec ?? '',
-        set: (v) => patchShape(shape.id, { force: withForce(shape.force, { vec: String(v) }) }),
-      },
+      vec(
+        `sf-vec-${shape.id}`,
+        '自定义方向',
+        () => shape.force?.vec ?? '',
+        (v) => patchShape(shape.id, { force: withForce(shape.force, { vec: v }) }),
+      ),
     ]
 
     const groups = scene.params.shapes.map((shape, i) => ({
@@ -357,13 +371,12 @@ export function schemaFor(scene: SceneSpec, selectedId?: string | null): PropGro
           get: () => phys?.force?.dir ?? 'x+',
           set: (v) => withPhysics({ force: withForce(phys?.force, { dir: String(v) }) }),
         },
-        {
-          key: 'force-vec',
-          label: '自定义方向',
-          kind: 'text',
-          get: () => phys?.force?.vec ?? '',
-          set: (v) => withPhysics({ force: withForce(phys?.force, { vec: String(v) }) }),
-        },
+        vec(
+          'force-vec',
+          '自定义方向',
+          () => phys?.force?.vec ?? '',
+          (v) => withPhysics({ force: withForce(phys?.force, { vec: v }) }),
+        ),
         {
           key: 'clear-obstacles',
           label: '清空障碍',

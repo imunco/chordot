@@ -84,6 +84,8 @@ export interface State {
   /** 画笔颜色与粗细 */
   penColor: string
   penWidth: number
+  /** 荧光笔：粗、半透明、正片叠底，用来划重点 */
+  penMode: 'pen' | 'marker'
   /** 物理世界是否在跑 */
   physicsPlaying: boolean
   /** 物理世界已经跑过的秒数 */
@@ -148,7 +150,7 @@ export type Action =
   | { type: 'stroke-add'; stroke: Stroke }
   | { type: 'stroke-erase'; id: string }
   | { type: 'strokes-clear' }
-  | { type: 'pen'; color?: string; width?: number }
+  | { type: 'pen'; color?: string; width?: number; mode?: 'pen' | 'marker' }
   | { type: 'physics-play'; playing: boolean }
   | { type: 'physics-time'; time: number }
   | { type: 'duplicate'; ids: string[] }
@@ -312,6 +314,7 @@ export const initialState: State = {
   forcePreview: 0,
   penColor: '#9a5b4a',
   penWidth: 2.5,
+  penMode: 'pen',
   physicsPlaying: true,
   physicsTime: 0,
   lastSource: null,
@@ -633,6 +636,7 @@ export function reducer(state: State, action: Action): State {
         ...state,
         penColor: action.color ?? state.penColor,
         penWidth: action.width ?? state.penWidth,
+        penMode: action.mode ?? state.penMode,
       }
 
     case 'physics-play':

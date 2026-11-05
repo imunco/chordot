@@ -1525,6 +1525,7 @@ export default function App() {
           strokes={state.doc.strokes ?? []}
           penColor={state.penColor}
           penWidth={state.penWidth}
+          penMode={state.penMode}
           onStrokeCommit={(stroke) => dispatch({ type: 'stroke-add', stroke })}
           onStrokeErase={(id) => dispatch({ type: 'stroke-erase', id })}
           onDragPoints={(moves) => dispatch({ type: 'drag-points', moves })}
@@ -1558,6 +1559,7 @@ export default function App() {
             <PenBar
               color={state.penColor}
               width={state.penWidth}
+              mode={state.penMode}
               onChange={(patch) => dispatch({ type: 'pen', ...patch })}
               onClear={() => dispatch({ type: 'strokes-clear' })}
             />

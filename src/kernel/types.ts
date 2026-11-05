@@ -223,6 +223,8 @@ export interface Stroke {
   color: string
   width: number
   points: [number, number][]
+  /** pen = 普通笔；marker = 荧光笔（粗、半透明、正片叠底）。老文件没有这个字段，按 pen 处理 */
+  mode?: 'pen' | 'marker'
 }
 
 export interface SolidInclineParams {

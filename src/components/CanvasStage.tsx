@@ -3,7 +3,14 @@ import { PX_PER_UNIT } from '../model/scale'
 import type { ForceObj, GeoObj, Mode, PointObj } from '../model/types'
 import type { Annotation } from '../model/measure'
 import { placeLabels } from '../model/labels'
-import { projectMesh, projectPoint3, projectSolid, projectVector, VIEWS } from '../model/solid'
+import {
+  groundShadow,
+  projectMesh,
+  projectPoint3,
+  projectSolid,
+  projectVector,
+  VIEWS,
+} from '../model/solid'
 import { buildIncline3D } from '../model/incline3d'
 import { evalForce } from '../model/force'
 import { forceDir } from '../model/force3d'
@@ -48,6 +55,26 @@ const faceFill = (
 
 const FONT = "'IBM Plex Sans SC','Microsoft YaHei',sans-serif"
 const MATH_FONT = "'Cambria Math','IBM Plex Math',Georgia,serif"
+
+/**
+ * 手绘折线 → 平滑路径。
+ * 每段用「当前点 → 相邻中点」的二次贝塞尔，笔迹不会一段一段折；
+ * 控制点数不变（每段一个 Q），比重新采样密点便宜得多。
+ */
+function smoothPath(pts: [number, number][]): string {
+  if (pts.length === 0) return ''
+  const f = (n: number) => Math.round(n * 10) / 10
+  if (pts.length === 1) return `M${f(pts[0][0])} ${f(pts[0][1])}`
+  if (pts.length === 2) return `M${f(pts[0][0])} ${f(pts[0][1])} L${f(pts[1][0])} ${f(pts[1][1])}`
+  let d = `M${f(pts[0][0])} ${f(pts[0][1])}`
+  for (let i = 1; i < pts.length - 1; i++) {
+    const mx = (pts[i][0] + pts[i + 1][0]) / 2
+    const my = (pts[i][1] + pts[i + 1][1]) / 2
+    d += ` Q${f(pts[i][0])} ${f(pts[i][1])} ${f(mx)} ${f(my)}`
+  }
+  const last = pts[pts.length - 1]
+  return `${d} L${f(last[0])} ${f(last[1])}`
+}
 
 /** 1 / 2 / 5 × 10ⁿ 里挑一个不小于 raw 的「整」数，坐标刻度用 */
 function niceStep(raw: number): number {
@@ -110,6 +137,8 @@ interface Props {
   strokes: Stroke[]
   penColor: string
   penWidth: number
+  /** 普通笔 / 荧光笔 */
+  penMode: 'pen' | 'marker'
   onStrokeCommit: (stroke: Stroke) => void
   onStrokeErase: (id: string) => void
   /** 整组平移：一次挪动一组点 */
@@ -155,6 +184,10 @@ export function CanvasStage(props: Props) {
   } | null>(null)
   const [draft, setDraft] = useState<Stroke | null>(null)
   const draftRef = useRef<Stroke | null>(null)
+  /** 橡皮按住不放：拖动经过的笔画都擦掉 */
+  const erasing = useRef(false)
+  /** 橡皮光标圈（屏幕坐标） */
+  const [eraseAt, setEraseAt] = useState<[number, number] | null>(null)
   const pendingPan = useRef<{
     x: number
     y: number
@@ -179,6 +212,13 @@ export function CanvasStage(props: Props) {
     return () => ro.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /* 换工具时收起橡皮状态：否则光标圈和「按住」标记会留到下一次 */
+  useEffect(() => {
+    if (props.tool === 'eraser') return
+    erasing.current = false
+    setEraseAt(null)
+  }, [props.tool])
 
   /* 手势：双指缩放（围绕捏合中点）、双指平移、中键/Alt 拖拽平移 */
   useEffect(() => {
@@ -207,6 +247,8 @@ export function CanvasStage(props: Props) {
       pointers.current.clear()
       pinch.current = null
       panDrag.current = null
+      // 手指滑出窗口收不到 pointerup 时，别让橡皮一直挂在「按住」状态
+      erasing.current = false
       fromCanvas = false
     }
 
@@ -367,14 +409,26 @@ export function CanvasStage(props: Props) {
     return false
   }
 
+  /** 光标在画布内的像素坐标 */
+  const screenOf = (e: React.PointerEvent | React.MouseEvent): [number, number] => {
+    const rect = props.svgRef.current?.getBoundingClientRect()
+    return [e.clientX - (rect?.left ?? 0), e.clientY - (rect?.top ?? 0)]
+  }
+
   /** 批注落点：二维存世界坐标，三维存画布坐标 */
   const strokePoint = (e: React.PointerEvent | React.MouseEvent): [number, number] => {
-    if (props.camera) {
-      const rect = props.svgRef.current?.getBoundingClientRect()
-      return [e.clientX - (rect?.left ?? 0), e.clientY - (rect?.top ?? 0)]
-    }
+    if (props.camera) return screenOf(e)
     const w = toWorld(e)
     return [w.x, w.y]
+  }
+
+  /** 擦掉光标下的一条批注（只擦一层，按住拖动会连续擦） */
+  const eraseAtPoint = (p: [number, number]) => {
+    const space = props.camera ? 'screen' : 'world'
+    // 三维批注是屏幕像素，二维是世界长度：统一按 9px 手感换算
+    const tol = props.camera ? 9 : 9 / s
+    const hit = props.strokes.find((st) => st.space === space && nearStroke(p, st.points, tol))
+    if (hit) props.onStrokeErase(hit.id)
   }
 
   /** 拖多边形/线段/圆的本体：整组平移构成它的点 */
@@ -410,6 +464,12 @@ export function CanvasStage(props: Props) {
   }
 
   const movePoint = (e: React.PointerEvent) => {
+    if (erasing.current) {
+      const p = strokePoint(e)
+      setEraseAt(screenOf(e))
+      eraseAtPoint(p)
+      return
+    }
     if (shapeDrag.current) {
       const w = toWorld(e)
       const dx = w.x - shapeDrag.current.start.x
@@ -462,7 +522,12 @@ export function CanvasStage(props: Props) {
       const cur = draftRef.current
       draftRef.current = null
       setDraft(null)
-      if (cur.points.length >= 2) props.onStrokeCommit(cur)
+      // 单点也算一笔（点一下就是一个小圆点）
+      if (cur.points.length >= 1) props.onStrokeCommit(cur)
+      return
+    }
+    if (erasing.current) {
+      erasing.current = false
       return
     }
     if (pendingPan.current) {
@@ -504,12 +569,15 @@ export function CanvasStage(props: Props) {
   const handleBackgroundDown = (e: React.PointerEvent) => {
     if (props.tool === 'pen') {
       e.preventDefault()
+      const marker = props.penMode === 'marker'
       const stroke: Stroke = {
         id: `k${Date.now().toString(36)}`,
         // 三维场景里批注固定在画布空间，不随相机旋转
         space: props.camera ? 'screen' : 'world',
         color: props.penColor,
-        width: props.penWidth,
+        // 荧光笔按倍数加粗，划重点用
+        width: marker ? props.penWidth * 5 : props.penWidth,
+        mode: props.penMode,
         points: [strokePoint(e)],
       }
       draftRef.current = stroke
@@ -523,12 +591,14 @@ export function CanvasStage(props: Props) {
     }
     if (props.tool === 'eraser') {
       e.preventDefault()
-      const p = strokePoint(e)
-      const space = props.camera ? 'screen' : 'world'
-      // 世界坐标里 8px 换算成世界长度
-      const tol = props.camera ? 8 : 8 / (PX_PER_UNIT * props.zoom)
-      const hit = props.strokes.find((st) => st.space === space && nearStroke(p, st.points, tol))
-      if (hit) props.onStrokeErase(hit.id)
+      erasing.current = true
+      setEraseAt(screenOf(e))
+      eraseAtPoint(strokePoint(e))
+      try {
+        ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+      } catch {
+        /* 合成事件忽略 */
+      }
       return
     }
     if (props.camera && props.tool === 'select') {
@@ -567,6 +637,8 @@ export function CanvasStage(props: Props) {
 
   /** 构造模式下点中已有几何体不选中，而是继续在光标处构造 */
   const handleObjectDown = (e: React.PointerEvent, id: string) => {
+    // 批注模式下点住图形也要能画/擦：不拦事件，交给根节点的背景处理器
+    if (props.tool === 'pen' || props.tool === 'eraser') return
     if (props.tool === 'force') {
       const obj = props.objects.find((o) => o.id === id)
       // 点已有的力就正常选中，别在它身上再叠一个
@@ -590,6 +662,9 @@ export function CanvasStage(props: Props) {
   }
 
   const handleHover = (e: React.PointerEvent) => {
+    // 橡皮：光标圈跟着走，松手/移出画布就收起
+    if (props.tool === 'eraser') setEraseAt(screenOf(e))
+    else if (eraseAt) setEraseAt(null)
     if (!constructing) return
     const w = toWorld(e)
     const snap = snapAt(w)
@@ -686,6 +761,16 @@ export function CanvasStage(props: Props) {
   ]
   const forces = props.objects.filter((o): o is ForceObj => o.kind === 'force')
 
+  // 地面阴影：所有立体先落影，再画物体，影子永远在物体下方
+  const shadows: { id: string; points: [number, number][]; alpha: number }[] = []
+  if (props.camera) {
+    for (const o of props.objects) {
+      if (o.kind !== 'solid' || !o.visible) continue
+      const sh = groundShadow(o.shape, props.camera, toScreen)
+      if (sh) shadows.push({ id: o.id, points: sh.points, alpha: sh.alpha })
+    }
+  }
+
   const startGrip = (e: React.PointerEvent<HTMLDivElement>) => {
     gripDrag.current = { y: e.clientY, zoom: props.zoom }
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -727,7 +812,10 @@ export function CanvasStage(props: Props) {
           e.preventDefault()
           props.onDropShape(id, toWorld(e))
         }}
-        onPointerLeave={() => setHover(null)}
+        onPointerLeave={() => {
+          setHover(null)
+          setEraseAt(null)
+        }}
         onWheel={(e) => {
           if (props.camera) {
             const next = props.camera.zoom * (e.deltaY > 0 ? 0.92 : 1.08)
@@ -996,6 +1084,26 @@ export function CanvasStage(props: Props) {
           )
         })}
 
+        {/* 地面阴影：压在网格之上、立体之下，边缘用模糊柔化 */}
+        {shadows.length > 0 && (
+          <g data-shadows pointerEvents="none">
+            <defs>
+              <filter id="solid-shadow" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="2.6" />
+              </filter>
+            </defs>
+            {shadows.map((sh) => (
+              <polygon
+                key={sh.id}
+                points={sh.points.map((p) => p.join(',')).join(' ')}
+                fill="#5c5a56"
+                opacity={sh.alpha}
+                filter="url(#solid-shadow)"
+              />
+            ))}
+          </g>
+        )}
+
         {/* 几何对象 */}
         {geometry.map((o) => {
           if (!o.visible) return null
@@ -1250,6 +1358,7 @@ export function CanvasStage(props: Props) {
               key={o.id}
               data-id={o.id}
               onPointerDown={(e) => {
+                if (props.tool === 'pen' || props.tool === 'eraser') return
                 if (constructing) {
                   e.stopPropagation()
                   props.onCanvasClick({ x: o.x, y: o.y }, o.id, e.shiftKey)
@@ -1682,22 +1791,61 @@ export function CanvasStage(props: Props) {
             const pts =
               st.space === 'world' ? st.points.map((p) => toScreen(p)) : st.points
             if (pts.length === 0) return null
-            const d = pts.map((p) => `${p[0]},${p[1]}`).join(' ')
+            // 世界坐标里的笔迹是「画在纸上」的，线宽跟着缩放走；三维批注是屏幕像素，固定
+            const w = st.space === 'world' ? st.width * (s / PX_PER_UNIT) : st.width
+            const marker = st.mode === 'marker'
+            const common = {
+              key: st.id,
+              'data-ui': st === draft ? '1' : undefined,
+              pointerEvents: 'none' as const,
+              stroke: st.color,
+              fill: st.color,
+            }
+            // 点一下 = 一个圆点（以前会被当成空笔画丢掉）
+            if (pts.length === 1) {
+              return (
+                <circle
+                  key={st.id}
+                  data-ui={st === draft ? '1' : undefined}
+                  cx={pts[0][0]}
+                  cy={pts[0][1]}
+                  r={Math.max(0.8, w / 2)}
+                  fill={st.color}
+                  fillOpacity={marker ? 0.3 : 1}
+                  pointerEvents="none"
+                />
+              )
+            }
             return (
-              <polyline
-                key={st.id}
-                data-ui={st === draft ? '1' : undefined}
-                points={d}
+              <path
+                {...common}
+                d={smoothPath(pts)}
                 fill="none"
-                stroke={st.color}
-                strokeWidth={st.width}
+                strokeWidth={w}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                pointerEvents="none"
+                strokeOpacity={marker ? 0.32 : 1}
+                style={marker ? { mixBlendMode: 'multiply' } : undefined}
               />
             )
           })}
         </g>
+
+        {/* 橡皮光标圈：比命中半径略大，让老师知道会擦掉多宽 */}
+        {eraseAt && props.tool === 'eraser' && (
+          <g pointerEvents="none" data-ui="1">
+            <circle
+              cx={eraseAt[0]}
+              cy={eraseAt[1]}
+              r={9}
+              fill="rgba(61,90,102,0.06)"
+              stroke="#3d5a66"
+              strokeOpacity={0.45}
+              strokeWidth={1}
+              strokeDasharray="3 3"
+            />
+          </g>
+        )}
       </svg>
 
       <div className="canvas__scale">{props.scaleText}</div>
@@ -1739,7 +1887,12 @@ export function CanvasStage(props: Props) {
         </div>
       )}
 
-      {props.objects.length === 0 && !props.camera && (
+      {/* 空状态卡片：有批注或在画批注时都收起来，别挡着笔迹 */}
+      {props.objects.length === 0 &&
+        !props.camera &&
+        props.strokes.length === 0 &&
+        props.tool !== 'pen' &&
+        props.tool !== 'eraser' && (
         <div className="empty">
           <div className="empty__card">
           <p className="empty__text">在左下角输入表达式画函数，或从工具栏选一个工具开始作图。</p>

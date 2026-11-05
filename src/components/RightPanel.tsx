@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { computeNet } from '../model/net'
+import { parseVec } from '../model/force3d'
 import { FORCE_LABEL } from '../model/types'
 import type { ForceObj, ForceType, GeoObj, Mode, SubState } from '../model/types'
 import type { SimState } from '../kernel/types'
@@ -103,6 +104,121 @@ function NumField({
       />
       {unit && <span className="numfield__unit">{unit}</span>}
     </span>
+  )
+}
+
+/**
+ * 三维方向预览：等轴投影画 x/y/z 三根轴 + 单位向量箭头。
+ * 填错时（parseVec 返回 null）画一个空心圆，配合输入框描红。
+ */
+function VecPreview({ vec }: { vec: string }) {
+  const v = parseVec(vec)
+  const ox = 28
+  const oy = 15
+  const k = 13
+  const iso = (p: [number, number, number]): [number, number] => [
+    ox + (p[0] - p[1]) * 0.866 * k,
+    oy + ((p[0] + p[1]) * 0.5 - p[2]) * k,
+  ]
+  const tip = v ? iso(v) : null
+  return (
+    <svg className="vecprev" width={56} height={30} viewBox="0 0 56 30" aria-hidden="true">
+      {([0, 1, 2] as const).map((axis) => {
+        const a: [number, number, number] = [0, 0, 0]
+        a[axis] = 0.9
+        const b: [number, number, number] = [0, 0, 0]
+        b[axis] = -0.9
+        const [x1, y1] = iso(b)
+        const [x2, y2] = iso(a)
+        return (
+          <line key={axis} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#bdb7ad" strokeWidth={0.8} />
+        )
+      })}
+      {tip ? (
+        <>
+          <line
+            x1={ox}
+            y1={oy}
+            x2={tip[0]}
+            y2={tip[1]}
+            stroke="#3d5a66"
+            strokeWidth={1.7}
+            strokeLinecap="round"
+          />
+          <circle cx={tip[0]} cy={tip[1]} r={2.1} fill="#3d5a66" />
+        </>
+      ) : (
+        <circle
+          cx={ox}
+          cy={oy}
+          r={2.6}
+          fill="none"
+          stroke="#9e9a94"
+          strokeWidth={1}
+          strokeDasharray="2 2"
+        />
+      )}
+      <circle cx={ox} cy={oy} r={1.1} fill="#9e9a94" />
+    </svg>
+  )
+}
+
+/** 三维方向输入：边输边预览，非法向量立刻描红 + 说明（不再静默退回预设） */
+function VecField({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string
+  value: string
+  onCommit: (v: string) => void
+}) {
+  const [text, setText] = useState(value)
+  useEffect(() => setText(value), [value])
+  const trimmed = text.trim()
+  const empty = trimmed.length === 0
+  const invalid = !empty && !parseVec(trimmed)
+  const unit = parseVec(trimmed)
+  const commit = () => {
+    if (trimmed === value) return
+    if (invalid) return // 非法值不落库，保留原设置
+    onCommit(trimmed)
+  }
+  return (
+    <>
+      <div className="props__row props__row--vec">
+        <span>{label}</span>
+        <span className="vecfield">
+          <input
+            className="forceedit__input vecfield__input"
+            data-invalid={invalid}
+            value={text}
+            spellCheck={false}
+            placeholder="x,y,z"
+            onChange={(e) => setText(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+              if (e.key === 'Escape') {
+                setText(value)
+                e.currentTarget.blur()
+              }
+            }}
+          />
+          <VecPreview vec={trimmed} />
+        </span>
+      </div>
+      {invalid && (
+        <p className="props__hint">
+          格式 x,y,z（如 1,-1,0），当前值无效，力仍按预设方向
+        </p>
+      )}
+      {!invalid && !empty && unit && (
+        <p className="props__hint props__hint--ok">
+          方向 ({unit.map((n) => n.toFixed(2)).join(', ')})，覆盖预设
+        </p>
+      )}
+    </>
   )
 }
 
@@ -416,6 +532,16 @@ export function RightPanel(props: Props) {
                           {f.label}
                         </button>
                       </div>
+                    )
+                  }
+                  if (f.kind === 'vec') {
+                    return (
+                      <VecField
+                        key={f.key}
+                        label={f.label}
+                        value={String(value)}
+                        onCommit={(v) => props.onPatchParams(f.set(v))}
+                      />
                     )
                   }
                   if (f.kind === 'text') {

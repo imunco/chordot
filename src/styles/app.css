@@ -1485,6 +1485,52 @@ button {
   gap: 4px;
 }
 
+/* 三维方向输入：文本框 + 等轴投影预览，非法时描红并说明 */
+.props__row--vec {
+  height: auto;
+  min-height: 30px;
+  padding-top: 3px;
+  padding-bottom: 2px;
+}
+
+.vecfield {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.vecfield__input {
+  width: 92px;
+  text-align: left;
+  font-family: var(--font-mono);
+  letter-spacing: -0.2px;
+}
+
+.vecfield__input[data-invalid='true'] {
+  border-color: var(--warning);
+  background: rgba(176, 138, 62, 0.07);
+}
+
+.vecprev {
+  flex: 0 0 auto;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.props__hint {
+  margin: -1px var(--sp-3) 6px;
+  padding-left: 2px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--warning);
+}
+
+.props__hint--ok {
+  color: var(--text-secondary);
+  opacity: 0.75;
+}
+
 .props__input {
   width: 62px;
   height: 24px;
@@ -2060,10 +2106,24 @@ math-field.fexpr__input {
 }
 
 .penbar__colors,
-.penbar__widths {
+.penbar__widths,
+.penbar__modes {
   display: flex;
   align-items: center;
   gap: 5px;
+}
+
+.penbar__mode {
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-radius: 11px;
+}
+
+.penbar__mode[data-active='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .penbar__swatch {

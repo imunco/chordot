@@ -323,6 +323,9 @@ export interface SolidView {
 
 const LIGHT = normalize([0.45, -0.7, 0.75])
 
+/** 光源方向（指向光源），阴影沿它的反方向落到地面 */
+export const LIGHT_DIR: Vec3 = LIGHT
+
 /** 顶点位置 → 边的 key（量化后排序，两个方向视为同一条边） */
 function edgeKey(p: Vec3, q: Vec3): string {
   const f = (v: Vec3) => v.map((x) => x.toFixed(4)).join(',')
@@ -518,6 +521,69 @@ export function projectPoint3(
 ): [number, number] {
   const { right, up } = cameraBasis(camera)
   return toScreen([dot(p, right), dot(p, up)])
+}
+
+/** 三维点 → 屏幕坐标（含透视，和 projectMesh 的顶点投影完全一致） */
+export function projectPoint3p(
+  p: Vec3,
+  camera: Camera,
+  toScreen: (p: [number, number]) => [number, number],
+): [number, number] {
+  const { right, up, dir } = cameraBasis(camera)
+  const z = dot(p, dir)
+  const dist = camera.dist ?? 14
+  const k = (camera.perspective ?? true) ? dist / Math.max(dist - z, 0.8) : 1
+  return toScreen([dot(p, right) * k, dot(p, up) * k])
+}
+
+export interface ShadowView {
+  /** 地面上的投影轮廓（屏幕坐标，凸包） */
+  points: [number, number][]
+  /** 越高越淡 */
+  alpha: number
+}
+
+/**
+ * 阴影专用光线：比着色用的 LIGHT 更「高」。
+ * 着色光很斜（低角度侧光），照它投影会甩出物体一倍身位，看着像飘着的卡片；
+ * 这里单独给一个接近顶光的方向，影子贴着物体底部，读起来才像「立在地上」。
+ */
+const SHADOW_LIGHT = normalize([0.3, -0.45, 1.5])
+
+/**
+ * 立体在地面（z = 0）上的投影：每个顶点沿光线方向落到 z=0，再取屏幕凸包。
+ * 完全埋在地下（或没有顶点在地面之上）时返回 null。
+ */
+export function groundShadow(
+  shape: SolidShape,
+  camera: Camera,
+  toScreen: (p: [number, number]) => [number, number],
+): ShadowView | null {
+  const base = buildMesh(shape)
+  const mesh = shape.rotation ? rotateMesh(base, shape.rotation, shape.center) : base
+  if (mesh.vertices.length === 0) return null
+
+  const lz = SHADOW_LIGHT[2]
+  let minZ = Infinity
+  let above = 0
+  const pts: { x: number; y: number }[] = []
+  for (const v of mesh.vertices) {
+    minZ = Math.min(minZ, v[2])
+    if (v[2] < 0) continue // 埋在地下的部分不投影
+    above += 1
+    // 光线方向 -SHADOW_LIGHT：v - t·L 落到 z = 0
+    const t = v[2] / lz
+    const g: Vec3 = [v[0] - t * SHADOW_LIGHT[0], v[1] - t * SHADOW_LIGHT[1], 0]
+    const [x, y] = projectPoint3p(g, camera, toScreen)
+    pts.push({ x, y })
+  }
+  if (above < 3) return null
+
+  const hull = convexHull(pts)
+  if (hull.length < 3) return null
+  // 贴地（minZ≈0）时最深，抬高后迅速变淡
+  const alpha = Math.min(0.12, Math.max(0.035, 0.12 - Math.max(0, minZ) * 0.012))
+  return { points: hull, alpha }
 }
 
 /** 三维方向向量 → 屏幕方向（单位：世界长度 × pxPerUnit） */
