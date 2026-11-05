@@ -1052,12 +1052,15 @@ export default function App() {
   const insertAtCenter = (key: string) => {
     const s = 40 * state.zoom
     const sc = state.doc.scene
+    // 三维场景里没有「画布中心的世界坐标」，直接落在原点（相机看的就是原点）
+    if (key.startsWith('3d:')) {
+      insertAny(key, { x: 0, y: 0 })
+      return
+    }
     const seq =
       sc.kind === 'sketch'
         ? sc.doc.points.length + sc.doc.circles.length + sc.doc.polygons.length
-        : sc.kind === 'solid'
-          ? sc.params.shapes.length
-          : 0
+        : 0
     const k = seq % 5
     insertAny(key, {
       x: -state.pan.x / s + k * 0.6,
@@ -1527,7 +1530,7 @@ export default function App() {
           penWidth={state.penWidth}
           penMode={state.penMode}
           onStrokeCommit={(stroke) => dispatch({ type: 'stroke-add', stroke })}
-          onStrokeErase={(id) => dispatch({ type: 'stroke-erase', id })}
+          onStrokesCut={(cuts) => dispatch({ type: 'strokes-cut', cuts })}
           onDragPoints={(moves) => dispatch({ type: 'drag-points', moves })}
           onCamera={setCamera}
           onCameraStart={() => dispatch({ type: 'drag-start', id: '__camera', x: 0, y: 0 })}

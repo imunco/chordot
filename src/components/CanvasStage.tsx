@@ -140,7 +140,8 @@ interface Props {
   /** 普通笔 / 荧光笔 */
   penMode: 'pen' | 'marker'
   onStrokeCommit: (stroke: Stroke) => void
-  onStrokeErase: (id: string) => void
+  /** 橡皮局部擦除：一条笔画被切成几段 */
+  onStrokesCut: (cuts: { id: string; parts: Stroke[] }[]) => void
   /** 整组平移：一次挪动一组点 */
   onDragPoints: (moves: { id: string; x: number; y: number }[]) => void
   onCamera: (camera: Camera) => void
@@ -407,23 +408,6 @@ export function CanvasStage(props: Props) {
     }
   }
 
-  /** 点到折线的距离是否在容差内（橡皮命中判定） */
-  const nearStroke = (p: [number, number], pts: [number, number][], tol: number): boolean => {
-    if (pts.length === 1) return Math.hypot(p[0] - pts[0][0], p[1] - pts[0][1]) <= tol
-    for (let i = 1; i < pts.length; i++) {
-      const [x1, y1] = pts[i - 1]
-      const [x2, y2] = pts[i]
-      const dx = x2 - x1
-      const dy = y2 - y1
-      const len = dx * dx + dy * dy
-      const t = len === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - x1) * dx + (p[1] - y1) * dy) / len))
-      const cx = x1 + t * dx
-      const cy = y1 + t * dy
-      if (Math.hypot(p[0] - cx, p[1] - cy) <= tol) return true
-    }
-    return false
-  }
-
   /** 光标在画布内的像素坐标 */
   const screenOf = (e: React.PointerEvent | React.MouseEvent): [number, number] => {
     const rect = props.svgRef.current?.getBoundingClientRect()
@@ -437,13 +421,61 @@ export function CanvasStage(props: Props) {
     return [w.x, w.y]
   }
 
-  /** 擦掉光标下的一条批注（只擦一层，按住拖动会连续擦） */
+  /** 点到线段的距离 */
+  const segDistance = (p: [number, number], a: [number, number], b: [number, number]): number => {
+    const dx = b[0] - a[0]
+    const dy = b[1] - a[1]
+    const len = dx * dx + dy * dy
+    const t = len === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len))
+    return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy))
+  }
+
+  /**
+   * 橡皮局部擦除：把落点附近的点挖掉，剩下的连续段各自成为一条新笔画。
+   * 只擦到中间就断成两条，不再整笔消失。
+   */
+  const cutStroke = (st: Stroke, p: [number, number], tol: number): Stroke[] | null => {
+    const pts = st.points
+    if (pts.length === 0) return null
+    if (pts.length === 1) {
+      return Math.hypot(pts[0][0] - p[0], pts[0][1] - p[1]) <= tol ? [] : null
+    }
+    const hit = pts.map((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) <= tol)
+    // 笔画点很稀：线段从橡皮上穿过也算擦到，两端一起断
+    for (let i = 1; i < pts.length; i++) {
+      if (hit[i] || hit[i - 1]) continue
+      if (segDistance(p, pts[i - 1], pts[i]) <= tol) {
+        hit[i] = true
+        hit[i - 1] = true
+      }
+    }
+    if (!hit.some(Boolean)) return null
+    const runs: [number, number][][] = []
+    let cur: [number, number][] = []
+    for (let i = 0; i < pts.length; i++) {
+      if (hit[i]) {
+        if (cur.length >= 2) runs.push(cur)
+        cur = []
+      } else {
+        cur.push(pts[i])
+      }
+    }
+    if (cur.length >= 2) runs.push(cur)
+    return runs.map((points, i) => ({ ...st, id: `${st.id}~${i}`, points }))
+  }
+
+  /** 擦掉光标下的一段批注（只擦一层，按住拖动会连续擦） */
   const eraseAtPoint = (p: [number, number]) => {
     const space = props.camera ? 'screen' : 'world'
     // 三维批注是屏幕像素，二维是世界长度：统一按 9px 手感换算
     const tol = props.camera ? 9 : 9 / s
-    const hit = props.strokes.find((st) => st.space === space && nearStroke(p, st.points, tol))
-    if (hit) props.onStrokeErase(hit.id)
+    const cuts: { id: string; parts: Stroke[] }[] = []
+    for (const st of props.strokes) {
+      if (st.space !== space) continue
+      const parts = cutStroke(st, p, tol)
+      if (parts) cuts.push({ id: st.id, parts })
+    }
+    if (cuts.length > 0) props.onStrokesCut(cuts)
   }
 
   /** 拖多边形/线段/圆的本体：整组平移构成它的点 */
@@ -1786,6 +1818,31 @@ export function CanvasStage(props: Props) {
 
           return (
             <g key={`cmp-${f.id}`} pointerEvents="none" data-decomp={f.id}>
+              {/* 补上矩形的另外两条边：从两个分量末端连虚线到合力末端，
+                  和三维斜面分解的观感一致，学生一眼能看出「投影」关系 */}
+              {parts.length === 2 && (
+                <g
+                  data-decomp-box
+                  stroke={f.color}
+                  strokeOpacity={0.42}
+                  strokeWidth={1}
+                  strokeDasharray="4 3"
+                  fill="none"
+                >
+                  <line
+                    x1={sx + fx * props.pxPerN * props.forceScale}
+                    y1={sy - fy * props.pxPerN * props.forceScale}
+                    x2={sx + fx * props.pxPerN * props.forceScale}
+                    y2={sy}
+                  />
+                  <line
+                    x1={sx + fx * props.pxPerN * props.forceScale}
+                    y1={sy - fy * props.pxPerN * props.forceScale}
+                    x2={sx}
+                    y2={sy - fy * props.pxPerN * props.forceScale}
+                  />
+                </g>
+              )}
               {parts.map((p) => {
                 const vx = p.ex - sx
                 const vy = p.ey - sy

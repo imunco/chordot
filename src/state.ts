@@ -154,6 +154,8 @@ export type Action =
   | { type: 'patch-polygon'; id: string; patch: Partial<SketchPolygon> }
   | { type: 'stroke-add'; stroke: Stroke }
   | { type: 'stroke-erase'; id: string }
+  /** 橡皮局部擦除：一条笔画被切成几段（parts 为空 = 整条没了） */
+  | { type: 'strokes-cut'; cuts: { id: string; parts: Stroke[] }[] }
   | { type: 'strokes-clear' }
   | { type: 'pen'; color?: string; width?: number; mode?: 'pen' | 'marker' }
   | { type: 'physics-play'; playing: boolean }
@@ -697,6 +699,21 @@ export function reducer(state: State, action: Action): State {
       }
     }
 
+    case 'strokes-cut': {
+      if (action.cuts.length === 0) return state
+      const cut = new Map(action.cuts.map((c) => [c.id, c.parts]))
+      const strokes = (state.doc.strokes ?? []).flatMap((s) =>
+        cut.has(s.id) ? (cut.get(s.id) ?? []) : [s],
+      )
+      return {
+        ...state,
+        doc: { ...state.doc, strokes },
+        past: pushHistory(state, state.doc),
+        future: [],
+        dirty: true,
+      }
+    }
+
     case 'stroke-erase': {
       const strokes = (state.doc.strokes ?? []).filter((s) => s.id !== action.id)
       return {
@@ -814,7 +831,29 @@ export function reducer(state: State, action: Action): State {
       const part = def.build()
       const map = new Map<string, string>()
       const newIds: string[] = []
-      const [dx, dy] = action.at
+      // 按包围盒中心落位：图形自己的坐标原点常在底边/某个顶点上，
+      // 直接拿 (0,0) 对齐会让图形整体偏到画布中心的右上方
+      let minX = Infinity
+      let maxX = -Infinity
+      let minY = Infinity
+      let maxY = -Infinity
+      for (const p of part.points) {
+        minX = Math.min(minX, p.x)
+        maxX = Math.max(maxX, p.x)
+        minY = Math.min(minY, p.y)
+        maxY = Math.max(maxY, p.y)
+      }
+      for (const c of part.circles) {
+        const cp = part.points.find((p) => p.id === c.c)
+        if (!cp) continue
+        minX = Math.min(minX, cp.x - c.r)
+        maxX = Math.max(maxX, cp.x + c.r)
+        minY = Math.min(minY, cp.y - c.r)
+        maxY = Math.max(maxY, cp.y + c.r)
+      }
+      const ok = Number.isFinite(minX) && Number.isFinite(minY)
+      const dx = action.at[0] - (ok ? (minX + maxX) / 2 : 0)
+      const dy = action.at[1] - (ok ? (minY + maxY) / 2 : 0)
 
       const points = part.points.map((p) => {
         const id = mk('p')

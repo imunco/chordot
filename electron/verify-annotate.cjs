@@ -172,11 +172,13 @@ app.whenReady().then(async () => {
       azimuth: await js(`window.__state.doc.scene.params.camera.azimuth`),
     }
 
-    /* ============ 3. 橡皮 ============ */
+    /* ============ 3. 橡皮（局部擦除：中间擦一刀应断成两段） ============ */
     await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }))`)
     await wait(300)
     await step('eraserActive', `window.__state.tool`)
     await step('strokesBeforeErase', `(window.__state.doc.strokes ?? []).length`)
+    await step('idsBeforeErase', `(window.__state.doc.strokes ?? []).map(s => s.id)`)
+    await step('ptsBeforeErase', `(window.__state.doc.strokes ?? []).reduce((n, s) => n + s.points.length, 0)`)
     await js(`(() => {
       const st = (window.__state.doc.strokes ?? [])[0];
       if (!st) return 'no-stroke';
@@ -190,10 +192,16 @@ app.whenReady().then(async () => {
     })()`)
     await wait(400)
     await step('strokesAfterErase', `(window.__state.doc.strokes ?? []).length`)
+    await step('idsAfterErase', `(window.__state.doc.strokes ?? []).map(s => s.id)`)
+    await step('ptsAfterErase', `(window.__state.doc.strokes ?? []).reduce((n, s) => n + s.points.length, 0)`)
     check(report.smooth === true, '笔迹没有平滑成曲线（d 里没有 Q）')
     check(
-      report.strokesAfterErase < report.strokesBeforeErase,
-      '橡皮单击没有擦掉批注',
+      report.ptsAfterErase < report.ptsBeforeErase,
+      '橡皮单击没有擦掉任何点',
+    )
+    check(
+      !(report.idsAfterErase ?? []).includes((report.idsBeforeErase ?? [])[0]),
+      '橡皮没有切断原笔画（id 还在）',
     )
 
     /* ============ 4. 荧光笔 / 点一下成圆点 / 橡皮拖动连擦 ============ */
@@ -242,10 +250,12 @@ app.whenReady().then(async () => {
     report.dot = await js(`document.querySelectorAll('[data-strokes] circle').length`)
     check(report.dot >= 1, '点一下没有留下圆点')
 
-    /* 橡皮按住拖动：一笔擦不到，横向拖过去应该连擦多条 */
+    /* 橡皮按住拖动：横向拖过去应该把经过的部分都擦掉（局部擦除会切段） */
     await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }))`)
     await wait(250)
-    const dragBefore = await js(`(window.__state.doc.strokes ?? []).length`)
+    const dragBefore = await js(
+      `(window.__state.doc.strokes ?? []).reduce((n, s) => n + s.points.length, 0)`,
+    )
     await js(`(() => {
       const svg = document.querySelector('.canvas__svg');
       const r = svg.getBoundingClientRect();
@@ -256,9 +266,11 @@ app.whenReady().then(async () => {
       return true;
     })()`)
     await wait(450)
-    const dragAfter = await js(`(window.__state.doc.strokes ?? []).length`)
+    const dragAfter = await js(
+      `(window.__state.doc.strokes ?? []).reduce((n, s) => n + s.points.length, 0)`,
+    )
     report.dragErase = { before: dragBefore, after: dragAfter }
-    check(dragAfter <= dragBefore - 1, '橡皮拖动没有连续擦除')
+    check(dragAfter < dragBefore, '橡皮拖动没有连续擦除')
 
     const shot = await win.webContents.capturePage()
     fs.writeFileSync(path.join(outDir, 'annotate.png'), shot.toPNG())
