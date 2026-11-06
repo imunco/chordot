@@ -21,6 +21,12 @@ export interface Settings {
   touchDefault: boolean
   /** 首次引导是否已完成 */
   onboarded: boolean
+  /** 批注：上次用的颜色 / 粗细 / 笔型 */
+  penColor: string
+  penWidth: number
+  penMode: 'pen' | 'marker' | 'pencil'
+  /** 批注：速度感应线宽 */
+  penVelocity: boolean
 
   /** 自动检查更新 */
   updateAuto: boolean
@@ -46,6 +52,10 @@ export const DEFAULT_SETTINGS: Settings = {
   reduceMotion: false,
   touchDefault: false,
   onboarded: false,
+  penColor: '#9a5b4a',
+  penWidth: 2.5,
+  penMode: 'pen',
+  penVelocity: true,
   updateAuto: true,
   updateFreq: 'startup',
   updateMuted: false,
@@ -73,6 +83,13 @@ export function loadSettings(): Settings {
       reduceMotion: typeof p.reduceMotion === 'boolean' ? p.reduceMotion : false,
       touchDefault: typeof p.touchDefault === 'boolean' ? p.touchDefault : false,
       onboarded: typeof p.onboarded === 'boolean' ? p.onboarded : false,
+      penColor: typeof p.penColor === 'string' && /^#[0-9a-f]{6}$/i.test(p.penColor) ? p.penColor : DEFAULT_SETTINGS.penColor,
+      penWidth: num(p.penWidth, 1, 8, DEFAULT_SETTINGS.penWidth),
+      penMode:
+        p.penMode === 'marker' || p.penMode === 'pencil' || p.penMode === 'pen'
+          ? p.penMode
+          : DEFAULT_SETTINGS.penMode,
+      penVelocity: typeof p.penVelocity === 'boolean' ? p.penVelocity : true,
       updateAuto: typeof p.updateAuto === 'boolean' ? p.updateAuto : true,
       updateFreq: freq.includes(p.updateFreq as Settings['updateFreq'])
         ? (p.updateFreq as Settings['updateFreq'])

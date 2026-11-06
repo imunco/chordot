@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Mode } from '../model/types'
 import type { ToolId } from '../state'
 import {
+  BookIcon,
   CircleIcon,
   ConstraintIcon,
   CurveIcon,
@@ -54,6 +55,7 @@ interface Props {
       | 'gallery'
       | 'pendulum'
       | 'incline3d'
+      | 'textbook'
       | 'clear'
       | 'palette',
   ) => void
@@ -158,6 +160,7 @@ export function Toolbar(props: Props) {
       | 'gallery'
       | 'pendulum'
       | 'incline3d'
+      | 'textbook'
       | 'clear'
       | 'palette',
   ) => {
@@ -229,6 +232,11 @@ export function Toolbar(props: Props) {
             onClick={props.onToggleGrid}
           />
           <DockButton
+            title="教材实验室：高中物理教材实验"
+            Icon={BookIcon}
+            onClick={() => runCommand('textbook')}
+          />
+          <DockButton
             title="图形库（拖到画布）"
             Icon={ShapesIcon}
             active={props.shapes}
@@ -289,6 +297,9 @@ export function Toolbar(props: Props) {
 
           {menuOpen && (
             <div className="menu" role="menu">
+              <button className="menu__item" onClick={() => runCommand('textbook')}>
+                教材实验室…
+              </button>
               <button className="menu__item" onClick={() => runCommand('gallery')}>
                 模板库…
               </button>

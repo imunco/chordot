@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CheckIcon, CloseIcon, EraserIcon, PenIcon, RedoIcon, UndoIcon } from './icons'
+import {
+  CheckIcon,
+  CloseIcon,
+  EraserIcon,
+  EyeIcon,
+  EyeOffIcon,
+  PaletteIcon,
+  PencilIcon,
+  PenIcon,
+  RedoIcon,
+  UndoIcon,
+} from './icons'
 
 /**
  * 纯色：课堂标注最常用的清晰颜色，比低饱和色更容易在投影上看清。
@@ -23,7 +34,6 @@ const PURE_COLORS = [
 
 /**
  * 低饱和色：和纸面插画同一套调子，适合画辅助线、写小字。
- * 赭红 → 琥珀 → 灰棕 → 橄榄 → 苔绿 → 松绿 → 墨青 → 雾蓝 → 灰蓝 → 灰紫 → 梅紫 → 炭黑。
  */
 const MUTED_COLORS = [
   '#9a5b4a',
@@ -55,17 +65,44 @@ const QUICK_COLORS = [
 ]
 
 const WIDTHS = [1.6, 2.5, 4]
+const FAV_KEY = 'chordot.ink.fav'
+const RECENT_KEY = 'chordot.ink.recent'
+
+function readColors(key: string): string[] {
+  try {
+    const raw = localStorage.getItem(key)
+    const arr = raw ? (JSON.parse(raw) as unknown) : []
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+function writeColors(key: string, list: string[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify(list))
+  } catch {
+    /* 静默 */
+  }
+}
 
 interface Props {
   /** 当前批注工具：画笔或橡皮 */
   tool: 'pen' | 'eraser'
   color: string
   width: number
-  mode: 'pen' | 'marker'
+  mode: 'pen' | 'marker' | 'pencil'
+  /** 速度感应线宽 */
+  velocity: boolean
+  /** 当前页已有多少笔批注 */
+  count: number
+  /** 批注是否被暂时隐藏 */
+  hidden: boolean
   canUndo: boolean
   canRedo: boolean
-  onChange: (patch: { color?: string; width?: number; mode?: 'pen' | 'marker' }) => void
+  onChange: (patch: { color?: string; width?: number; mode?: 'pen' | 'marker' | 'pencil' }) => void
   onTool: (tool: 'pen' | 'eraser') => void
+  onVelocity: (on: boolean) => void
+  onToggleInk: () => void
   onUndo: () => void
   onRedo: () => void
   onClear: () => void
@@ -75,19 +112,23 @@ interface Props {
 /**
  * 批注条（占据底部工具坞的同一行）。
  *
- * 以前是画布顶部居中的小浮条：一体机上要抬手到屏幕上方，颜色圆点也只有 18px。
- * 现在整行放在屏幕底部，笔型/颜色/粗细全部按手指尺寸放大；退出批注用左上角的「完成」，
- * 不占用画布高度，所以进入批注时画面不会跳动。
+ * 笔型、颜色、粗细全部按手指尺寸放大；颜色除了 24 色盘，还支持自定义取色、
+ * 收藏常用色和最近使用，老师的「板书配色」可以一直沿用。
  */
 export function PenBar({
   tool,
   color,
   width,
   mode,
+  velocity,
+  count,
+  hidden,
   canUndo,
   canRedo,
   onChange,
   onTool,
+  onVelocity,
+  onToggleInk,
   onUndo,
   onRedo,
   onClear,
@@ -96,8 +137,9 @@ export function PenBar({
   /** 清空要按两次：课堂上误触一次就把整块批注擦掉，代价太大 */
   const [armed, setArmed] = useState(false)
   const timer = useRef(0)
-  /** 展开式色盘：底栏只放 10 个快捷色，更多纯色在浮层里 */
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [fav, setFav] = useState<string[]>(() => readColors(FAV_KEY))
+  const [recent, setRecent] = useState<string[]>(() => readColors(RECENT_KEY))
 
   useEffect(() => {
     if (!armed) return
@@ -105,7 +147,6 @@ export function PenBar({
     return () => window.clearTimeout(timer.current)
   }, [armed])
 
-  // 切到橡皮时收起色盘；Esc 只关色盘，不退出批注模式
   useEffect(() => {
     setPaletteOpen(false)
   }, [tool])
@@ -122,9 +163,29 @@ export function PenBar({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [paletteOpen])
 
+  const remember = (c: string) => {
+    const next = [c, ...recent.filter((x) => x !== c)].slice(0, 8)
+    setRecent(next)
+    writeColors(RECENT_KEY, next)
+  }
+
   const pick = (c: string) => {
     onChange({ color: c })
+    remember(c)
     setPaletteOpen(false)
+  }
+
+  const addFav = (c: string) => {
+    if (fav.includes(c)) return
+    const next = [c, ...fav].slice(0, 10)
+    setFav(next)
+    writeColors(FAV_KEY, next)
+  }
+
+  const removeFav = (c: string) => {
+    const next = fav.filter((x) => x !== c)
+    setFav(next)
+    writeColors(FAV_KEY, next)
   }
 
   const clear = () => {
@@ -137,9 +198,10 @@ export function PenBar({
     onClear()
   }
 
+  const activeMode = tool === 'eraser' ? 'eraser' : mode
+
   return (
     <div className="penbar" role="toolbar" aria-label="批注工具">
-      {/* 主控件居中：教师站在屏幕中间时，笔型与颜色就在手边 */}
       <div className="penbar__main">
         <button className="penbar__done" onClick={onDone} title="完成批注，回到选择工具（Esc）">
           <CheckIcon size={20} />
@@ -160,8 +222,8 @@ export function PenBar({
         <div className="penbar__modes" role="group" aria-label="笔型">
           <button
             className="penbar__mode"
-            data-active={tool === 'pen' && mode === 'pen'}
-            title="普通笔：实线"
+            data-active={activeMode === 'pen'}
+            title="钢笔：实线，落笔有轻重"
             onClick={() => {
               onTool('pen')
               onChange({ mode: 'pen' })
@@ -172,7 +234,7 @@ export function PenBar({
           </button>
           <button
             className="penbar__mode"
-            data-active={tool === 'pen' && mode === 'marker'}
+            data-active={activeMode === 'marker'}
             title="荧光笔：粗、半透明，用来划重点"
             onClick={() => {
               onTool('pen')
@@ -184,7 +246,19 @@ export function PenBar({
           </button>
           <button
             className="penbar__mode"
-            data-active={tool === 'eraser'}
+            data-active={activeMode === 'pencil'}
+            title="铅笔：细、带纸面颗粒，适合写批注小字"
+            onClick={() => {
+              onTool('pen')
+              onChange({ mode: 'pencil' })
+            }}
+          >
+            <PencilIcon size={17} />
+            铅笔
+          </button>
+          <button
+            className="penbar__mode"
+            data-active={activeMode === 'eraser'}
             title="橡皮：按住拖动连续擦除"
             onClick={() => onTool('eraser')}
           >
@@ -211,7 +285,7 @@ export function PenBar({
               <button
                 className="penbar__more"
                 data-active={paletteOpen}
-                title="更多颜色"
+                title="更多颜色 / 自定义 / 我的色板"
                 aria-label="更多颜色"
                 aria-expanded={paletteOpen}
                 onClick={() => setPaletteOpen((v) => !v)}
@@ -232,7 +306,7 @@ export function PenBar({
                 >
                   <span
                     style={{
-                      height: mode === 'marker' ? Math.min(9, w * 2.2) : w,
+                      height: mode === 'marker' ? Math.min(9, w * 2.2) : mode === 'pencil' ? Math.max(1, w * 0.7) : w,
                       background: 'currentColor',
                       opacity: mode === 'marker' ? 0.45 : 1,
                     }}
@@ -240,21 +314,45 @@ export function PenBar({
                 </button>
               ))}
             </div>
+
+            {mode === 'pencil' && (
+              <button
+                className="penbar__sense"
+                data-active={velocity}
+                title={velocity ? '铅笔速度感应已开：写快变细、写慢变粗' : '铅笔速度感应已关：全程等宽'}
+                onClick={() => onVelocity(!velocity)}
+              >
+                感应
+              </button>
+            )}
           </>
         ) : (
           <span className="penbar__hint">按住拖动，划过的地方会被擦掉</span>
         )}
       </div>
 
-      {/* 清空是最低频、也最危险的操作：放最右，且需要点两次 */}
-      <button
-        className="penbar__clear"
-        data-confirm={armed}
-        onClick={clear}
-        title={armed ? '再点一次确认清空（可撤销）' : '清空全部批注（需要点两次）'}
-      >
-        {armed ? '再点一次清空' : '清空批注'}
-      </button>
+      <div className="penbar__right">
+        <span className="penbar__count" title="本页批注笔数">
+          {count} 笔
+        </span>
+        <button
+          className="penbar__icon"
+          data-active={hidden}
+          title={hidden ? '批注已隐藏，点一下显示' : '暂时隐藏全部批注（讲课时用）'}
+          onClick={onToggleInk}
+        >
+          {hidden ? <EyeOffIcon size={19} /> : <EyeIcon size={19} />}
+        </button>
+        {/* 清空是最低频、也最危险的操作：放最右，且需要点两次 */}
+        <button
+          className="penbar__clear"
+          data-confirm={armed}
+          onClick={clear}
+          title={armed ? '再点一次确认清空（可撤销）' : '清空全部批注（需要点两次）'}
+        >
+          {armed ? '再点一次清空' : '清空批注'}
+        </button>
+      </div>
 
       {paletteOpen &&
         createPortal(
@@ -266,7 +364,9 @@ export function PenBar({
               onPointerDown={(e) => e.stopPropagation()}
             >
               <div className="colorpal__head">
-                <span>更多颜色</span>
+                <span>
+                  <PaletteIcon size={15} /> 颜色
+                </span>
                 <button className="iconbtn" title="关闭" onClick={() => setPaletteOpen(false)}>
                   <CloseIcon size={15} />
                 </button>
@@ -301,6 +401,60 @@ export function PenBar({
                       onClick={() => pick(c)}
                     />
                   ))}
+                </div>
+
+                <div className="colorpal__label colorpal__label--row">
+                  我的色板
+                  <button className="colorpal__mini" onClick={() => addFav(color)}>
+                    + 收藏当前色
+                  </button>
+                </div>
+                <div className="colorpal__grid colorpal__grid--fav">
+                  {fav.length === 0 && <span className="colorpal__empty">把常用的板书颜色收藏到这里</span>}
+                  {fav.map((c) => (
+                    <button
+                      key={c}
+                      className="colorpal__swatch colorpal__swatch--fav"
+                      style={{ background: c }}
+                      data-color={c}
+                      title={`${c}（右键移除）`}
+                      onClick={() => pick(c)}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        removeFav(c)
+                      }}
+                    >
+                      <i />
+                    </button>
+                  ))}
+                </div>
+
+                <div className="colorpal__label">最近使用</div>
+                <div className="colorpal__grid colorpal__grid--recent">
+                  {recent.length === 0 && <span className="colorpal__empty">选过的颜色会留在这里</span>}
+                  {recent.map((c) => (
+                    <button
+                      key={c}
+                      className="colorpal__swatch"
+                      style={{ background: c }}
+                      data-color={c}
+                      title={c}
+                      onClick={() => pick(c)}
+                    />
+                  ))}
+                </div>
+
+                <div className="colorpal__custom">
+                  <label>
+                    <input
+                      type="color"
+                      value={color}
+                      onChange={(e) => onChange({ color: e.target.value })}
+                      onBlur={(e) => remember(e.target.value)}
+                    />
+                    自定义颜色
+                  </label>
+                  <code>{color}</code>
                 </div>
               </div>
             </div>

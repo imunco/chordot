@@ -10,6 +10,7 @@ import { ShapePanel } from './components/ShapePanel'
 import { PenBar } from './components/PenBar'
 import { Shortcuts } from './components/Shortcuts'
 import { Timeline } from './components/Timeline'
+import { Textbook } from './components/Textbook'
 import { shapeById } from './data/shapes'
 import { shape3dById } from './data/shapes3d'
 import type { Template } from './data/templates'
@@ -80,6 +81,8 @@ export default function App() {
     () => !location.search.includes('notour') && !loadSettings().onboarded,
   )
   const [updateOpen, setUpdateOpen] = useState(false)
+  /** 批注偏好恢复完成前不要回写，否则会用默认值盖掉上次的笔 */
+  const [penReady, setPenReady] = useState(false)
 
   const patchSettings = (patch: Partial<Settings>) => {
     setSettings((prev) => ({ ...prev, ...patch }))
@@ -111,6 +114,20 @@ export default function App() {
     return () => window.clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /* 启动时恢复上次的批注颜色 / 粗细 / 笔型 */
+  useEffect(() => {
+    const s = loadSettings()
+    dispatch({ type: 'pen', color: s.penColor, width: s.penWidth, mode: s.penMode })
+    setPenReady(true)
+  }, [])
+
+  /* 批注偏好落盘：下次打开还是自己习惯的那支笔 */
+  useEffect(() => {
+    if (!penReady) return
+    patchSettings({ penColor: state.penColor, penWidth: state.penWidth, penMode: state.penMode })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [penReady, state.penColor, state.penWidth, state.penMode])
 
   /* 启动时套用「网格默认」设置 */
   useEffect(() => {
@@ -1134,6 +1151,9 @@ export default function App() {
       return
     }
 
+    if ((tool === 'pen' || tool === 'eraser') && state.inkHidden) {
+      dispatch({ type: 'ink-visible', visible: true })
+    }
     const construction =
       tool === 'point' || tool === 'line' || tool === 'circle' || tool === 'polygon' || tool === 'force'
     if (construction && state.doc.scene.kind !== 'sketch') {
@@ -1157,7 +1177,7 @@ export default function App() {
         !!el?.closest?.('math-field')
 
       // 弹窗打开时画布快捷键一律不响应（Esc 由弹窗自己处理）
-      if (prefsOpen || shortcutsOpen || tourOpen || updateOpen || state.galleryOpen) return
+      if (prefsOpen || shortcutsOpen || tourOpen || updateOpen || state.galleryOpen || state.textbookOpen) return
 
       if (e.key === 'F1') {
         e.preventDefault()
@@ -1190,6 +1210,8 @@ export default function App() {
         return
       }
       if (e.key === 'Escape') {
+        // 色盘开着时 Esc 只收色盘：PenBar 自己处理，别顺手退出批注模式
+        if (document.querySelector('.colorpal')) return
         if (state.paletteOpen) dispatch({ type: 'palette', open: false })
         else if (typing) (el as HTMLInputElement).blur()
         else if (state.picks.length > 0) dispatch({ type: 'construct-cancel' })
@@ -1281,6 +1303,7 @@ export default function App() {
     state.subState,
     state.playing,
     state.galleryOpen,
+    state.textbookOpen,
     prefsOpen,
     shortcutsOpen,
     tourOpen,
@@ -1293,6 +1316,7 @@ export default function App() {
     () => [
       { id: 'new', label: '新建课件', hint: 'Ctrl+N', run: () => void newDoc() },
       { id: 'gallery', label: '模板库…', run: () => dispatch({ type: 'gallery', open: true }) },
+      { id: 'textbook', label: '教材实验室：高中物理实验…', run: () => dispatch({ type: 'textbook', open: true }) },
       { id: 'open', label: '打开课件…', hint: 'Ctrl+O', run: () => void openDoc() },
       { id: 'save', label: '保存', hint: 'Ctrl+S', run: () => void save() },
       { id: 'save-as', label: '另存为…', hint: 'Ctrl+Shift+S', run: () => void save(true) },
@@ -1386,6 +1410,9 @@ export default function App() {
         break
       case 'shortcuts':
         setShortcutsOpen(true)
+        break
+      case 'textbook':
+        dispatch({ type: 'textbook', open: true })
         break
       case 'tour':
         setTourOpen(true)
@@ -1501,6 +1528,8 @@ export default function App() {
           penColor={state.penColor}
           penWidth={state.penWidth}
           penMode={state.penMode}
+          penVelocity={settings.penVelocity}
+          hideInk={state.inkHidden}
           onStrokeCommit={(stroke) => dispatch({ type: 'stroke-add', stroke })}
           onStrokesCut={(cuts) => dispatch({ type: 'strokes-cut', cuts })}
           onDragPoints={(moves) => dispatch({ type: 'drag-points', moves })}
@@ -1615,10 +1644,15 @@ export default function App() {
             color={state.penColor}
             width={state.penWidth}
             mode={state.penMode}
+            velocity={settings.penVelocity}
+            count={(state.doc.strokes ?? []).length}
+            hidden={state.inkHidden}
             canUndo={state.past.length > 0}
             canRedo={state.future.length > 0}
             onChange={(patch) => dispatch({ type: 'pen', ...patch })}
             onTool={(tool) => dispatch({ type: 'tool', tool })}
+            onVelocity={(on) => patchSettings({ penVelocity: on })}
+            onToggleInk={() => dispatch({ type: 'ink-visible', visible: state.inkHidden })}
             onUndo={() => dispatch({ type: 'undo' })}
             onRedo={() => dispatch({ type: 'redo' })}
             onClear={() => {
@@ -1661,6 +1695,7 @@ export default function App() {
               else if (cmd === 'pendulum') loadPendulum()
               else if (cmd === 'incline3d') loadIncline3d()
               else if (cmd === 'gallery') dispatch({ type: 'gallery', open: true })
+              else if (cmd === 'textbook') dispatch({ type: 'textbook', open: true })
               else if (cmd === 'palette') dispatch({ type: 'palette', open: true })
               else if (cmd === 'shortcuts') setShortcutsOpen(true)
               else setPrefsOpen(true)
@@ -1755,6 +1790,10 @@ export default function App() {
 
       {state.paletteOpen && (
         <CommandPalette items={paletteItems} onClose={() => dispatch({ type: 'palette', open: false })} />
+      )}
+
+      {state.textbookOpen && (
+        <Textbook onClose={() => dispatch({ type: 'textbook', open: false })} />
       )}
 
       <div className="toasts" aria-live="polite">

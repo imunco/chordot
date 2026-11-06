@@ -1,6 +1,6 @@
 {
   "name": "chordot-desktop",
-  "version": "0.9.9",
+  "version": "0.9.10",
   "private": true,
   "description": "弦点 / Chordot — 数学与物理教学作图工具",
   "author": "奇点未码 · 弦点",
@@ -35,6 +35,7 @@
     "verify:physics": "npm run build && electron electron/verify-physics.cjs",
     "verify:annotate": "npm run build && electron electron/verify-annotate.cjs",
     "verify:groups": "npm run build && electron electron/verify-groups.cjs",
+    "verify:rotate": "npm run build && electron electron/verify-rotate.cjs",
     "verify:dyn": "npm run build && electron electron/verify-dyn.cjs",
     "verify:shapeforce": "npm run build && electron electron/verify-shapeforce.cjs",
     "dist": "npm run build && electron-builder --win",
@@ -45,7 +46,8 @@
     "verify:ux": "npm run build && electron electron/verify-ux.cjs",
     "verify:edge": "npm run build && electron electron/verify-edge.cjs",
     "verify:menu": "npm run build && electron electron/verify-menu.cjs",
-    "verify:dock": "npm run build && electron electron/verify-dock.cjs"
+    "verify:dock": "npm run build && electron electron/verify-dock.cjs",
+    "verify:textbook": "npm run build && electron electron/verify-textbook.cjs"
   },
   "dependencies": {
     "@salusoft89/planegcs": "^1.3.0",

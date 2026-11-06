@@ -369,7 +369,7 @@ async function main() {
     };
   })()`)
   check(report.w820pen?.doneVisible, '820 宽时「完成」按钮被挤出批注条')
-  check((report.w820pen?.modeCount ?? 0) === 3, '820 宽时笔型按钮不全')
+  check((report.w820pen?.modeCount ?? 0) >= 3, '820 宽时笔型按钮不全')
   await shot('dock-820.png')
 
   console.log('RESULT ' + JSON.stringify(report, null, 2))

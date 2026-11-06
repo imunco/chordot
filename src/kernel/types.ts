@@ -228,8 +228,10 @@ export interface Stroke {
   color: string
   width: number
   points: [number, number][]
-  /** pen = 普通笔；marker = 荧光笔（粗、半透明、正片叠底）。老文件没有这个字段，按 pen 处理 */
-  mode?: 'pen' | 'marker'
+  /** pen = 普通笔；marker = 荧光笔（粗、半透明、正片叠底）；pencil = 铅笔（细、带纹理）。老文件没有这个字段，按 pen 处理 */
+  mode?: 'pen' | 'marker' | 'pencil'
+  /** 逐点线宽权重（0.4~1.2），来自落笔速度；没有则等宽 */
+  weights?: number[]
 }
 
 export interface SolidInclineParams {

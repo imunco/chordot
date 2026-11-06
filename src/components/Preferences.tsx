@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import appIcon from '../../build/icon.png'
 import type { Settings } from '../settings'
 import type { UpdaterState } from '../updater'
 import { CloseIcon } from './icons'
@@ -233,6 +234,15 @@ export function Preferences({
                 <span className="prefs__value">{settings.curveWidth.toFixed(1)} px</span>
               </Row>
 
+              <Row label="铅笔速度感应" hint="铅笔写快的地方细、写慢的地方粗，更像纸面手写">
+                <Toggle
+                  on={settings.penVelocity}
+                  onChange={(v) => onChange({ penVelocity: v })}
+                  onText="开启"
+                  offText="关闭"
+                />
+              </Row>
+
               <Row label="减弱动效" hint="关掉面板过渡与入场动画，投影更稳">
                 <Toggle
                   on={settings.reduceMotion}
@@ -356,7 +366,7 @@ export function Preferences({
 
           {tab === 'about' && (
             <div className="about">
-              <div className="about__mark">弦</div>
+              <img className="about__mark about__mark--icon" src={appIcon} alt="弦点 Chordot" />
               <div className="about__name">弦点 Chordot</div>
               <div className="about__ver">版本 {version}</div>
               <div className="about__dev">奇点未码工作室</div>

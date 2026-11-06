@@ -66,6 +66,8 @@ export interface State {
   paletteOpen: boolean
   padOpen: boolean
   galleryOpen: boolean
+  /** 教材实验室 */
+  textbookOpen: boolean
   shapesOpen: boolean
   /** 每次整份文档被换掉（新建 / 打开 / 套模板）时 +1，用于自动适配视图 */
   fitToken: number
@@ -86,8 +88,10 @@ export interface State {
   /** 画笔颜色与粗细 */
   penColor: string
   penWidth: number
-  /** 荧光笔：粗、半透明、正片叠底，用来划重点 */
-  penMode: 'pen' | 'marker'
+  /** 笔型：普通笔 / 荧光笔（粗、半透明）/ 铅笔（细、带纹理） */
+  penMode: 'pen' | 'marker' | 'pencil'
+  /** 暂时隐藏全部批注（讲课时先关掉手写痕迹） */
+  inkHidden: boolean
   /** 物理世界是否在跑 */
   physicsPlaying: boolean
   /** 物理世界已经跑过的秒数 */
@@ -139,6 +143,8 @@ export type Action =
   | { type: 'palette'; open: boolean }
   | { type: 'pad'; open: boolean }
   | { type: 'gallery'; open: boolean }
+  | { type: 'textbook'; open: boolean }
+  | { type: 'ink-visible'; visible: boolean }
   | { type: 'shapes'; open: boolean }
   | { type: 'canvas'; w: number; h: number }
   | { type: 'scene'; scene: SceneSpec; file: string }
@@ -157,7 +163,7 @@ export type Action =
   /** 橡皮局部擦除：一条笔画被切成几段（parts 为空 = 整条没了） */
   | { type: 'strokes-cut'; cuts: { id: string; parts: Stroke[] }[] }
   | { type: 'strokes-clear' }
-  | { type: 'pen'; color?: string; width?: number; mode?: 'pen' | 'marker' }
+  | { type: 'pen'; color?: string; width?: number; mode?: 'pen' | 'marker' | 'pencil' }
   | { type: 'physics-play'; playing: boolean }
   | { type: 'physics-time'; time: number }
   | { type: 'duplicate'; ids: string[] }
@@ -308,6 +314,7 @@ export const initialState: State = {
   paletteOpen: false,
   padOpen: false,
   galleryOpen: false,
+  textbookOpen: false,
   fitToken: 0,
   shapesOpen: false,
   canvas: { w: 800, h: 600 },
@@ -322,6 +329,7 @@ export const initialState: State = {
   penColor: '#9a5b4a',
   penWidth: 2.5,
   penMode: 'pen',
+  inkHidden: false,
   physicsPlaying: true,
   physicsTime: 0,
   lastSource: null,
@@ -1153,7 +1161,13 @@ export function reducer(state: State, action: Action): State {
       return { ...state, subState: action.sub, sim: null, playing: false, stopped: false }
 
     case 'tool':
-      return { ...state, tool: action.tool, picks: [] }
+      return {
+        ...state,
+        tool: action.tool,
+        picks: [],
+        // 只要进入画笔 / 橡皮，就自动把隐藏的批注显示出来，避免「画了看不见」
+        inkHidden: action.tool === 'pen' || action.tool === 'eraser' ? false : state.inkHidden,
+      }
 
     case 'grid':
       return { ...state, grid: !state.grid }
@@ -1181,6 +1195,18 @@ export function reducer(state: State, action: Action): State {
 
     case 'shapes':
       return { ...state, shapesOpen: action.open }
+
+    case 'textbook':
+      return {
+        ...state,
+        textbookOpen: action.open,
+        tool: action.open ? 'select' : state.tool,
+        // 打开教材时结束未完成的构造，避免关掉后还挂着半条线段
+        picks: action.open ? [] : state.picks,
+      }
+
+    case 'ink-visible':
+      return { ...state, inkHidden: !action.visible }
 
     case 'canvas':
       return { ...state, canvas: { w: action.w, h: action.h } }

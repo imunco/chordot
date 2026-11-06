@@ -76,6 +76,36 @@ function smoothPath(pts: [number, number][]): string {
   return `${d} L${f(last[0])} ${f(last[1])}`
 }
 
+/**
+ * 变宽笔迹：沿中心线两侧按逐点权重偏移，得到一条闭合的「带子」。
+ * 权重来自落笔速度（快 → 细），所以写出来的线条有轻重变化。
+ */
+function ribbonPath(pts: [number, number][], weights: number[], base: number): string {
+  if (pts.length < 2) return ''
+  const left: [number, number][] = []
+  const right: [number, number][] = []
+  const f = (n: number) => Math.round(n * 10) / 10
+  for (let i = 0; i < pts.length; i++) {
+    const prev = pts[Math.max(0, i - 1)]
+    const next = pts[Math.min(pts.length - 1, i + 1)]
+    const dx = next[0] - prev[0]
+    const dy = next[1] - prev[1]
+    const len = Math.hypot(dx, dy) || 1
+    const nx = -dy / len
+    const ny = dx / len
+    const r = Math.max(0.35, (base * (weights[i] ?? 1)) / 2)
+    left.push([pts[i][0] + nx * r, pts[i][1] + ny * r])
+    right.push([pts[i][0] - nx * r, pts[i][1] - ny * r])
+  }
+  const a = left.map((p, i) => `${i === 0 ? 'M' : 'L'}${f(p[0])} ${f(p[1])}`).join(' ')
+  const b = right
+    .slice()
+    .reverse()
+    .map((p) => `L${f(p[0])} ${f(p[1])}`)
+    .join(' ')
+  return `${a} ${b} Z`
+}
+
 /** 1 / 2 / 5 × 10ⁿ 里挑一个不小于 raw 的「整」数，坐标刻度用 */
 function niceStep(raw: number): number {
   const exp = Math.floor(Math.log10(raw))
@@ -137,8 +167,12 @@ interface Props {
   strokes: Stroke[]
   penColor: string
   penWidth: number
-  /** 普通笔 / 荧光笔 */
-  penMode: 'pen' | 'marker'
+  /** 普通笔 / 荧光笔 / 铅笔 */
+  penMode: 'pen' | 'marker' | 'pencil'
+  /** 速度感应：落笔快的地方细、慢的地方粗 */
+  penVelocity: boolean
+  /** 临时隐藏全部批注 */
+  hideInk?: boolean
   onStrokeCommit: (stroke: Stroke) => void
   /** 橡皮局部擦除：一条笔画被切成几段 */
   onStrokesCut: (cuts: { id: string; parts: Stroke[] }[]) => void
@@ -554,7 +588,12 @@ export function CanvasStage(props: Props) {
       const dy = p[1] - last[1]
       // 太密的点没有意义，反而拖慢渲染
       if (dx * dx + dy * dy < (props.camera ? 9 : 0.02)) return
-      const next: Stroke = { ...cur, points: [...cur.points, p] }
+      // 速度感应：两次采样的间距越大，说明落笔越快，线就越细
+      const stepPx = Math.hypot(dx, dy) * (props.camera ? 1 : s)
+      const prevW = cur.weights?.[cur.weights.length - 1] ?? 1
+      const want = Math.max(0.5, Math.min(1.12, 1.24 - stepPx * 0.04))
+      const weights = cur.weights ? [...cur.weights, prevW * 0.55 + want * 0.45] : undefined
+      const next: Stroke = { ...cur, points: [...cur.points, p], weights }
       draftRef.current = next
       setDraft(next)
       return
@@ -643,15 +682,18 @@ export function CanvasStage(props: Props) {
     if (props.tool === 'pen') {
       e.preventDefault()
       const marker = props.penMode === 'marker'
+      const pencil = props.penMode === 'pencil'
       const stroke: Stroke = {
         id: `k${Date.now().toString(36)}`,
         // 三维场景里批注固定在画布空间，不随相机旋转
         space: props.camera ? 'screen' : 'world',
         color: props.penColor,
-        // 荧光笔按倍数加粗，划重点用
-        width: marker ? props.penWidth * 5 : props.penWidth,
+        // 荧光笔按倍数加粗，划重点用；铅笔更细
+        width: marker ? props.penWidth * 5 : pencil ? props.penWidth * 1.45 : props.penWidth,
         mode: props.penMode,
         points: [strokePoint(e)],
+        // 速度感应只给铅笔：普通笔保持等宽平滑线，避免和已有的平滑断言打架
+        weights: pencil && props.penVelocity ? [1] : undefined,
       }
       draftRef.current = stroke
       setDraft(stroke)
@@ -963,6 +1005,13 @@ export function CanvasStage(props: Props) {
           props.onPan({ x: px - wx * s2 - size.w / 2, y: py + wy * s2 - (size.h / 2 + 40) })
         }}
       >
+        <defs>
+          {/* 铅笔质感：用噪声轻微扰动笔迹边缘，像纸上的石墨粉 */}
+          <filter id="inkPencil" x="-12%" y="-12%" width="124%" height="124%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="noise" />
+            <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.2" xChannelSelector="R" yChannelSelector="G" />
+          </filter>
+        </defs>
         <rect x={0} y={0} width={size.w} height={size.h} fill="#FAFAF8" />
 
         {gridLines}
@@ -1938,13 +1987,15 @@ export function CanvasStage(props: Props) {
 
         {/* 手绘批注：画在所有对象之上 */}
         <g data-strokes>
-          {[...props.strokes, ...(draft ? [draft] : [])].map((st) => {
+          {[...(props.hideInk ? [] : props.strokes), ...(draft ? [draft] : [])].map((st) => {
             const pts =
               st.space === 'world' ? st.points.map((p) => toScreen(p)) : st.points
             if (pts.length === 0) return null
             // 世界坐标里的笔迹是「画在纸上」的，线宽跟着缩放走；三维批注是屏幕像素，固定
             const w = st.space === 'world' ? st.width * (s / PX_PER_UNIT) : st.width
             const marker = st.mode === 'marker'
+            const pencil = st.mode === 'pencil'
+            const variable = !!st.weights && st.weights.length === pts.length && pts.length > 1
             const common = {
               key: st.id,
               'data-ui': st === draft ? '1' : undefined,
@@ -1962,9 +2013,31 @@ export function CanvasStage(props: Props) {
                   cy={pts[0][1]}
                   r={Math.max(0.8, w / 2)}
                   fill={st.color}
-                  fillOpacity={marker ? 0.3 : 1}
+                  fillOpacity={marker ? 0.3 : pencil ? 0.85 : 1}
                   pointerEvents="none"
                 />
+              )
+            }
+            if (variable) {
+              // 变宽笔迹：一条闭合带子 + 两端圆头，接近真实手写的轻重变化
+              const d = ribbonPath(pts, st.weights!, w)
+              return (
+                <g key={st.id} data-ui={st === draft ? '1' : undefined} pointerEvents="none">
+                  <path
+                    d={d}
+                    fill={st.color}
+                    fillOpacity={pencil ? 0.82 : 1}
+                    stroke="none"
+                    filter={pencil ? 'url(#inkPencil)' : undefined}
+                  />
+                  <circle cx={pts[0][0]} cy={pts[0][1]} r={Math.max(0.35, (w * st.weights![0]) / 2)} fill={st.color} />
+                  <circle
+                    cx={pts[pts.length - 1][0]}
+                    cy={pts[pts.length - 1][1]}
+                    r={Math.max(0.35, (w * st.weights![st.weights!.length - 1]) / 2)}
+                    fill={st.color}
+                  />
+                </g>
               )
             }
             return (
@@ -1975,7 +2048,8 @@ export function CanvasStage(props: Props) {
                 strokeWidth={w}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                strokeOpacity={marker ? 0.32 : 1}
+                strokeOpacity={marker ? 0.32 : pencil ? 0.85 : 1}
+                filter={pencil ? 'url(#inkPencil)' : undefined}
                 style={marker ? { mixBlendMode: 'multiply' } : undefined}
               />
             )
