@@ -173,6 +173,13 @@ export const CloseIcon = (p: Props) => (
   </Icon>
 )
 
+/** 完成 / 退出当前模式 */
+export const CheckIcon = (p: Props) => (
+  <Icon {...p}>
+    <path d="m4.5 12.5 5 5L19.5 6.5" />
+  </Icon>
+)
+
 export const ChevronRightIcon = (p: Props) => (
   <Icon {...p}>
     <path d="m9.5 6 6 6-6 6" />

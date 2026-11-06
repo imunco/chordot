@@ -63,6 +63,8 @@ function buildAppMenu({ sendMenu, recent }) {
         { role: 'forceReload', label: '强制重新加载' },
         { role: 'toggleDevTools', label: '开发者工具' },
         { type: 'separator' },
+        // 讲台投影时去掉标题栏和任务栏，多出一整条画布
+        { role: 'togglefullscreen', label: '全屏（F11）', accelerator: 'F11' },
         { role: 'resetZoom', label: '重置界面缩放' },
       ],
     },

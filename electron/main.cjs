@@ -86,14 +86,16 @@ let forceClose = false
 function createWindow() {
   const saved = readState()
   const bounds = ensureVisible(saved.bounds)
+  const wa = screen.getPrimaryDisplay().workArea
 
   mainWindow = new BrowserWindow({
-    width: bounds?.width ?? 1280,
-    height: bounds?.height ?? 820,
+    width: bounds?.width ?? Math.min(1280, wa.width),
+    height: bounds?.height ?? Math.min(820, wa.height),
     x: bounds?.x,
     y: bounds?.y,
-    minWidth: 960,
-    minHeight: 600,
+    // 底栏要同时放下 10 个快捷色、更多颜色和清空；低于 1200 宽会开始挤压重叠
+    minWidth: 1200,
+    minHeight: 700,
     show: false,
     backgroundColor: '#FAFAF8',
     title: '弦点 / Chordot',
@@ -112,7 +114,12 @@ function createWindow() {
     },
   })
 
-  if (saved.maximized) mainWindow.maximize()
+  if (saved.maximized) {
+    mainWindow.maximize()
+  } else if (!saved.bounds) {
+    // 首次启动：教室一体机 / 大屏上直接铺满，教师不用再找最大化按钮
+    if (wa.width >= 1600 && wa.height >= 900) mainWindow.maximize()
+  }
 
   mainWindow.once('ready-to-show', () => mainWindow.show())
 

@@ -96,17 +96,40 @@ button {
   margin-left: -4px;
 }
 
-/* ───────── 工具栏 ───────── */
+/* ───────── 底部工具坞 ───────── */
+.dock {
+  position: relative;
+  z-index: 30;
+  flex: 0 0 auto;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 10px rgba(58, 58, 56, 0.05);
+}
+
+/* 批注模式：顶边换成强调色，远看也知道现在在落笔而不是作图 */
+.dock[data-ink='1'] {
+  border-top-color: rgba(61, 90, 102, 0.45);
+}
+
 .toolbar {
   height: var(--toolbar-h);
-  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: var(--sp-1);
-  padding: 0 var(--sp-2);
-  background: var(--panel-bg);
-  border-bottom: 1px solid var(--border);
+  gap: var(--sp-2);
+  padding: 0 10px;
   user-select: none;
+}
+
+.toolbar__side {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar__side--right {
+  justify-content: flex-end;
 }
 
 .toolbar__group {
@@ -115,29 +138,48 @@ button {
   gap: 2px;
 }
 
-.toolbar__spacer {
-  flex: 1 1 auto;
-}
-
 .toolbar__divider {
   width: 1px;
-  height: 20px;
+  height: 28px;
   background: var(--border);
-  margin: 0 var(--sp-2);
+  margin: 0 8px;
   flex: 0 0 auto;
 }
 
+/* 批注组：固定在屏幕中线附近，带一层淡底，远看也能一眼找到 */
+.toolbar__ink {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: calc(var(--toolbar-h) - 8px);
+  padding: 0 6px;
+  margin: 0 4px;
+  border-radius: var(--r-md);
+  background: rgba(61, 90, 102, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(61, 90, 102, 0.12);
+}
+
 .tbtn {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
+  flex: 0 0 auto;
+  min-width: 44px;
+  height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 6px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   transition: background var(--t), color var(--t);
-  padding: 0;
+}
+
+/* 常用工具带中文标签：一体机上没有 hover，光靠图标认不出来 */
+.tbtn--label {
+  min-width: 56px;
 }
 
 .tbtn:hover:not(:disabled) {
@@ -154,15 +196,25 @@ button {
   color: var(--text-disabled);
 }
 
+.tbtn__label {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 .toolbar__menu-anchor {
   position: relative;
 }
 
+/* 菜单从底栏向上弹：向下会顶出窗口底边 */
 .menu {
   position: absolute;
-  top: calc(100% + 6px);
+  bottom: calc(100% + 8px);
   right: 0;
-  min-width: 196px;
+  min-width: 200px;
+  max-height: calc(100vh - var(--toolbar-h) - var(--statusbar-h) - 28px);
+  overflow-y: auto;
   padding: var(--sp-1) 0;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -206,8 +258,8 @@ button {
 .toasts {
   position: fixed;
   left: 50%;
-  /* 让开底部的物理时间轴 */
-  bottom: 64px;
+  /* 让开底部工具坞 + 状态栏 */
+  bottom: calc(var(--toolbar-h) + var(--statusbar-h) + 16px);
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -826,15 +878,18 @@ button {
 }
 
 .modebtn {
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
+  height: 22px;
+  padding: 0 9px;
   font-size: 12px;
-  padding: 0;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 11px;
 }
 
 .modebtn:hover {
-  color: var(--text-primary);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .sep {
@@ -1127,7 +1182,7 @@ button {
   /* fixed：拖动用 clientX/Y 直接定位，不受画布/侧栏偏移影响 */
   position: fixed;
   right: 16px;
-  bottom: 16px;
+  bottom: calc(var(--toolbar-h) + var(--statusbar-h) + 12px);
   z-index: 23;
   width: 560px;
   max-width: calc(100% - 32px);
@@ -1577,13 +1632,92 @@ button {
   touch-action: none;
 }
 
-html[data-touch='1'] .toolbar {
-  height: 56px;
+html[data-touch='1'] .tbtn {
+  min-width: 52px;
+  height: 60px;
 }
 
-html[data-touch='1'] .tbtn {
+html[data-touch='1'] .tbtn--label {
+  min-width: 56px;
+}
+
+html[data-touch='1'] .tbtn__label {
+  font-size: 12px;
+}
+
+html[data-touch='1'] .penbar__done {
+  height: 46px;
+  padding: 0 16px 0 14px;
+  font-size: 15px;
+}
+
+html[data-touch='1'] .penbar__icon {
+  width: 48px;
+  height: 48px;
+}
+
+html[data-touch='1'] .penbar__mode {
+  height: 42px;
+  padding: 0 16px;
+  font-size: 15px;
+}
+
+html[data-touch='1'] .penbar__swatch {
+  width: 36px;
+  height: 36px;
+}
+
+html[data-touch='1'] .penbar__width {
   width: 40px;
   height: 40px;
+}
+
+html[data-touch='1'] .penbar__clear {
+  height: 44px;
+  font-size: 14px;
+}
+
+html[data-touch='1'] .penbar__more {
+  width: 36px;
+  height: 36px;
+}
+
+html[data-touch='1'] .penbar__more-dot {
+  width: 14px;
+  height: 14px;
+}
+
+html[data-touch='1'] .colorpal {
+  width: 348px;
+}
+
+html[data-touch='1'] .colorpal__head {
+  height: 44px;
+  font-size: 15px;
+}
+
+html[data-touch='1'] .colorpal__label {
+  font-size: 12px;
+}
+
+html[data-touch='1'] .colorpal__swatch {
+  width: 44px;
+  height: 44px;
+}
+
+html[data-touch='1'] .menu__item {
+  height: 44px;
+  font-size: 15px;
+}
+
+html[data-touch='1'] .statusbar {
+  font-size: 13px;
+}
+
+html[data-touch='1'] .modebtn {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
 }
 
 html[data-touch='1'] .iconbtn {
@@ -1630,6 +1764,63 @@ html[data-touch='1'] .fitem__switch {
 html[data-touch='1'] .gallery__mini-link {
   padding: 6px 4px;
   font-size: 12px;
+}
+
+/*
+ * 窄窗口（投影仪 1024、临时小窗）：标签让位给图标，按钮同步收窄。
+ * 触控模式的规则特异性更高，所以这里要显式再覆盖一次。
+ */
+@media (max-width: 1280px) {
+  .tbtn__label {
+    display: none;
+  }
+  .tbtn,
+  .tbtn--label {
+    min-width: 38px;
+    height: 46px;
+    padding: 0;
+  }
+  html[data-touch='1'] .tbtn,
+  html[data-touch='1'] .tbtn--label {
+    min-width: 44px;
+    height: 54px;
+  }
+}
+
+@media (max-width: 1100px) {
+  /* 1024 触控一体机：左段 10 个按钮 + 右段 6 个要能同时放下，不压到中间的批注组 */
+  html[data-touch='1'] .tbtn,
+  html[data-touch='1'] .tbtn--label {
+    min-width: 40px;
+  }
+}
+
+@media (max-width: 900px) {
+  .toolbar {
+    gap: 4px;
+    padding: 0 6px;
+  }
+  .toolbar__divider {
+    margin: 0 4px;
+  }
+  .tbtn,
+  .tbtn--label {
+    min-width: 32px;
+    height: 42px;
+  }
+  html[data-touch='1'] .tbtn,
+  html[data-touch='1'] .tbtn--label {
+    min-width: 38px;
+    height: 46px;
+  }
+  .penbar {
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .penbar__swatch {
+    width: 28px;
+    height: 28px;
+  }
 }
 
 /* ───────── 约束区 ───────── */
@@ -1988,7 +2179,8 @@ math-field.fexpr__input {
 .shapes {
   position: absolute;
   left: 12px;
-  top: 12px;
+  /* 贴着底栏往上展开：教师站在屏幕前，不用抬手去够顶部 */
+  bottom: 12px;
   z-index: 22;
   width: 236px;
   max-height: calc(100% - 24px);
@@ -2082,75 +2274,188 @@ math-field.fexpr__input {
   background: var(--accent-soft);
 }
 
-/* ───────── 画笔设置条 ───────── */
+/* ───────── 批注条（占据底栏整行） ───────── */
 .penbar {
-  position: absolute;
-  left: 50%;
-  top: 12px;
-  transform: translateX(-50%);
-  z-index: 24;
+  height: var(--toolbar-h);
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 34px;
-  padding: 0 10px;
-  background: rgba(250, 250, 248, 0.96);
+  padding: 0 12px;
+  user-select: none;
+  /* 窄窗口时整条可横向滑动：常用项在左，永远不会被挤没 */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.penbar::-webkit-scrollbar {
+  height: 0;
+}
+
+.penbar > * {
+  flex: 0 0 auto;
+}
+
+.penbar__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 auto;
+}
+
+.penbar__done {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 14px 0 12px;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 17px;
-  box-shadow: 0 6px 18px rgba(58, 58, 56, 0.12);
+  border-radius: var(--r-md);
 }
 
-.penbar__label {
-  font-size: 11px;
+.penbar__done:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.penbar__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
   color: var(--text-secondary);
+  border-radius: var(--r-md);
 }
 
-.penbar__colors,
-.penbar__widths,
+.penbar__icon:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--hover);
+}
+
+.penbar__icon:disabled {
+  color: var(--text-disabled);
+}
+
 .penbar__modes {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 2px;
+  padding: 3px;
+  background: #e9e6e0;
+  border-radius: var(--r-md);
 }
 
 .penbar__mode {
-  height: 22px;
-  padding: 0 7px;
-  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 14px;
+  font-size: 14px;
   color: var(--text-secondary);
-  border-radius: 11px;
+  border-radius: var(--r-sm);
+}
+
+.penbar__mode:hover {
+  color: var(--text-primary);
 }
 
 .penbar__mode[data-active='true'] {
-  background: var(--accent-soft);
   color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(58, 58, 56, 0.1);
+}
+
+/* 荧光笔的小色块，和普通笔区分开 */
+.penbar__marker-dot {
+  width: 16px;
+  height: 8px;
+  border-radius: 4px;
+  background: #b08a3e;
+  opacity: 0.45;
+}
+
+.penbar__colors,
+.penbar__widths {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .penbar__swatch {
-  width: 18px;
-  height: 18px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .penbar__swatch[data-active='true'] {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: 2px;
+}
+
+/* 「更多颜色」：外圈是色环，中心显示当前颜色 */
+.penbar__more {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 210deg,
+    #c0392b,
+    #d4a017,
+    #4f8a3d,
+    #2f6fa8,
+    #7b3fa0,
+    #c0392b
+  );
+}
+
+.penbar__more::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: var(--panel-bg);
+}
+
+.penbar__more-dot {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.penbar__more[data-active='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .penbar__width {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   color: var(--text-secondary);
 }
 
 .penbar__width span {
   display: block;
-  width: 14px;
+  width: 18px;
   border-radius: 3px;
+}
+
+.penbar__width:hover {
+  background: var(--hover);
 }
 
 .penbar__width[data-active='true'] {
@@ -2160,17 +2465,138 @@ math-field.fexpr__input {
 
 .penbar__sep {
   width: 1px;
-  height: 16px;
+  height: 26px;
   background: var(--border);
 }
 
+.penbar__hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
 .penbar__clear {
+  height: 40px;
+  padding: 0 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: transparent;
+}
+
+.penbar__clear:hover {
+  color: var(--friction);
+  border-color: var(--friction);
+}
+
+/* 第一下只是上膛，第二下才真的清空 */
+.penbar__clear[data-confirm='true'] {
+  color: var(--surface);
+  background: var(--friction);
+  border-color: var(--friction);
+}
+
+/* 1280 及以下：先让位最少用的「粗细」，保证笔型、10 色、更多颜色、清空都在一屏内 */
+@media (max-width: 1280px) {
+  .penbar__widths,
+  .penbar__sep--widths {
+    display: none;
+  }
+}
+
+/* 1024 / 960 宽：色块间距再收一点 */
+@media (max-width: 1100px) {
+  .penbar__colors {
+    gap: 6px;
+  }
+  html[data-touch='1'] .penbar__mode {
+    padding: 0 12px;
+    font-size: 14px;
+  }
+  html[data-touch='1'] .penbar__swatch {
+    width: 32px;
+    height: 32px;
+  }
+  html[data-touch='1'] .penbar__icon {
+    width: 44px;
+    height: 44px;
+  }
+  html[data-touch='1'] .penbar__done {
+    padding: 0 12px 0 10px;
+  }
+}
+
+/* ───────── 更多颜色（色盘浮层） ───────── */
+.colorpal__scrim {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  /* 只盖住画布：色盘开着时底栏仍可点（换笔型、撤销、再点一次色环收起） */
+  bottom: calc(var(--toolbar-h) + var(--statusbar-h));
+  z-index: 90;
+  background: rgba(31, 31, 29, 0.06);
+}
+
+.colorpal {
+  position: fixed;
+  left: 50%;
+  /* 浮在底栏上方，不遮住笔型和清空 */
+  bottom: calc(var(--toolbar-h) + var(--statusbar-h) + 14px);
+  transform: translateX(-50%);
+  width: 316px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 10px 28px rgba(58, 58, 56, 0.16);
+  z-index: 91;
+  overflow: hidden;
+}
+
+.colorpal__head {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.colorpal__body {
+  padding: 10px 14px 14px;
+}
+
+.colorpal__label {
+  margin: 4px 0 8px;
   font-size: 11px;
   color: var(--text-secondary);
 }
 
-.penbar__clear:hover {
-  color: var(--accent);
+.colorpal__grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.colorpal__swatch {
+  width: 40px;
+  height: 40px;
+  justify-self: center;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.colorpal__swatch:hover {
+  transform: scale(1.08);
+}
+
+.colorpal__swatch[data-active='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ───────── 物理时间轴 ───────── */

@@ -45,11 +45,39 @@
 
   /* 结构尺寸 */
   --titlebar-h: 36px;
-  --toolbar-h: 48px;
+  --toolbar-h: 64px;
   --statusbar-h: 28px;
   --left-w: 240px;
   --right-w: 280px;
   --canvas-min: 480px;
+}
+
+/*
+ * 学校电子大屏 / 一体机：主操作区在下半屏，底栏与右栏都放大一号。
+ * 用变量而不是逐个覆盖，toast / 符号键盘这些浮层的让位距离会一起跟着走。
+ */
+html[data-touch='1'] {
+  --toolbar-h: 76px;
+  --statusbar-h: 32px;
+  --right-w: 320px;
+}
+
+@media (max-width: 1100px) {
+  :root {
+    --toolbar-h: 56px;
+  }
+  html[data-touch='1'] {
+    --toolbar-h: 64px;
+  }
+}
+
+@media (max-width: 900px) {
+  :root {
+    --toolbar-h: 52px;
+  }
+  html[data-touch='1'] {
+    --toolbar-h: 58px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

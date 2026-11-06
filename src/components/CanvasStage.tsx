@@ -2106,7 +2106,7 @@ export function CanvasStage(props: Props) {
         props.tool !== 'eraser' && (
         <div className="empty">
           <div className="empty__card">
-          <p className="empty__text">在左下角输入表达式画函数，或从工具栏选一个工具开始作图。</p>
+          <p className="empty__text">在左下角输入表达式画函数，或从屏幕底部的工具栏选一个工具开始作图。</p>
           <p className="empty__hint">
             也可以按 <kbd>Ctrl</kbd>+<kbd>K</kbd> 打开命令面板、<kbd>Ctrl</kbd>+<kbd>/</kbd> 打开符号键盘，
             或从「模板库」里挑一个现成的课件。

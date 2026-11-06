@@ -188,8 +188,8 @@ export function SymbolPad({ onClose }: { onClose: () => void }) {
       const raw = localStorage.getItem(PAD_POS_KEY)
       if (!raw) return null
       const p = JSON.parse(raw) as { x: number; y: number }
-      // 窗口变小后旧坐标可能落到屏幕外
-      if (p.x > window.innerWidth - 60 || p.y > window.innerHeight - 40) return null
+      // 窗口变小后旧坐标可能落到屏幕外，或压到底部工具坞上
+      if (p.x > window.innerWidth - 60 || p.y > window.innerHeight - 150) return null
       return p
     } catch {
       return null
@@ -231,8 +231,11 @@ export function SymbolPad({ onClose }: { onClose: () => void }) {
       const dy = ev.clientY - d.startY
       if (!d.moved && Math.hypot(dx, dy) < 4) return
       d.moved = true
+      // 下边界让开底部工具坞：键盘不能被底栏压住
+      const dockTop =
+        document.querySelector('.dock')?.getBoundingClientRect().top ?? window.innerHeight
       const x = Math.min(Math.max(8, d.left + dx), Math.max(8, window.innerWidth - d.w - 8))
-      const y = Math.min(Math.max(8, d.top + dy), Math.max(8, window.innerHeight - d.h - 8))
+      const y = Math.min(Math.max(8, d.top + dy), Math.max(8, dockTop - d.h - 8))
       setPos({ x, y })
     }
     const onUp = () => {

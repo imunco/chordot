@@ -1415,46 +1415,18 @@ export default function App() {
 
   useEffect(() => window.chordot?.onMenu((action, arg) => menuHandler.current(action, arg)), [])
 
-  const maxLeftWidth = Math.max(200, window.innerWidth - 480 - (state.rightOpen ? 280 : 0) - 2)
+  // 触控模式下右栏会变宽，左栏上限跟着让位
+  const maxLeftWidth = Math.max(
+    200,
+    window.innerWidth - 480 - (state.rightOpen ? (touch ? 320 : 280) : 0) - 2,
+  )
+
+  /** 批注是一个独立模式：画笔/橡皮激活时，底部整行换成批注条 */
+  const inkMode = state.tool === 'pen' || state.tool === 'eraser'
 
   return (
     <div className="app">
       <TitleBar file={state.file} dirty={state.dirty} />
-
-      <Toolbar
-        mode={state.mode}
-        tool={state.tool}
-        grid={state.grid}
-        pad={state.padOpen}
-        onTogglePad={() => dispatch({ type: 'pad', open: !state.padOpen })}
-        shapes={state.shapesOpen}
-        onToggleShapes={() => dispatch({ type: 'shapes', open: !state.shapesOpen })}
-        canUndo={state.past.length > 0}
-        canRedo={state.future.length > 0}
-        onUndo={() => dispatch({ type: 'undo' })}
-        onRedo={() => dispatch({ type: 'redo' })}
-        onTool={chooseTool}
-        onToggleGrid={() => dispatch({ type: 'grid' })}
-        onFit={fit}
-        onExport={exportDrawing}
-        onCommand={(cmd) => {
-          if (cmd === 'open') void openDoc()
-          else if (cmd === 'save') void save()
-          else if (cmd === 'saveAs') void save(true)
-          else if (cmd === 'clear') void newDoc()
-          else if (cmd === 'samples') loadIncline()
-          else if (cmd === 'triangle') loadTriangle()
-          else if (cmd === 'slide') loadSlide()
-          else if (cmd === 'conflict') loadConflict()
-          else if (cmd === 'solid') loadSolid()
-          else if (cmd === 'pendulum') loadPendulum()
-          else if (cmd === 'incline3d') loadIncline3d()
-          else if (cmd === 'gallery') dispatch({ type: 'gallery', open: true })
-          else if (cmd === 'palette') dispatch({ type: 'palette', open: true })
-          else if (cmd === 'shortcuts') setShortcutsOpen(true)
-          else setPrefsOpen(true)
-        }}
-      />
 
       <div className="workspace">
         <LeftPanel
@@ -1558,15 +1530,6 @@ export default function App() {
             onDragEnd={handleDragEnd}
           onDropShape={(id, at) => insertAny(id, at)}
           />
-          {state.tool === 'pen' && (
-            <PenBar
-              color={state.penColor}
-              width={state.penWidth}
-              mode={state.penMode}
-              onChange={(patch) => dispatch({ type: 'pen', ...patch })}
-              onClear={() => dispatch({ type: 'strokes-clear' })}
-            />
-          )}
           {solidPhysics?.enabled && (
             <Timeline
               playing={state.physicsPlaying}
@@ -1640,6 +1603,68 @@ export default function App() {
             onPause={pauseSim}
             onStop={stopSim}
             onReset={resetSim}
+          />
+        )}
+      </div>
+
+      {/* 底部工具坞：学校一体机的可及区在下半屏，主工具与批注都放这里 */}
+      <div className="dock" data-ink={inkMode ? '1' : '0'}>
+        {inkMode ? (
+          <PenBar
+            tool={state.tool === 'eraser' ? 'eraser' : 'pen'}
+            color={state.penColor}
+            width={state.penWidth}
+            mode={state.penMode}
+            canUndo={state.past.length > 0}
+            canRedo={state.future.length > 0}
+            onChange={(patch) => dispatch({ type: 'pen', ...patch })}
+            onTool={(tool) => dispatch({ type: 'tool', tool })}
+            onUndo={() => dispatch({ type: 'undo' })}
+            onRedo={() => dispatch({ type: 'redo' })}
+            onClear={() => {
+              if ((state.doc.strokes ?? []).length === 0) {
+                toast('还没有批注可清空')
+                return
+              }
+              dispatch({ type: 'strokes-clear' })
+              toast('已清空批注，按撤销可以恢复')
+            }}
+            onDone={() => dispatch({ type: 'tool', tool: 'select' })}
+          />
+        ) : (
+          <Toolbar
+            mode={state.mode}
+            tool={state.tool}
+            grid={state.grid}
+            pad={state.padOpen}
+            onTogglePad={() => dispatch({ type: 'pad', open: !state.padOpen })}
+            shapes={state.shapesOpen}
+            onToggleShapes={() => dispatch({ type: 'shapes', open: !state.shapesOpen })}
+            canUndo={state.past.length > 0}
+            canRedo={state.future.length > 0}
+            onUndo={() => dispatch({ type: 'undo' })}
+            onRedo={() => dispatch({ type: 'redo' })}
+            onTool={chooseTool}
+            onToggleGrid={() => dispatch({ type: 'grid' })}
+            onFit={fit}
+            onExport={exportDrawing}
+            onCommand={(cmd) => {
+              if (cmd === 'open') void openDoc()
+              else if (cmd === 'save') void save()
+              else if (cmd === 'saveAs') void save(true)
+              else if (cmd === 'clear') void newDoc()
+              else if (cmd === 'samples') loadIncline()
+              else if (cmd === 'triangle') loadTriangle()
+              else if (cmd === 'slide') loadSlide()
+              else if (cmd === 'conflict') loadConflict()
+              else if (cmd === 'solid') loadSolid()
+              else if (cmd === 'pendulum') loadPendulum()
+              else if (cmd === 'incline3d') loadIncline3d()
+              else if (cmd === 'gallery') dispatch({ type: 'gallery', open: true })
+              else if (cmd === 'palette') dispatch({ type: 'palette', open: true })
+              else if (cmd === 'shortcuts') setShortcutsOpen(true)
+              else setPrefsOpen(true)
+            }}
           />
         )}
       </div>
