@@ -13,3 +13,6 @@ release-*/
 
 # 项目内部记录
 .workbuddy-ai/
+
+# 内部交接文档：只在本地保留，不进版本库
+HANDOFF.md
