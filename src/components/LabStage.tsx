@@ -101,14 +101,15 @@ function renderStage(exp: LabExperiment, m: LabModel, t: number) {
 function TrackStage({ m, t }: { m: LabModel; t: number }) {
   const { pos, v, v0, a, dots } = m.g
   const T = 0.02
-  const px = 120 + Math.min(pos, 5.3) * 92
+  const px = 160 + Math.min(pos, 5.3) * 92
   const dotPts: number[] = []
-  for (let i = 0; i < Math.min(dots, 90); i++) {
+  for (let i = 0; i < Math.min(dots, 200); i++) {
     const q = i * T
-    dotPts.push(120 + (v0 * q + 0.5 * a * q * q) * 92)
+    dotPts.push(160 + (v0 * q + 0.5 * a * q * q) * 92)
   }
   const last = dotPts[dotPts.length - 1] ?? 120
-  const prev = dotPts[dotPts.length - 2] ?? 118
+  // 教材用 xₙ₊₁ − xₙ₋₁ 求中间时刻速度，括号要跨两个打点间隔（2T）
+  const prev2 = dotPts[dotPts.length - 3] ?? dotPts[0] ?? 160
 
   return (
     <g>
@@ -133,18 +134,18 @@ function TrackStage({ m, t }: { m: LabModel; t: number }) {
       ))}
 
       {/* 相邻两点间距 Δx */}
-      {dotPts.length >= 2 && (
+      {dotPts.length >= 3 && (
         <g>
-          <line x1={prev} y1={356} x2={prev} y2={362} stroke={SOFT} strokeWidth={0.8} />
+          <line x1={prev2} y1={356} x2={prev2} y2={362} stroke={SOFT} strokeWidth={0.8} />
           <line x1={last} y1={356} x2={last} y2={362} stroke={SOFT} strokeWidth={0.8} />
-          <line x1={prev} y1={359} x2={last} y2={359} stroke={SOFT} strokeWidth={0.8} />
-          <Txt x={(prev + last) / 2} y={373} text="Δx" size={9} color={SOFT} mono />
+          <line x1={prev2} y1={359} x2={last} y2={359} stroke={SOFT} strokeWidth={0.8} />
+          <Txt x={(prev2 + last) / 2} y={373} text="xₙ₊₁ − xₙ₋₁（2T）" size={9} color={SOFT} mono />
         </g>
       )}
 
       {/* 刻度尺 */}
       {Array.from({ length: 12 }, (_, i) => {
-        const x = 120 + i * 46
+        const x = 160 + i * 46
         return (
           <g key={i}>
             <line x1={x} y1={306} x2={x} y2={312} stroke={SOFT} strokeWidth={0.7} opacity={0.7} />
@@ -176,7 +177,7 @@ function TrackStage({ m, t }: { m: LabModel; t: number }) {
       <Tag x={px + 12} y={244} text={`v = ${v.toFixed(2)} m/s`} color={WARN} anchor="start" />
 
       <Tag x={px} y={226} text={`s = ${pos.toFixed(2)} m`} color={INK} />
-      <Txt x={380} y={406} text="每 0.02 s 打一个点；用前后相邻两点求中间时刻的瞬时速度" size={10} color={SOFT} />
+      <Txt x={380} y={406} text="每 0.02 s 打一个点；取中间时刻前后两个点（相距 2T）求瞬时速度" size={10} color={SOFT} />
     </g>
   )
 }
@@ -184,7 +185,7 @@ function TrackStage({ m, t }: { m: LabModel; t: number }) {
 function CartStage({ m }: { m: LabModel }) {
   const { x, a, F, M, m: mm, ratio } = m.g
   const px = 112 + Math.min(x, 3.2) * 150
-  const weightY = 325 + Math.min(x, 3.2) * 48
+  const weightY = 325 + Math.min(x, 3.2) * 16
   return (
     <g>
       <Txt x={380} y={34} text="小车 + 槽码：平衡摩擦力后研究 a 与 F、M 的关系" size={12.5} color={INK} bold />
@@ -271,23 +272,17 @@ function SpringStage({ m }: { m: LabModel }) {
       <Arrow x1={330} y1={endY + 10} x2={330} y2={endY + 10 + Math.min(60, F * 10)} color="#3a3a38" width={1.6} />
       <Txt x={318} y={endY + 22 + Math.min(60, F * 10)} text="G" size={10} color="#3a3a38" anchor="end" />
 
-      {/* 刻度尺 */}
-      <line x1={540} y1={60} x2={540} y2={390} stroke={LINE} strokeWidth={1} />
-      {Array.from({ length: 41 }, (_, i) => {
-        const y = 60 + i * 8.2
-        return (
-          <g key={i}>
-            <line x1={540} y1={y} x2={i % 5 === 0 ? 552 : 546} y2={y} stroke={SOFT} strokeWidth={0.7} />
-            {i % 5 === 0 && <Txt x={560} y={y + 3} text={`${i}`} size={8} color={SOFT} anchor="start" mono />}
-          </g>
-        )
-      })}
-      <Txt x={600} y={78} text="cm" size={9} color={SOFT} anchor="start" />
+      {/* 长度标尺：直接量弹簧原长到当前长度，避免固定刻度与动态比例尺对不上 */}
+      <line x1={540} y1={top} x2={540} y2={endY} stroke={SOFT} strokeWidth={0.9} strokeDasharray="3 4" />
+      <line x1={534} y1={top} x2={546} y2={top} stroke={SOFT} strokeWidth={0.9} />
+      <line x1={534} y1={endY} x2={546} y2={endY} stroke={SOFT} strokeWidth={0.9} />
+      <Txt x={554} y={(top + endY) / 2 + 4} text={`l = ${(l * 100).toFixed(1)} cm`} size={9.5} color={SOFT} anchor="start" mono />
 
       <Tag x={210} y={120} text={`原长 l₀ = ${(l0 * 100).toFixed(1)} cm`} color={SOFT} />
       <Tag x={210} y={150} text={`伸长 x = ${(x * 100).toFixed(1)} cm`} color={INK} />
       <Tag x={210} y={180} text={`k = ${k.toFixed(0)} N/m`} color={INK} bold />
       <Tag x={210} y={210} text={`F / x = ${(F / x).toFixed(1)} N/m`} color={SOFT} />
+      <Tag x={210} y={240} text={`弹簧长度 l = ${(l * 100).toFixed(1)} cm`} color={INK} />
     </g>
   )
 }
@@ -391,9 +386,9 @@ function ReactionStage({ m, t }: { m: LabModel; t: number }) {
         />
       ))}
       <line
-        x1={x + 74 + value * 6}
+        x1={dir === 1 ? x + 74 + value * 6 : x + 134 - value * 6}
         y1={y + 22}
-        x2={x + 74 + value * 6}
+        x2={dir === 1 ? x + 74 + value * 6 : x + 134 - value * 6}
         y2={y + 40}
         stroke={WARN}
         strokeWidth={1.6}
@@ -529,7 +524,7 @@ function CircularStage({ m }: { m: LabModel }) {
       />
 
       <path
-        d={`M ${cx + 30} ${cy} A 30 30 0 0 0 ${cx + 30 * Math.cos(th)} ${cy - 30 * Math.sin(th)}`}
+        d={`M ${cx + 30} ${cy} A 30 30 0 ${th > Math.PI ? 1 : 0} 0 ${cx + 30 * Math.cos(th)} ${cy - 30 * Math.sin(th)}`}
         fill="none"
         stroke={SOFT}
         strokeWidth={1}
@@ -577,6 +572,7 @@ function FallStage({ m }: { m: LabModel }) {
         )
       })}
       <Txt x={198} y={top - 10} text="m" size={9} color={SOFT} anchor="end" />
+      <Txt x={210} y={bottom + 18} text="下落距离 / m" size={8.5} color={SOFT} />
 
       {/* 纸带 + 重锤 */}
       <rect x={244} y={top - 12} width={10} height={wy - top + 12} fill="#ffffff" stroke={LINE} strokeWidth={0.8} />
@@ -605,7 +601,7 @@ function FallStage({ m }: { m: LabModel }) {
           </g>
         )
       })}
-      <Txt x={barX} y={352} text="虚线总能量保持不变" size={9} color={SOFT} anchor="start" />
+      <Txt x={barX} y={352} text="总能量保持不变（条形长度恒定）" size={9} color={SOFT} anchor="start" />
       <Tag x={470} y={72} text={`½v² = ${(0.5 * v * v).toFixed(2)}，gh = ${(9.8 * (h - y)).toFixed(2)}`} color={INK} anchor="start" />
     </g>
   )
@@ -618,12 +614,28 @@ function RCStage({ m, t }: { m: LabModel; t: number }) {
   const charging = phase === 0
   const discharging = phase === 1
   const level = Math.max(0, Math.min(1, u / Math.max(0.001, m.g.E ?? 6)))
+  // 充电：电池 → 左触点 → 开关 → R → 电容 → 电流表 → 电池
+  // 放电：电容 → R → 开关 → 右触点 → 回电容下极板
+  const chargePath =
+    'M130 210 L130 102 L266 102 L300 130 L470 130 M550 130 L640 130 L640 210 M640 236 L640 320 L130 320 L130 228'
+  const dischargePath =
+    'M640 210 L640 130 L550 130 M470 130 L300 130 L334 102 L700 102 L700 320 L640 320 L640 236'
   return (
     <g>
       <Txt x={380} y={30} text="RC 电路：观察充电与放电时电流、电压的变化" size={12.5} color={INK} bold />
-      {/* 外框导线 */}
-      <path d="M130 300 L130 130 L640 130 L640 320 L130 320 Z" fill="none" stroke={LINE} strokeWidth={2} />
-      <Flow d="M130 300 L130 130 L640 130 L640 320 L130 320 Z" color={INK} offset={t * 26} reverse={discharging} opacity={Math.min(0.85, 0.2 + Math.abs(i) * 0.5)} />
+
+      {/* 导线：电容上、下极板分别接 R 和电流表，不能一条线穿过极板 */}
+      <path d="M130 210 L130 102 L266 102" fill="none" stroke={LINE} strokeWidth={2} />
+      <path d="M300 130 L470 130" fill="none" stroke={LINE} strokeWidth={2} />
+      <path d="M550 130 L640 130 L640 210" fill="none" stroke={LINE} strokeWidth={2} />
+      <path d="M640 236 L640 320 L130 320 L130 228" fill="none" stroke={LINE} strokeWidth={2} />
+      <path d="M334 102 L700 102 L700 320" fill="none" stroke={LINE} strokeWidth={2} />
+      <Flow
+        d={charging ? chargePath : dischargePath}
+        color={INK}
+        offset={t * 26}
+        opacity={Math.min(0.85, 0.2 + Math.abs(i) * 0.5)}
+      />
 
       {/* 电源 */}
       <line x1={108} y1={210} x2={152} y2={210} stroke={INK} strokeWidth={2.4} />
@@ -664,11 +676,12 @@ function RCStage({ m, t }: { m: LabModel; t: number }) {
       <Txt x={690} y={210} text="C" size={10} color={INK} anchor="start" bold />
       <Txt x={690} y={236} text={`${u.toFixed(2)} V`} size={9} color={SOFT} anchor="start" mono />
 
-      {/* 电流表 */}
-      <circle cx={400} cy={320} r={23} fill="#ffffff" stroke={INK} strokeWidth={1.2} />
-      <Txt x={400} y={316} text="A" size={11} color={INK} bold />
-      <Txt x={400} y={331} text={`${Math.abs(i).toFixed(2)} mA`} size={7.5} color={SOFT} mono />
-      <Arrow x1={charging ? 386 : 366} y1={320} x2={charging ? 366 : 386} y2={320} color={WARN} width={1.8} />
+      {/* 电流表：串在电容下极板回路里，充放电都能读数 */}
+      <circle cx={640} cy={280} r={22} fill="#ffffff" stroke={INK} strokeWidth={1.2} />
+      <Txt x={640} y={276} text="A" size={11} color={INK} bold />
+      <Txt x={640} y={291} text={`${Math.abs(i).toFixed(2)} mA`} size={7} color={SOFT} mono />
+      <Arrow x1={670} y1={charging ? 268 : 292} x2={670} y2={charging ? 292 : 268} color={WARN} width={1.6} />
+      <Txt x={678} y={284} text="i" size={9} color={WARN} anchor="start" />
 
       <Tag x={200} y={200} text={charging ? '充电中' : discharging ? '放电中' : '断开'} color={charging ? WARN : discharging ? '#4a6b8a' : SOFT} bold />
       <Tag x={200} y={228} text={`τ = ${tau.toFixed(2)} s`} color={SOFT} />
@@ -684,10 +697,15 @@ function ResistivityStage({ m, t }: { m: LabModel; t: number }) {
   const { L, d, R, U, rho } = m.g
   const x1 = 120
   const x2 = x1 + L * 380
+  // 电压表接在金属丝两端（电流表外接法），抽头随丝长移动
+  const xa = x1 + 0.18 * (x2 - x1)
+  const xb = x1 + 0.82 * (x2 - x1)
+  const xm = (xa + xb) / 2
   return (
     <g>
       <Txt x={380} y={30} text="测金属丝的直径、长度和电阻，再由 ρ = πd²R/(4L) 求电阻率" size={12} color={INK} bold />
-      {/* 金属丝 */}
+
+      {/* 金属丝：直接作为电路的上支路 */}
       <line x1={x1} y1={170} x2={x2} y2={170} stroke="#9a5b4a" strokeWidth={2.6} />
       <rect x={x1 - 18} y={154} width={18} height={32} rx={3} fill="#e2ded8" stroke={INK} strokeWidth={1} />
       <rect x={x2} y={154} width={18} height={32} rx={3} fill="#e2ded8" stroke={INK} strokeWidth={1} />
@@ -706,33 +724,37 @@ function ResistivityStage({ m, t }: { m: LabModel; t: number }) {
         <Txt x={611} y={152} text="螺旋测微器" size={9} color={SOFT} />
       </g>
 
-      {/* 电路 */}
-      <path d="M120 250 L120 330 L640 330 L640 250" fill="none" stroke={LINE} strokeWidth={1.8} />
-      <Flow d="M120 250 L120 330 L640 330 L640 250" color={INK} offset={t * 22} opacity={0.4} />
-      <line x1={120} y1={240} x2={120} y2={262} stroke={INK} strokeWidth={2.6} />
-      <line x1={108} y1={276} x2={132} y2={276} stroke={INK} strokeWidth={1.6} />
-      <Txt x={96} y={252} text="E" size={9} color={SOFT} anchor="end" mono />
+      {/* 主回路：电池 → 金属丝 → 右引线 → 电流表 → 电池 */}
+      <path d="M120 170 L120 240" fill="none" stroke={LINE} strokeWidth={1.8} />
+      <path d="M120 252 L120 330 L720 330" fill="none" stroke={LINE} strokeWidth={1.8} />
+      <path d={`M720 330 L720 170 L${x2} 170`} fill="none" stroke={LINE} strokeWidth={1.8} />
+      <Flow
+        d={`M120 170 L${x2} 170 L720 170 L720 330 L120 330 Z`}
+        color={INK}
+        offset={t * 22}
+        opacity={0.4}
+      />
+      {/* 电池：两平行极板，长板为正 */}
+      <line x1={104} y1={240} x2={136} y2={240} stroke={INK} strokeWidth={2.6} />
+      <line x1={112} y1={252} x2={128} y2={252} stroke={INK} strokeWidth={1.6} />
+      <Txt x={96} y={236} text="+" size={10} color={INK} anchor="end" />
+      <Txt x={96} y={262} text="−" size={10} color={INK} anchor="end" />
+      <Txt x={96} y={282} text="E" size={9} color={SOFT} anchor="end" mono />
 
+      {/* 电流表 */}
       <circle cx={250} cy={330} r={19} fill="#fff" stroke={INK} strokeWidth={1.1} />
       <Txt x={250} y={326} text="A" size={10} color={INK} bold />
       <Txt x={250} y={338} text="I" size={7.5} color={SOFT} />
 
-      <rect x={360} y={314} width={90} height={32} rx={4} fill="#fff" stroke={INK} strokeWidth={1.1} />
-      <Txt x={405} y={334} text={`R = ${R.toFixed(2)} Ω`} size={9} color={INK} mono />
+      {/* 电压表：直接并在金属丝两端 */}
+      <path d={`M${xa} 170 L${xa} 214 L${xb} 214 L${xb} 170`} fill="none" stroke={LINE} strokeWidth={1.4} />
+      <circle cx={xm} cy={214} r={17} fill="#fff" stroke={INK} strokeWidth={1.1} />
+      <Txt x={xm} y={210} text="V" size={10} color={INK} bold />
+      <Txt x={xm} y={222} text={`${U.toFixed(2)} V`} size={7} color={SOFT} mono />
 
-      <rect x={520} y={314} width={70} height={32} rx={4} fill="#fff" stroke={INK} strokeWidth={1.1} />
-      <line x1={530} y1={330} x2={580} y2={330} stroke={SOFT} strokeWidth={2.4} />
-      <line x1={552} y1={318} x2={552} y2={330} stroke={WARN} strokeWidth={2} />
-      <polygon points="552,318 548,323 556,323" fill={WARN} />
-
-      {/* 电压表并联 */}
-      <path d="M360 314 L360 388 L450 388 L450 314" fill="none" stroke={LINE} strokeWidth={1.4} />
-      <circle cx={405} cy={388} r={17} fill="#fff" stroke={INK} strokeWidth={1.1} />
-      <Txt x={405} y={384} text="V" size={10} color={INK} bold />
-      <Txt x={405} y={396} text={`${U.toFixed(2)} V`} size={7} color={SOFT} mono />
-
-      <Tag x={660} y={180} text={`ρ = ${rho.toExponential(2)} Ω·m`} color={INK} anchor="end" />
-      <Tag x={660} y={208} text={`S = ${(Math.PI * (d * 1e-3) ** 2 / 4 * 1e6).toFixed(3)} mm²`} color={SOFT} anchor="end" />
+      <Tag x={660} y={260} text={`ρ = ${rho.toExponential(2)} Ω·m`} color={INK} anchor="end" />
+      <Tag x={660} y={288} text={`S = ${(Math.PI * (d * 1e-3) ** 2 / 4 * 1e6).toFixed(3)} mm²`} color={SOFT} anchor="end" />
+      <Tag x={660} y={316} text={`R = ${R.toFixed(2)} Ω`} color={SOFT} anchor="end" />
       <Txt x={380} y={418} text="小电阻采用电流表外接法；测直径要在不同位置测三次" size={10} color={SOFT} />
     </g>
   )
@@ -788,11 +810,11 @@ function MultimeterStage({ m }: { m: LabModel }) {
       <circle cx={cx} cy={cy} r={6} fill={INK} />
       <Txt x={cx} y={cy + 24} text="Ω" size={10} color={SOFT} mono />
 
-      {/* 读数窗口 */}
-      <rect x={556} y={72} width={164} height={58} rx={6} fill="#eef1ef" stroke={LINE} strokeWidth={0.9} />
-      <Txt x={638} y={94} text="读数" size={9} color={SOFT} />
-      <Txt x={638} y={117} text={`${(reading * mult).toFixed(0)} Ω`} size={20} color={INK} bold mono />
-      <Txt x={638} y={129} text={`×${mult} 挡`} size={8} color={SOFT} />
+      {/* 读数窗口：表壳右缘在 668，窗口必须留在壳内 */}
+      <rect x={530} y={72} width={112} height={58} rx={6} fill="#eef1ef" stroke={LINE} strokeWidth={0.9} />
+      <Txt x={586} y={94} text="读数" size={9} color={SOFT} />
+      <Txt x={586} y={116} text={`${(reading * mult).toFixed(0)} Ω`} size={16} color={INK} bold mono />
+      <Txt x={586} y={129} text={`×${mult} 挡`} size={8} color={SOFT} />
 
       {/* 选择开关 */}
       <circle cx={620} cy={322} r={30} fill="#f2f0ec" stroke={INK} strokeWidth={1.2} />
@@ -809,7 +831,7 @@ function MultimeterStage({ m }: { m: LabModel }) {
       {[
         { t: '×1', x: 584, y: 372 },
         { t: '×10', x: 620, y: 380 },
-        { t: '×100', x: 660, y: 372 },
+        { t: '×100', x: 654, y: 372 },
       ].map((s2, i) => (
         <Txt
           key={s2.t}
@@ -933,7 +955,7 @@ function CollisionStage({ m }: { m: LabModel }) {
         <rect x={558} y={327} width={Math.min(120, pBefore * 700)} height={9} rx={2} fill={INK} opacity={0.45} />
         <Txt x={520} y={356} text="碰后" size={9} color={SOFT} anchor="start" />
         <rect x={558} y={347} width={Math.min(120, pAfter * 700)} height={9} rx={2} fill={WARN} opacity={0.6} />
-        <Txt x={690} y={356} text={`${pBefore.toFixed(3)} kg·m/s`} size={8.5} color={SOFT} anchor="end" mono />
+        <Txt x={690} y={372} text={`${pBefore.toFixed(3)} kg·m/s`} size={8.5} color={SOFT} anchor="end" mono />
       </g>
       <Tag x={170} y={100} text={elastic ? '弹性碰撞：动量、动能都守恒' : '完全非弹性碰撞：动量守恒，动能减少'} color={INK} />
       <Tag x={170} y={130} text={`p = ${pBefore.toFixed(3)} kg·m/s`} color={INK} bold />
@@ -1009,7 +1031,7 @@ function SHMStage({ m, t }: { m: LabModel; t: number }) {
       <circle cx={pointX} cy={pointY} r={4.5} fill="#ffffff" stroke={INK} strokeWidth={1.6} />
       <Txt x={pointX + 8} y={pointY - 6} text="P" size={10} color={INK} bold />
       <circle cx={cx} cy={pointY} r={3} fill={WARN} />
-      <Txt x={cx + 8} y={pointY + 4} text="A" size={9} color={WARN} />
+      <Txt x={cx + 8} y={pointY + 4} text="P′" size={9} color={WARN} />
       <Txt x={cx} y={cy - r - 18} text="参考圆" size={10} color={SOFT} />
 
       {/* 弹簧振子 */}
@@ -1074,18 +1096,25 @@ function SHMStage({ m, t }: { m: LabModel; t: number }) {
 /* ───────────────────────── 单摆 ───────────────────────── */
 
 function PendulumStage({ m, t }: { m: LabModel; t: number }) {
-  const { th, T, v, L } = m.g
+  const { th, T, v, vs, L, th0 } = m.g
   const px = 380
   const py = 80
   const sc = 200
+  const amp = (th0 * Math.PI) / 180
   const bx = px + L * Math.sin(th) * sc
   const by = py + L * Math.cos(th) * sc
   const trail: [number, number][] = []
   for (let k = 1; k <= 4; k++) {
     const q = t - k * 0.07
-    const a = 5 * (Math.PI / 180) * Math.cos(Math.sqrt(9.8 / L) * q)
+    const a = amp * Math.cos(Math.sqrt(9.8 / L) * q)
     trail.push([px + L * Math.sin(a) * sc, py + L * Math.cos(a) * sc])
   }
+  // 速度箭头沿切线方向，并且随摆动方向翻转；长度按当前速率缩放
+  const vmax = L * amp * Math.sqrt(9.8 / L)
+  const dir = vs >= 0 ? 1 : -1
+  const len = 66 * Math.min(1, Math.abs(vs) / Math.max(0.001, vmax))
+  const ax = bx + Math.cos(th) * len * dir
+  const ay = by - Math.sin(th) * len * dir
   return (
     <g>
       <Txt x={380} y={30} text="单摆：摆角小于 5° 时做简谐运动" size={12.5} color={INK} bold />
@@ -1093,9 +1122,9 @@ function PendulumStage({ m, t }: { m: LabModel; t: number }) {
       <line x1={px} y1={py} x2={bx} y2={by} stroke={INK} strokeWidth={1.2} />
       <circle cx={px} cy={py} r={3.5} fill={INK} />
 
-      {/* 摆动轨迹 */}
+      {/* 摆动轨迹：半径与最大摆角都跟着参数走 */}
       <path
-        d={`M ${px - L * Math.sin((5 * Math.PI) / 180) * sc} ${py + L * Math.cos((5 * Math.PI) / 180) * sc} A ${L * sc} ${L * sc} 0 0 1 ${px + L * Math.sin((5 * Math.PI) / 180) * sc} ${py + L * Math.cos((5 * Math.PI) / 180) * sc}`}
+        d={`M ${px - L * Math.sin(amp) * sc} ${py + L * Math.cos(amp) * sc} A ${L * sc} ${L * sc} 0 0 1 ${px + L * Math.sin(amp) * sc} ${py + L * Math.cos(amp) * sc}`}
         fill="none"
         stroke={LINE}
         strokeWidth={1}
@@ -1107,10 +1136,21 @@ function PendulumStage({ m, t }: { m: LabModel; t: number }) {
       <Shadow cx={bx} cy={by + 22} rx={14} opacity={0.12} />
       <circle cx={bx} cy={by} r={13} fill="url(#labBall)" stroke={INK} strokeWidth={1.2} />
 
-      <Arrow x1={bx} y1={by} x2={bx + Math.cos(th) * 66} y2={by - Math.sin(th) * 66} color={WARN} width={1.8} />
-      <Txt x={bx + Math.cos(th) * 76} y={by - Math.sin(th) * 76 + 4} text={`v = ${v.toFixed(2)}`} size={9} color={WARN} />
+      {len > 2 && (
+        <g>
+          <Arrow x1={bx} y1={by} x2={ax} y2={ay} color={WARN} width={1.8} />
+          <Txt
+            x={ax + (dir > 0 ? 6 : -6)}
+            y={ay - 6}
+            text={`v = ${v.toFixed(2)}`}
+            size={9}
+            color={WARN}
+            anchor={dir > 0 ? 'start' : 'end'}
+          />
+        </g>
+      )}
 
-      {/* 量角器 */}
+      {/* 量角器：标出 ±5° 的简谐运动范围 */}
       <path d={`M ${px - 62} ${py} A 62 62 0 0 0 ${px + 62} ${py}`} fill="none" stroke={SOFT} strokeWidth={0.8} opacity={0.55} />
       {[-5, 0, 5].map((d) => {
         const a = (d * Math.PI) / 180
@@ -1135,11 +1175,12 @@ function PendulumStage({ m, t }: { m: LabModel; t: number }) {
 
 function RefractionStage({ m, t }: { m: LabModel; t: number }) {
   const { i, r, n } = m.g
-  const O = { x: 410, y: 160 }
+  // 玻璃砖加宽到 330 px，n=1.3、i=75° 时折射光线仍从下表面射出，不会穿出右侧
+  const O = { x: 430, y: 180 }
   const radI = (i * Math.PI) / 180
   const radR = (r * Math.PI) / 180
   const A = { x: O.x - 138 * Math.sin(radI), y: O.y - 138 * Math.cos(radI) }
-  const B = { x: O.x + 170 * Math.tan(radR), y: 330 }
+  const B = { x: O.x + 150 * Math.tan(radR), y: 330 }
   const C = { x: B.x + 92 * Math.sin(radI), y: B.y + 92 * Math.cos(radI) }
   const pulse = (t * 0.55) % 1
   const seg1 = Math.hypot(O.x - A.x, O.y - A.y)
@@ -1162,12 +1203,12 @@ function RefractionStage({ m, t }: { m: LabModel; t: number }) {
   return (
     <g>
       <Txt x={380} y={30} text="光从空气斜射入玻璃：入射角与折射角的正弦之比为常数" size={12} color={INK} bold />
-      <rect x={300} y={160} width={220} height={170} rx={3} fill="#e8eef0" stroke="#9fb0b4" strokeWidth={1.4} opacity={0.75} />
-      <Txt x={410} y={250} text="玻璃砖" size={12} color="#6a7a86" />
-      <Txt x={410} y={268} text={`n = ${n.toFixed(2)}`} size={10} color="#6a7a86" mono />
+      <rect x={290} y={180} width={330} height={150} rx={3} fill="#e8eef0" stroke="#9fb0b4" strokeWidth={1.4} opacity={0.75} />
+      <Txt x={455} y={262} text="玻璃砖" size={12} color="#6a7a86" />
+      <Txt x={455} y={280} text={`n = ${n.toFixed(2)}`} size={10} color="#6a7a86" mono />
 
       {/* 法线 */}
-      <line x1={O.x} y1={40} x2={O.x} y2={380} stroke={SOFT} strokeWidth={0.8} strokeDasharray="4 5" />
+      <line x1={O.x} y1={40} x2={O.x} y2={390} stroke={SOFT} strokeWidth={0.8} strokeDasharray="4 5" />
       <line x1={B.x} y1={B.y - 6} x2={B.x} y2={B.y + 50} stroke={SOFT} strokeWidth={0.8} strokeDasharray="4 5" />
 
       <line x1={A.x} y1={A.y} x2={O.x} y2={O.y} stroke={WARN} strokeWidth={2} />
@@ -1175,14 +1216,21 @@ function RefractionStage({ m, t }: { m: LabModel; t: number }) {
       <line x1={B.x} y1={B.y} x2={C.x} y2={C.y} stroke={WARN} strokeWidth={2} />
       <circle cx={at.x} cy={at.y} r={4.5} fill="#fff" stroke={WARN} strokeWidth={1.4} />
 
-      {/* 角弧 */}
+      {/* 入射角：画在上方，夹在法线与入射光线之间 */}
       <path
-        d={`M ${O.x} ${O.y + 58} A 58 58 0 0 1 ${O.x + 58 * Math.sin(radI)} ${O.y + 58 * Math.cos(radI)}`}
+        d={`M ${O.x} ${O.y - 58} A 58 58 0 0 0 ${O.x - 58 * Math.sin(radI)} ${O.y - 58 * Math.cos(radI)}`}
         fill="none"
         stroke={INK}
         strokeWidth={1}
       />
-      <Txt x={O.x + 68 * Math.sin(radI / 2)} y={O.y + 68 * Math.cos(radI / 2)} text={`θ₁ = ${i.toFixed(0)}°`} size={9.5} color={INK} />
+      <Txt
+        x={O.x - 68 * Math.sin(radI / 2)}
+        y={O.y - 68 * Math.cos(radI / 2) + 3}
+        text={`θ₁ = ${i.toFixed(0)}°`}
+        size={9.5}
+        color={INK}
+      />
+      {/* 折射角：画在下方，夹在法线与折射光线之间 */}
       <path
         d={`M ${O.x} ${O.y + 44} A 44 44 0 0 1 ${O.x + 44 * Math.sin(radR)} ${O.y + 44 * Math.cos(radR)}`}
         fill="none"
@@ -1194,8 +1242,8 @@ function RefractionStage({ m, t }: { m: LabModel; t: number }) {
       <Tag x={120} y={110} text={`sinθ₁ = ${Math.sin(radI).toFixed(3)}`} color={INK} anchor="start" />
       <Tag x={120} y={138} text={`sinθ₂ = ${Math.sin(radR).toFixed(3)}`} color="#4a6b8a" anchor="start" />
       <Tag x={120} y={166} text={`n = sinθ₁ / sinθ₂ = ${(Math.sin(radI) / Math.sin(radR)).toFixed(2)}`} color={WARN} anchor="start" />
-      <Tag x={620} y={110} text="空气" color={SOFT} />
-      <Tag x={620} y={300} text="玻璃" color="#6a7a86" />
+      <Tag x={640} y={110} text="空气" color={SOFT} anchor="start" />
+      <Tag x={316} y={310} text="玻璃" color="#6a7a86" anchor="start" />
       <Txt x={380} y={414} text="入射角、折射角都是光线与法线的夹角；改变入射角多做几次取平均" size={10} color={SOFT} />
     </g>
   )
@@ -1215,18 +1263,19 @@ function waveColor(lam: number) {
 function InterferenceStage({ m, t }: { m: LabModel; t: number }) {
   const { lam, d, L, dx } = m.g
   const color = waveColor(lam)
-  const spacing = Math.max(8, dx * 9000)
+  // 屏上 1 mm 对应 9 px；条纹很密时也不再放大，保证 Δx 与图形一致
+  const spacing = Math.max(2.2, dx * 9000)
   const center = 220
-  const slitY1 = 192
-  const slitY2 = 248
+  const slitY1 = 190
+  const slitY2 = 250
   const waves: { r: number; y: number; o: number }[] = []
   for (let k = 0; k < 8; k++) {
-    const rr = ((t * 85 + k * 30) % 240) + 10
-    waves.push({ r: rr, y: slitY1, o: 0.32 * (1 - rr / 250) })
-    waves.push({ r: rr, y: slitY2, o: 0.32 * (1 - rr / 250) })
+    const rr = ((t * 85 + k * 30) % 430) + 10
+    waves.push({ r: rr, y: slitY1, o: 0.3 * (1 - rr / 450) })
+    waves.push({ r: rr, y: slitY2, o: 0.3 * (1 - rr / 450) })
   }
   const bands: { y: number; o: number }[] = []
-  for (let y = 70; y <= 370; y += 5) {
+  for (let y = 70; y <= 370; y += 2) {
     bands.push({ y, o: Math.cos((Math.PI * (y - center)) / spacing) ** 2 })
   }
   return (
@@ -1236,7 +1285,10 @@ function InterferenceStage({ m, t }: { m: LabModel; t: number }) {
       <rect x={44} y={196} width={66} height={40} rx={5} fill="#fff" stroke={INK} strokeWidth={1.2} />
       <Txt x={77} y={212} text="光源" size={9} color={SOFT} />
       <Txt x={77} y={226} text="+ 滤光片" size={8} color={SOFT} />
-      <line x1={110} y1={216} x2={252} y2={216} stroke={color} strokeWidth={1.6} opacity={0.7} />
+      {/* 光束要照到两条缝，不能打在中缝的不透光部分 */}
+      <path d={`M110 216 L252 ${slitY1} L252 ${slitY2} Z`} fill={color} opacity={0.08} />
+      <line x1={110} y1={216} x2={252} y2={slitY1} stroke={color} strokeWidth={1.4} opacity={0.65} />
+      <line x1={110} y1={216} x2={252} y2={slitY2} stroke={color} strokeWidth={1.4} opacity={0.65} />
 
       {/* 双缝板 */}
       <line x1={260} y1={70} x2={260} y2={180} stroke={INK} strokeWidth={2.4} />
@@ -1244,7 +1296,7 @@ function InterferenceStage({ m, t }: { m: LabModel; t: number }) {
       <line x1={260} y1={260} x2={260} y2={370} stroke={INK} strokeWidth={2.4} />
       <Txt x={260} y={60} text="双缝" size={9} color={SOFT} />
       <Txt x={278} y={190} text="S₁" size={8} color={SOFT} anchor="start" />
-      <Txt x={278} y={266} text="S₂" size={8} color={SOFT} anchor="start" />
+      <Txt x={278} y={250} text="S₂" size={8} color={SOFT} anchor="start" />
 
       {/* 波前 */}
       {waves.map((w, i) => (
@@ -1254,16 +1306,16 @@ function InterferenceStage({ m, t }: { m: LabModel; t: number }) {
       {/* 屏 */}
       <rect x={650} y={64} width={28} height={316} rx={2} fill="#f2f0ec" stroke={LINE} strokeWidth={1} />
       {bands.map((b, i) => (
-        <rect key={i} x={652} y={b.y} width={24} height={5} fill={color} opacity={b.o * 0.75} />
+        <rect key={i} x={652} y={b.y} width={24} height={2} fill={color} opacity={b.o * 0.75} />
       ))}
       <Txt x={664} y={54} text="屏" size={9} color={SOFT} />
       <Txt x={664} y={396} text={`λ = ${lam.toFixed(0)} nm`} size={9} color={color} mono />
 
-      {/* Δx */}
-      <line x1={700} y1={center - spacing} x2={700} y2={center + spacing} stroke={SOFT} strokeWidth={0.9} />
-      <line x1={696} y1={center - spacing} x2={704} y2={center - spacing} stroke={SOFT} strokeWidth={0.9} />
-      <line x1={696} y1={center + spacing} x2={704} y2={center + spacing} stroke={SOFT} strokeWidth={0.9} />
-      <Txt x={716} y={center + 4} text={`Δx = ${(dx * 1000).toFixed(2)} mm`} size={9} color={SOFT} anchor="start" mono />
+      {/* Δx：标在屏右侧，标签向右留出空间 */}
+      <line x1={686} y1={center - spacing} x2={686} y2={center + spacing} stroke={SOFT} strokeWidth={0.9} />
+      <line x1={682} y1={center - spacing} x2={690} y2={center - spacing} stroke={SOFT} strokeWidth={0.9} />
+      <line x1={682} y1={center + spacing} x2={690} y2={center + spacing} stroke={SOFT} strokeWidth={0.9} />
+      <Txt x={694} y={center + 3} text={`Δx = ${(dx * 1000).toFixed(2)} mm`} size={8.5} color={SOFT} anchor="start" mono />
 
       <Tag x={150} y={110} text={`d = ${d.toFixed(2)} mm`} color={INK} anchor="start" />
       <Tag x={150} y={138} text={`L = ${L.toFixed(2)} m`} color={INK} anchor="start" />
@@ -1290,12 +1342,12 @@ function InductionStage({ m }: { m: LabModel }) {
       ))}
       <Txt x={cx} y={294} text="线圈" size={9} color={SOFT} />
 
-      {/* 磁铁 */}
+      {/* 磁铁：朝向线圈的那一端才是“朝向”的磁极 */}
       <g>
-        <rect x={mx - 46} y={cy - 18} width={46} height={36} rx={3} fill={pole === 1 ? '#e2ded8' : '#3d5a66'} stroke={INK} strokeWidth={1} />
-        <rect x={mx} y={cy - 18} width={46} height={36} rx={3} fill={pole === 1 ? '#3d5a66' : '#e2ded8'} stroke={INK} strokeWidth={1} />
-        <Txt x={mx - 23} y={cy + 5} text={pole === 1 ? 'S' : 'N'} size={14} color={pole === 1 ? INK : '#ffffff'} bold />
-        <Txt x={mx + 23} y={cy + 5} text={pole === 1 ? 'N' : 'S'} size={14} color={pole === 1 ? '#ffffff' : INK} bold />
+        <rect x={mx - 46} y={cy - 18} width={46} height={36} rx={3} fill={pole === 1 ? '#3d5a66' : '#e2ded8'} stroke={INK} strokeWidth={1} />
+        <rect x={mx} y={cy - 18} width={46} height={36} rx={3} fill={pole === 1 ? '#e2ded8' : '#3d5a66'} stroke={INK} strokeWidth={1} />
+        <Txt x={mx - 23} y={cy + 5} text={pole === 1 ? 'N' : 'S'} size={14} color={pole === 1 ? '#ffffff' : INK} bold />
+        <Txt x={mx + 23} y={cy + 5} text={pole === 1 ? 'S' : 'N'} size={14} color={pole === 1 ? INK : '#ffffff'} bold />
       </g>
       {[26, 40, 54].map((r) => (
         <path
@@ -1322,10 +1374,10 @@ function InductionStage({ m }: { m: LabModel }) {
           return (
             <Arrow
               key={i}
-              x1={cx + 22}
+              x1={cx - 60}
               y1={yy}
-              x2={cx + 22}
-              y2={yy + (emf > 0 ? 18 : -18)}
+              x2={cx - 60}
+              y2={yy + (emf > 0 ? -18 : 18)}
               color={WARN}
               width={1.6}
               head={6}
@@ -1389,14 +1441,14 @@ function TransformerStage({ m, t }: { m: LabModel; t: number }) {
       <Txt x={140} y={266} text={`U₁ = ${U1} V`} size={9} color={SOFT} />
       <line x1={170} y1={220} x2={310} y2={220} stroke={INK} strokeWidth={1} opacity={0.7} />
       <line x1={140} y1={190} x2={140} y2={120} stroke={INK} strokeWidth={1} opacity={0.7} />
-      <line x1={140} y1={120} x2={318} y2={120} stroke={INK} strokeWidth={1} opacity={0.7} />
+      <path d="M140 120 L333 120 L333 130" fill="none" stroke={INK} strokeWidth={1} opacity={0.7} />
 
       {/* 负载 */}
       <path d="M482 150 L620 150 L620 192" fill="none" stroke={INK} strokeWidth={1} opacity={0.7} />
       <circle cx={620} cy={220} r={26} fill="#fff" stroke={INK} strokeWidth={1.2} />
       <path d="M608 208 L632 232 M632 208 L608 232" stroke={WARN} strokeWidth={1.2} />
       <path d="M612 244 L628 244 L626 254 L614 254 Z" fill="#e2ded8" stroke={INK} strokeWidth={1} />
-      <Txt x={620} y={272} text="负载" size={8.5} color={SOFT} />
+      <Txt x={650} y={286} text="负载" size={8.5} color={SOFT} anchor="start" />
       <path d="M620 246 L620 272 L482 272 L482 240" fill="none" stroke={INK} strokeWidth={1} opacity={0.7} />
       <Txt x={650} y={224} text={`U₂ = ${U2.toFixed(1)} V`} size={9} color="#4a6b8a" anchor="start" />
       <Txt x={650} y={240} text={`I₂ = ${I2.toFixed(2)} A`} size={8} color={SOFT} anchor="start" />
@@ -1422,7 +1474,7 @@ function SensorStage({ m, t }: { m: LabModel; t: number }) {
       <Txt x={220} y={214} text="水" size={9} color={SOFT} />
       {/* 热敏电阻 */}
       <rect x={212} y={196} width={14} height={120} rx={7} fill="#f2f0ec" stroke={INK} strokeWidth={1.2} />
-      <Txt x={220} y={188} text="R" size={9} color={INK} />
+      <Txt x={234} y={188} text="R" size={9} color={INK} anchor="start" />
       {/* 加热丝 */}
       <path d="M170 336 Q180 324 190 336 T210 336 T230 336 T250 336 T270 336" fill="none" stroke={WARN} strokeWidth={1.6} opacity={0.7} />
       {[0, 1, 2].map((i) => (
@@ -1443,7 +1495,7 @@ function SensorStage({ m, t }: { m: LabModel; t: number }) {
       <rect x={352} y={210} width={64} height={26} rx={3} fill="#f2f0ec" stroke={INK} strokeWidth={1} />
       <Txt x={384} y={227} text="继电器" size={8.5} color={INK} />
       <line x1={352} y1={252} x2={440} y2={252} stroke={INK} strokeWidth={1.2} />
-      <line x1={352} y1={252} x2={on ? 430 : 404} y2={on ? 240 : 218} stroke={WARN} strokeWidth={2} strokeLinecap="round" />
+      <line x1={352} y1={252} x2={on ? 438 : 404} y2={on ? 251 : 218} stroke={WARN} strokeWidth={2} strokeLinecap="round" />
       <circle cx={352} cy={252} r={3} fill={INK} />
       <circle cx={440} cy={252} r={3} fill={INK} />
       <Txt x={425} y={288} text={on ? '触点闭合' : '触点断开'} size={8.5} color={on ? WARN : SOFT} />
@@ -1456,11 +1508,11 @@ function SensorStage({ m, t }: { m: LabModel; t: number }) {
       <Txt x={610} y={292} text="小灯泡" size={9} color={SOFT} />
       <Txt x={610} y={306} text={on ? '亮' : '灭'} size={10} color={on ? WARN : SOFT} bold />
 
-      {/* 连线 */}
+      {/* 连线：控制电路进控制盒；工作电路从控制盒出来接到灯泡两端 */}
       <path d="M220 196 L220 170 L330 170" fill="none" stroke={LINE} strokeWidth={1.4} />
-      <path d="M520 245 L610 245" fill="none" stroke={LINE} strokeWidth={1.4} />
-      <path d="M520 220 L560 220 L560 240" fill="none" stroke={LINE} strokeWidth={1.4} />
       <path d="M150 300 L110 300 L110 170 L330 170" fill="none" stroke={LINE} strokeWidth={1.2} opacity={0.7} />
+      <path d="M520 220 L560 220 L560 196 L610 196 L610 216" fill="none" stroke={LINE} strokeWidth={1.4} />
+      <path d="M520 245 L580 245 L580 350 L650 350 L650 238 L632 238" fill="none" stroke={LINE} strokeWidth={1.4} />
 
       <Tag x={380} y={110} text={`R = ${(R / 1000).toFixed(2)} kΩ`} color={INK} />
       <Tag x={380} y={138} text={`I = ${I.toFixed(2)} mA`} color={SOFT} />
@@ -1473,13 +1525,13 @@ function SensorStage({ m, t }: { m: LabModel; t: number }) {
 /* ───────────────────────── 油膜法 ───────────────────────── */
 
 function OilFilmStage({ m, t }: { m: LabModel; t: number }) {
-  const { Vpure, S, d, r } = m.g
+  const { Vpure, S, d, r, settled } = m.g
   const cx = 280
   const cy = 270
   const rx = Math.max(4, r * 560)
   const ry = Math.max(2, rx * 0.42)
   const dropT = Math.min(1, t / 0.8)
-  const dropY = 70 + 160 * dropT
+  const dropY = 70 + 200 * dropT
   const showGrid = t > 1.2
   return (
     <g>
@@ -1539,8 +1591,15 @@ function OilFilmStage({ m, t }: { m: LabModel; t: number }) {
 
       <Tag x={120} y={110} text={`V = ${fmtSci(Vpure, 1)} m³`} color={INK} anchor="start" />
       <Tag x={120} y={138} text={`S = ${S.toFixed(3)} m²`} color={INK} anchor="start" />
-      <Tag x={120} y={166} text={`d = ${fmtSci(d, 2)} m`} color={WARN} anchor="start" bold />
-      <Txt x={380} y={410} text="油膜不再扩散后再描轮廓；数格子时不足半格舍去、多于半格算一格" size={10} color={SOFT} />
+      <Tag
+        x={120}
+        y={166}
+        text={settled ? `d = ${fmtSci(d, 2)} m` : 'd：油膜铺展中…'}
+        color={WARN}
+        anchor="start"
+        bold
+      />
+      <Txt x={380} y={410} text="油膜不再扩散后再描轮廓；数格子时不足半格舍去、多于半格算一格（网格为示意）" size={10} color={SOFT} />
     </g>
   )
 }
@@ -1581,9 +1640,9 @@ function GasStage({ m, t }: { m: LabModel; t: number }) {
       <circle cx={pistonX + 74} cy={225} r={8} fill="#f2f0ec" stroke={INK} strokeWidth={1} />
       {/* 接口与压强传感器 */}
       <rect x={left - 26} y={206} width={28} height={44} rx={4} fill="#f2f0ec" stroke={INK} strokeWidth={1} />
-      <path d={`M ${left - 26} 228 L 90 228`} fill="none" stroke={LINE} strokeWidth={1.4} />
-      <circle cx={646} cy={230} r={46} fill="#fff" stroke={INK} strokeWidth={1.2} />
-      <Dial cx={646} cy={248} r={34} angle={20 + gauge * 140} label="压强" sub={`${P.toFixed(0)} kPa`} color={WARN} ticks={9} />
+      <path d={`M ${left - 26} 228 L 104 228`} fill="none" stroke={LINE} strokeWidth={1.4} />
+      <circle cx={72} cy={230} r={42} fill="#fff" stroke={INK} strokeWidth={1.2} />
+      <Dial cx={72} cy={246} r={31} angle={20 + gauge * 140} label="压强" sub={`${P.toFixed(0)} kPa`} color={WARN} ticks={9} />
 
       <Tag x={170} y={110} text={`V = ${V.toFixed(1)} mL`} color={INK} anchor="start" />
       <Tag x={170} y={138} text={`p = ${P.toFixed(1)} kPa`} color={WARN} anchor="start" bold />

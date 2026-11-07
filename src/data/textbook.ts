@@ -901,7 +901,7 @@ export const EXPERIMENTS: LabExperiment[] = [
     conclusion: '用单摆可以较准确地测量当地的重力加速度，g 约为 9.8 m/s²。',
     controls: [
       { id: 'L', label: '摆长 L', min: 0.5, max: 1.5, step: 0.05, unit: 'm' },
-      { id: 'th0', label: '初始摆角', min: 2, max: 10, step: 1, unit: '°' },
+      { id: 'th0', label: '初始摆角', min: 2, max: 5, step: 1, unit: '°' },
     ],
     params: { L: 1.0, th0: 5 },
     chartTitle: 'T²-L 图像',

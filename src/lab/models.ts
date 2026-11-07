@@ -58,11 +58,15 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
       const v0 = num(p, 'v0', 0.3)
       const a = num(p, 'a', 0.8)
       const T = 0.02
-      const tMax = 3.2
-      const tt = Math.min(t % 4.4, tMax)
+      // 纸带有效长度约 5 m：按参数算出跑满纸带所需时间，避免小车停在纸带尽头后点还在往外跑
+      const tMax = Math.min(
+        3.2,
+        a > 0 ? (-v0 + Math.sqrt(v0 * v0 + 2 * a * 5)) / a : 5 / Math.max(0.05, v0),
+      )
+      const tt = Math.min(t % (tMax + 1.2), tMax)
       const pos = v0 * tt + 0.5 * a * tt * tt
       const v = v0 + a * tt
-      const dots = Math.min(70, Math.floor(tt / T) + 1)
+      const dots = Math.floor(tt / T) + 1
       return {
         readings: [
           R('时间 t', f(tt, 2), 's', undefined, 'accent'),
@@ -81,7 +85,7 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
           series: [{ pts: [[0, v0], [tMax, v0 + a * tMax]] }],
           cursor: [tt, v],
         },
-        note: '纸带上每 0.02 s 留下一个点；用前后相邻两点算出的平均速度，就是中间时刻的瞬时速度。',
+        note: '纸带上每 0.02 s 留下一个点；取中间时刻前后相邻的两个点（相距 2T），用这段平均速度代替中间时刻的瞬时速度。',
         formula: {
           expr: 'vₙ = (xₙ₊₁ − xₙ₋₁) / (2T)',
           // 分子是前后两点（相距 2T）的距离，不是整段位移
@@ -116,7 +120,8 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
           xLabel: 'F / N',
           yLabel: 'a / (m·s⁻²)',
           xRange: [0, 2],
-          yRange: [0, 4.4],
+          // M 较小时 a 会超过 4 m/s²，纵轴必须跟着放大，否则数据点跑到图外
+          yRange: [0, Math.max(2, (2 / M) * 1.08)],
           series: [
             { pts: [[0, 0], [2, 2 / M]], label: '理论直线' },
             { pts: [[F, a]], dots: true, color: '#9a5b4a', label: '本次数据' },
@@ -160,8 +165,9 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
           title: exp.chartTitle ?? 'F-x 图像',
           xLabel: 'x / cm',
           yLabel: 'F / N',
-          xRange: [0, 25],
-          yRange: [0, 10],
+          // 5 个钩码对应的最大形变与最大弹力，保证极端参数下曲线也在图内
+          xRange: [0, Math.max(5, ((5 * m * G) / k) * 100 * 1.1)],
+          yRange: [0, Math.max(1, 5 * m * G * 1.1)],
           series: [{ pts: pts.map(([xx, yy]) => [xx * 100, yy]) as [number, number][] }],
           cursor: [x * 100, F],
         },
@@ -452,7 +458,7 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
           R('电阻 R', f(Rr, 3), 'Ω', 'R = ρL/S'),
           R('电压 U', f(U, 2), 'V', 'U = IR'),
           R('电流 I', f(I, 2), 'A'),
-          R('电阻率 ρ', sci(info.rho), 'Ω·m', '本次测量结果', 'accent'),
+          R('电阻率 ρ', sci(info.rho), 'Ω·m', '由 R、d、L 反算', 'accent'),
         ],
         chart: {
           title: exp.chartTitle ?? 'U-I 图像',
@@ -485,7 +491,7 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
       return {
         readings: [
           R('欧姆挡倍率', `×${mult}`, '', '换挡后要重新调零'),
-          R('表盘读数', f(reading, 1), 'Ω', '指针所指刻度', tone),
+          R('表盘读数', f(reading, 1), '', '指针所指刻度，再乘倍率', tone),
           R('测量值', f(reading * mult, 0), 'Ω', '读数 × 倍率', 'accent'),
           R('中值电阻', f(midOhm, 0), 'Ω', '该挡的内阻'),
           R('指针位置', `${f(deflect * 100, 0)}%`, '', deflect > 0.8 ? '偏右，读数偏小' : deflect < 0.2 ? '偏左，读数偏大' : '接近中值，较准'),
@@ -553,8 +559,12 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
       const cycle = 3.6
       const tt = t % cycle
       const before = tt < tc
-      const x1 = before ? -1.1 + v1 * tt : -1.1 + v1 * tc + v1p * (tt - tc)
-      const x2 = before ? 0.9 : 0.9 + v2p * (tt - tc)
+      // 滑块中心相距 0.50 m 时刚好接触；m1 从 -1.10 m 出发，
+      // 由 v1 反推 m2 的初始位置，使碰撞严格发生在 t = tc
+      const x1Start = -1.1
+      const x2Start = x1Start + v1 * tc + 0.5
+      const x1 = before ? x1Start + v1 * tt : x1Start + v1 * tc + v1p * (tt - tc)
+      const x2 = before ? x2Start : x2Start + v2p * (tt - tc)
       const ts = lin(0, 3.4, 34)
       const p1 = ts.map((q): [number, number] => [q, q < tc ? m1 * v1 : m1 * v1p])
       const p2 = ts.map((q): [number, number] => [q, q < tc ? 0 : m2 * v2p])
@@ -621,7 +631,7 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
       return {
         readings: [
           R('位移 x', f(x, 2), 'cm', '相对平衡位置', 'accent'),
-          R('速度 v', f(vm, 2), 'm/s', v >= 0 ? '向上' : '向下'),
+          R('速度 v', f(vm, 2), 'm/s', Math.abs(vm) < 0.005 ? '瞬时静止' : v > 0 ? '向上' : '向下'),
           R('加速度 a', f(a / 100, 2), 'm/s²', 'a = −ω²x'),
           R('回复力 F', f(F, 2), 'N', 'F = −kx'),
           R('振幅 A', f(A, 1), 'cm'),
@@ -661,8 +671,9 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
       const x = L * Math.sin(th)
       const y = -L * Math.cos(th)
       const gMeas = (4 * Math.PI * Math.PI * L) / (T * T)
-      // 线速度 = L·|dθ/dt|；最低点（θ=0）速度最大，不是零
-      const v = L * th0 * DEG * w * Math.abs(Math.sin(phase))
+      // 线速度 = L·dθ/dt；保留符号，动画里的箭头方向才能跟着摆动反向
+      const vs = -L * th0 * DEG * w * Math.sin(phase)
+      const v = Math.abs(vs)
       const curve: [number, number][] = lin(0.5, 1.5, 20).map((q) => [q, (4 * Math.PI * Math.PI * q) / G])
       return {
         readings: [
@@ -684,7 +695,7 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
         },
         note: '摆长越长周期越大；T²-L 图线是过原点的直线，斜率等于 4π²/g。',
         formula: { expr: 'g = 4π²L / T²', sub: `= 4π²×${f(L, 2)} ÷ ${f(T, 3)}² = ${f(gMeas, 2)} m/s²` },
-        g: { th, x, y, T, w, v, L },
+        g: { th, x, y, T, w, v, vs, L, th0 },
       }
     }
 
@@ -710,8 +721,8 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
           title: exp.chartTitle ?? 'sinθ₁-sinθ₂ 图像',
           xLabel: 'sinθ₂',
           yLabel: 'sinθ₁',
-          xRange: [0, 0.8],
-          yRange: [0, 0.95],
+          xRange: [0, 0.85],
+          yRange: [0, 1.02],
           series: [{ pts: curve }],
           cursor: [Math.sin(r * DEG), Math.sin(i * DEG)],
         },
@@ -727,7 +738,8 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
       const d = num(p, 'd', 0.2)
       const L = num(p, 'L', 1.0)
       const dx = (L * lam * 1e-9) / (d * 1e-3)
-      const ten = 10 * dx
+      // 10 条亮纹从第 1 条到第 10 条只有 9 个间隔
+      const ten = 9 * dx
       const curve: [number, number][] = lin(-12, 12, 120).map((q) => [
         q,
         Math.cos((Math.PI * (q * 1e-3)) / dx) ** 2,
@@ -738,7 +750,7 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
           R('双缝间距 d', f(d, 3), 'mm'),
           R('缝到屏距离 L', f(L, 2), 'm'),
           R('条纹间距 Δx', f(dx * 1000, 3), 'mm', 'Δx = Lλ/d', 'accent'),
-          R('10 条亮纹间距', f(ten * 1000, 2), 'mm', '实际测量的量'),
+          R('10 条亮纹总间距', f(ten * 1000, 2), 'mm', 'a = 9Δx'),
           R('计算波长', f((d * 1e-3 * dx) / L * 1e9, 0), 'nm', 'λ = dΔx/L'),
         ],
         chart: {
@@ -766,8 +778,10 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
       const flux = fluxOf(pos)
       const dt = 0.01
       const dFlux = (fluxOf(-0.25 + 0.55 * Math.sin((2 * Math.PI * (tt + dt)) / period)) - fluxOf(-0.25 + 0.55 * Math.sin((2 * Math.PI * (tt - dt)) / period))) / (2 * dt)
-      const emf = -dFlux * (pole === 'N' ? 1 : -1)
-      const moving = Math.cos((2 * Math.PI * tt) / period) > 0 ? '靠近线圈' : '远离线圈'
+      // 从线圈右端（磁铁一侧）看：N 极靠近、磁通增加时，感应电流逆时针
+      const emf = dFlux * (pole === 'N' ? 1 : -1)
+      // 磁铁在线圈两侧都可能靠近或远离，用磁通变化率判断才可靠
+      const moving = dFlux > 0 ? '靠近线圈' : dFlux < 0 ? '远离线圈' : '瞬间静止'
       const dir = emf === 0 ? '无' : emf > 0 ? '逆时针' : '顺时针'
       const ts = lin(0, period, 60)
       const fluxCurve: [number, number][] = ts.map((q) => [q, fluxOf(-0.25 + 0.55 * Math.sin((2 * Math.PI * q) / period))])
@@ -847,7 +861,7 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
           cursor: [(50 * t) % 0.04, u1],
           hline: 0,
         },
-        note: '原、副线圈电压之比等于匝数之比；副线圈匝数少于原线圈时是降压变压器。',
+        note: '原、副线圈电压之比等于匝数之比；副线圈匝数少于原线圈时降压，多于原线圈时升压。',
         formula: { expr: 'U₁/U₂ = n₁/n₂', sub: `${f(U1, 1)} ÷ ${f(U2, 2)} = ${f(n1, 0)} ÷ ${f(n2, 0)}` },
         g: { n1, n2, U1, U2, I1, I2, P, ph, u1, u2 },
       }
@@ -898,20 +912,22 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
       const Vpure = (Vdrop * 1e-6) / conc
       const S0 = 0.2
       const rMax = Math.sqrt(S0 / Math.PI)
-      const grow = clamp(t / 1.6, 0, 1)
-      const r = rMax * (1 - Math.exp(-3.2 * grow))
+      const grow = clamp(t / 1.5, 0, 1)
+      const r = rMax * (1 - Math.exp(-3.4 * grow))
       const S = Math.PI * r * r
-      const dd = S > 1e-4 ? Vpure / S : 0
-      const cells = Math.round(S / 1e-4)
+      // 油膜还在铺展时面积没稳定，此时算出的 d 会偏大；等铺满后再读
+      const settled = grow > 0.985
+      const dd = settled ? Vpure / S0 : 0
+      const cells = Math.round((settled ? S0 : S) / 1e-4)
       const curve: [number, number][] = lin(0.02, 0.5, 30).map((q) => [q, Vpure / q])
       return {
         readings: [
           R('溶液浓度', `1 / ${f(conc, 0)}`, '', '油酸酒精溶液'),
           R('一滴溶液体积', f(Vdrop, 3), 'mL'),
           R('纯油酸体积 V', sci(Vpure), 'm³', '浓度 × 一滴体积', 'accent'),
-          R('油膜面积 S', f(S, 3), 'm²', `约 ${cells} 个 1 cm² 小格`),
-          R('分子直径 d', sci(dd), 'm', 'd = V/S', 'accent'),
-          R('数量级', dd > 0 ? `10${String(Math.floor(Math.log10(dd))).replace('-', '⁻').replace(/\d/g, (ch) => SUP[Number(ch)])}` : '—', 'm', '约 10⁻¹⁰ m'),
+          R('油膜面积 S', f(settled ? S0 : S, 3), 'm²', `约 ${cells} 个 1 cm² 小格`),
+          R('分子直径 d', settled ? sci(dd) : '铺展中', settled ? 'm' : '', settled ? 'd = V/S' : '等油膜稳定', 'accent'),
+          R('数量级', dd > 0 ? `10${String(Math.floor(Math.log10(dd))).replace('-', '⁻').replace(/\d/g, (ch) => SUP[Number(ch)])}` : '—', 'm', '通常约 10⁻¹⁰ m'),
         ],
         chart: {
           title: exp.chartTitle ?? '油膜面积与分子直径',
@@ -920,11 +936,13 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
           xRange: [0.02, 0.5],
           yRange: [0, Vpure / 0.02],
           series: [{ pts: curve }],
-          cursor: [S, dd],
+          cursor: [settled ? S0 : Math.max(S, 0.02), settled ? dd : Vpure / Math.max(S, 0.02)],
         },
         note: '把油酸分子看成球形并紧密排列，油膜厚度就是分子直径；数量级约 10⁻¹⁰ m。',
-        formula: { expr: 'd = V / S', sub: `${sci(Vpure)} ÷ ${f(S, 3)} = ${sci(dd)} m` },
-        g: { Vpure, S, d: dd, r, cells, conc },
+        formula: settled
+          ? { expr: 'd = V / S', sub: `${sci(Vpure)} ÷ ${f(S0, 3)} = ${sci(dd)} m` }
+          : { expr: 'd = V / S', sub: '待油膜铺满、面积稳定后再代入' },
+        g: { Vpure, S: settled ? S0 : S, d: dd, r, cells, conc, settled: settled ? 1 : 0 },
       }
     }
 

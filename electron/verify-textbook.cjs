@@ -102,9 +102,12 @@ app.whenReady().then(async () => {
     await wait(600)
     await shot('lab-1-default.png')
 
-    /* 2. 读数会随时间变化 */
+    /* 2. 读数会随时间变化：直接拨时间，避免窗口失焦时 rAF 被节流 */
+    await js(`window.__lab.setT(0.2)`)
+    await wait(80)
     const r1 = await js(`[...document.querySelectorAll('.lab__readvalue')].slice(0,3).map(x=>x.textContent).join('|')`)
-    await wait(900)
+    await js(`window.__lab.setT(1.0)`)
+    await wait(80)
     const r2 = await js(`[...document.querySelectorAll('.lab__readvalue')].slice(0,3).map(x=>x.textContent).join('|')`)
     report.readingsLive = { r1, r2 }
     check(r1 !== r2, '实时读数没有随时间变化')
@@ -177,7 +180,8 @@ app.whenReady().then(async () => {
       return true;
     })()`)
     await wait(300)
-    const before = await js(`document.querySelector('.lab__readvalue')?.textContent ?? ''`)
+    // 改温度后应变化的是压强（第 2 个读数），体积由动画时间决定
+    const before = await js(`[...document.querySelectorAll('.lab__readvalue')][1]?.textContent ?? ''`)
     await js(`(() => {
       const r = document.querySelector('.lab__ctl input[type=range]');
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
@@ -186,9 +190,63 @@ app.whenReady().then(async () => {
       return true;
     })()`)
     await wait(300)
-    const after = await js(`document.querySelector('.lab__readvalue')?.textContent ?? ''`)
+    const after = await js(`[...document.querySelectorAll('.lab__readvalue')][1]?.textContent ?? ''`)
     report.param = { before, after }
     check(before !== after, '拖动参数后读数没有变化')
+
+    /* 7.5 关键物理一致性：碰撞接触、油膜稳定、条纹间距、表壳内读数、纸带起点 */
+    await js(`[...document.querySelectorAll('.lab__item')].find(x=>x.textContent.includes('动量守恒')).click()`)
+    await wait(350)
+    await js(`window.__lab.setT(1.4)`)
+    await wait(150)
+    report.collisionGap = await js(`(() => {
+      const xs = [...new Set([...document.querySelectorAll('.lab__svg rect')].filter(r=>r.getAttribute('width')==='64').map(r=>+r.getAttribute('x')))]
+      xs.sort((a,b)=>a-b)
+      return xs.length >= 2 ? +(xs[1] - (xs[0] + 64)).toFixed(2) : null
+    })()`)
+    check(report.collisionGap !== null && report.collisionGap < 10, `碰撞时两滑块没有接触（间隙 ${report.collisionGap} px）`)
+
+    await js(`[...document.querySelectorAll('.lab__item')].find(x=>x.textContent.includes('油膜法')).click()`)
+    await wait(350)
+    await js(`window.__lab.setT(2.2)`)
+    await wait(150)
+    report.oilD = await js(`(() => {
+      const r = [...document.querySelectorAll('.lab__read')].find(x=>x.querySelector('.lab__readlabel')?.textContent.includes('分子直径'))
+      return r?.querySelector('.lab__readvalue')?.textContent ?? null
+    })()`)
+    check(!!report.oilD && !String(report.oilD).includes('铺展中'), '油膜稳定后没有给出分子直径')
+
+    await js(`[...document.querySelectorAll('.lab__item')].find(x=>x.textContent.includes('双缝干涉')).click()`)
+    await wait(350)
+    report.tenFringe = await js(`(() => {
+      const r = [...document.querySelectorAll('.lab__read')].find(x=>x.querySelector('.lab__readlabel')?.textContent.includes('10 条亮纹总间距'))
+      return r?.querySelector('.lab__readvalue')?.textContent ?? null
+    })()`)
+    check(Math.abs(parseFloat(report.tenFringe) - 24.75) < 0.02, `10 条亮纹总间距应为 24.75 mm，实际 ${report.tenFringe}`)
+
+    await js(`[...document.querySelectorAll('.lab__item')].find(x=>x.textContent.includes('多用电表')).click()`)
+    await wait(350)
+    report.mmBox = await js(`(() => {
+      const rs = [...document.querySelectorAll('.lab__svg rect')]
+      const body = rs.find(r=>r.getAttribute('width')==='576')
+      const win = rs.find(r=>r.getAttribute('width')==='112')
+      if (!body || !win) return null
+      return { bodyRight: +body.getAttribute('x') + 576, winRight: +win.getAttribute('x') + 112 }
+    })()`)
+    check(!!report.mmBox && report.mmBox.winRight <= report.mmBox.bodyRight, '多用电表读数窗口超出表壳')
+
+    await js(`[...document.querySelectorAll('.lab__item')].find(x=>x.textContent.includes('小车速度')).click()`)
+    await wait(350)
+    await js(`window.__lab.setT(0.1)`)
+    await wait(150)
+    report.trackStart = await js(`(() => {
+      const rs = [...document.querySelectorAll('.lab__svg rect')]
+      const car = rs.find(r=>r.getAttribute('width')==='76')
+      const timer = rs.find(r=>r.getAttribute('width')==='66')
+      if (!car || !timer) return null
+      return { carLeft: +car.getAttribute('x'), timerRight: +timer.getAttribute('x') + 66 }
+    })()`)
+    check(!!report.trackStart && report.trackStart.carLeft > report.trackStart.timerRight, '小车起步时压住打点计时器')
 
     /* 8. Esc 关闭 */
     await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)

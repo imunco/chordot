@@ -298,6 +298,25 @@ function LabDetail({
   }, [])
 
   const model = useMemo(() => labModel(exp, params, t), [exp, params, t])
+
+  /* 端到端验证用的调试钩子：把时间拨到指定时刻，避免依赖 rAF 的实际帧率 */
+  useEffect(() => {
+    const w = window as unknown as {
+      __lab?: { id: string; setT: (v: number) => void; getT: () => number; model: () => ReturnType<typeof labModel> }
+    }
+    w.__lab = {
+      id: exp.id,
+      setT: (v: number) => {
+        clock.current = v
+        setT(v)
+      },
+      getT: () => clock.current,
+      model: () => labModel(exp, params, clock.current),
+    }
+    return () => {
+      delete w.__lab
+    }
+  }, [exp, params])
   const accent = FIELD_COLOR[exp.field]
 
   return (
