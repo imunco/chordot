@@ -58,6 +58,12 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
       const v0 = num(p, 'v0', 0.3)
       const a = num(p, 'a', 0.8)
       const T = 0.02
+      // 真实纸带每 0.02 s 一个点，速度一上来就密成一条黑带；
+      // 教学上常「每 5 个计时点取 1 个计数点」，相邻计数点之间的 skip 个点不标出
+      const dotMode = str(p, 'dotMode', 'count')
+      const skip = clamp(Math.round(num(p, 'skip', 4)), 0, 9)
+      const dotEvery = dotMode === 'actual' ? 1 : skip + 1
+      const countT = T * dotEvery
       // 纸带有效长度约 5 m：按参数算出跑满纸带所需时间，避免小车停在纸带尽头后点还在往外跑
       const tMax = Math.min(
         3.2,
@@ -66,15 +72,29 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
       const tt = Math.min(t % (tMax + 1.2), tMax)
       const pos = v0 * tt + 0.5 * a * tt * tt
       const v = v0 + a * tt
-      const dots = Math.floor(tt / T) + 1
+      const dots = Math.floor(tt / countT) + 1
+      // 0.1 s / 0.02 s 这种带零的小数直接 toFixed 会出现 0.10，去掉多余的零更好读
+      const numTxt = (x: number) => String(Number(x.toFixed(3)))
+      const countNote =
+        skip > 0
+          ? `相邻计数点之间有 ${skip} 个点未标出，计数周期 T = ${numTxt(countT)} s`
+          : `每个点都标为计数点，计数周期 T = ${numTxt(countT)} s`
       return {
         readings: [
           R('时间 t', f(tt, 2), 's', undefined, 'accent'),
           R('位移 s', f(pos, 3), 'm'),
           R('速度 v', f(v, 3), 'm/s', 'v = v₀ + at'),
           R('加速度 a', f(a, 2), 'm/s²', 'v-t 图线的斜率'),
-          R('打点周期 T', '0.02', 's', '50 Hz 交流电'),
-          R('已打点数', String(dots), '个', '每 0.02 s 一个点'),
+          dotMode === 'actual'
+            ? R('打点周期 T', '0.02', 's', '50 Hz 交流电')
+            : R('计数周期 T', numTxt(countT), 's', `每 ${dotEvery} 个计时点取 1 个`),
+          R(
+            dotMode === 'actual' ? '已打点数' : '计数点数',
+            String(dots),
+            '个',
+            // 右栏读数只有三列，提示必须短；完整解释放在下面的 note 里
+            dotMode === 'actual' ? '每 0.02 s 一个点' : skip > 0 ? `未标出 ${skip} 个` : '全部标出',
+          ),
         ],
         chart: {
           title: exp.chartTitle ?? 'v-t 图像',
@@ -85,13 +105,16 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
           series: [{ pts: [[0, v0], [tMax, v0 + a * tMax]] }],
           cursor: [tt, v],
         },
-        note: '纸带上每 0.02 s 留下一个点；取中间时刻前后相邻的两个点（相距 2T），用这段平均速度代替中间时刻的瞬时速度。',
+        note:
+          dotMode === 'actual'
+            ? '纸带上每 0.02 s 留下一个点，速度越大点越疏。切到「计数点」可以只标出每几个点中的一个，纸带才看得清。取中间时刻前后相邻的两个点（相距 2T），用这段平均速度代替中间时刻的瞬时速度。'
+            : `纸带上每 0.02 s 留下一个点，${countNote}。取中间时刻前后相邻的两个计数点（相距 2T），用这段平均速度代替中间时刻的瞬时速度。`,
         formula: {
           expr: 'vₙ = (xₙ₊₁ − xₙ₋₁) / (2T)',
           // 分子是前后两点（相距 2T）的距离，不是整段位移
-          sub: `= (${f(v * 2 * T * 100, 2)} cm ÷ 0.04 s) ≈ ${f(v, 2)} m/s`,
+          sub: `= (${f(v * 2 * countT * 100, 2)} cm ÷ ${numTxt(2 * countT)} s) ≈ ${f(v, 2)} m/s`,
         },
-        g: { pos, v, a, v0, tt, dots },
+        g: { pos, v, a, v0, tt, dots, dotEvery, countT, skip },
       }
     }
 

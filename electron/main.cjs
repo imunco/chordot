@@ -82,6 +82,7 @@ function ensureVisible(bounds) {
 
 let mainWindow = null
 let labWindow = null
+let symbolWindow = null
 let forceClose = false
 
 function createWindow() {
@@ -123,6 +124,7 @@ function createWindow() {
   }
 
   mainWindow.once('ready-to-show', () => mainWindow.show())
+  bindFullscreenEvents(mainWindow)
 
   const persistBounds = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return
@@ -145,6 +147,7 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
     if (labWindow && !labWindow.isDestroyed()) labWindow.close()
+    if (symbolWindow && !symbolWindow.isDestroyed()) symbolWindow.close()
   })
 
   if (isDev) {
@@ -199,6 +202,7 @@ function createLabWindow(id) {
 
   if (saved.labMaximized) labWindow.maximize()
   labWindow.once('ready-to-show', () => labWindow.show())
+  bindFullscreenEvents(labWindow)
 
   const persist = () => {
     if (!labWindow || labWindow.isDestroyed()) return
@@ -222,10 +226,109 @@ function createLabWindow(id) {
   return labWindow
 }
 
+/** 符号公式实验室：独立窗口，拼出来的表达式就是作用在小球上的合力 */
+function createSymbolWindow() {
+  if (symbolWindow && !symbolWindow.isDestroyed()) {
+    symbolWindow.show()
+    symbolWindow.focus()
+    return symbolWindow
+  }
+  symbolWindow = new BrowserWindow({
+    width: 1200,
+    height: 860,
+    minWidth: 980,
+    minHeight: 700,
+    show: false,
+    backgroundColor: '#FAFAF8',
+    title: '符号公式实验室 · 弦点',
+    autoHideMenuBar: true,
+    ...(windowIcon ? { icon: windowIcon } : {}),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+  symbolWindow.once('ready-to-show', () => symbolWindow.show())
+  symbolWindow.on('closed', () => {
+    symbolWindow = null
+  })
+  const query = '?symbols=1'
+  if (isDev) {
+    symbolWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}${query}`)
+  } else {
+    symbolWindow.loadURL(`app://chordot/index.html${query}`)
+  }
+  return symbolWindow
+}
+
+ipcMain.handle('symbol:open-window', () => {
+  createSymbolWindow()
+  return true
+})
+
+/** 符号实验室 → 主窗口：把拼好的公式交给机构里选中的部件 */
+ipcMain.handle('symbol:apply', (_e, expr) => {
+  if (typeof expr !== 'string' || !expr.trim()) return false
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('symbol:apply', expr)
+    mainWindow.focus()
+  }
+  return true
+})
+
 ipcMain.handle('lab:open-window', (_e, payload) => {
   createLabWindow(typeof payload?.id === 'string' ? payload.id : '')
   return true
 })
+
+/**
+ * 教材画面导出：把渲染层给的内容区矩形截成 PNG（base64）。
+ * 走 capturePage 而不是前端拼 SVG，缩放、放大镜、批注、读数都是「所见即所得」。
+ */
+ipcMain.handle('lab:capture', async (e, rect) => {
+  const win = BrowserWindow.fromWebContents(e.sender)
+  if (!win || win.isDestroyed()) return null
+  const [cw, ch] = win.getContentSize()
+  const x = Math.max(0, Math.min(cw - 1, Math.round(Number(rect?.x) || 0)))
+  const y = Math.max(0, Math.min(ch - 1, Math.round(Number(rect?.y) || 0)))
+  const width = Math.max(1, Math.min(cw - x, Math.round(Number(rect?.width) || 1)))
+  const height = Math.max(1, Math.min(ch - y, Math.round(Number(rect?.height) || 1)))
+  try {
+    const img = await win.webContents.capturePage({ x, y, width, height })
+    if (img.isEmpty()) return null
+    return { data: img.toPNG().toString('base64'), width, height }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) }
+  }
+})
+
+/** 主窗口 ↔ 独立窗口：实验切换双向同步（谁切的听谁的，不回传给发送方） */
+ipcMain.on('lab:sync', (e, id) => {
+  if (typeof id !== 'string' || !id) return
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed() || win.webContents.id === e.sender.id) continue
+    win.webContents.send('lab:sync', id)
+  }
+})
+
+/** 教材「全屏演示」：必须走原生 setFullScreen，才能盖住 Windows 任务栏 */
+ipcMain.handle('window:fullscreen', (e, on) => {
+  const win = BrowserWindow.fromWebContents(e.sender)
+  if (!win || win.isDestroyed()) return false
+  win.setFullScreen(Boolean(on))
+  return Boolean(on)
+})
+
+/** 原生全屏状态可能被 F11 / 系统手势改掉，通知渲染层同步按钮和布局 */
+function bindFullscreenEvents(win) {
+  const notify = () => {
+    if (!win.isDestroyed()) win.webContents.send('window:fullscreen', win.isFullScreen())
+  }
+  win.on('enter-full-screen', notify)
+  win.on('leave-full-screen', notify)
+}
 
 /** 把菜单动作转给渲染层（Alt 唤出菜单栏，或点菜单项） */
 function sendMenu(action, arg) {
@@ -259,6 +362,7 @@ ipcMain.on('ui:set-state', (_e, patch) => {
 
 ipcMain.on('app:close', () => {
   forceClose = true
+  if (symbolWindow && !symbolWindow.isDestroyed()) symbolWindow.close()
   if (labWindow && !labWindow.isDestroyed()) labWindow.close()
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close()
 })

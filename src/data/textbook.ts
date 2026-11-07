@@ -56,8 +56,28 @@ export const EXPERIMENTS: LabExperiment[] = [
     controls: [
       { id: 'v0', label: '初速度', min: 0.1, max: 0.8, step: 0.05, unit: 'm/s' },
       { id: 'a', label: '加速度', min: 0, max: 2, step: 0.1, unit: 'm/s²' },
+      {
+        id: 'skip',
+        label: '未标出点',
+        min: 0,
+        max: 9,
+        step: 1,
+        unit: '个',
+        digits: 0,
+        showWhen: { id: 'dotMode', is: 'count' },
+      },
     ],
-    params: { v0: 0.3, a: 0.8 },
+    selects: [
+      {
+        id: 'dotMode',
+        label: '打点显示',
+        options: [
+          { value: 'count', label: '计数点' },
+          { value: 'actual', label: '实际打点' },
+        ],
+      },
+    ],
+    params: { v0: 0.3, a: 0.8, dotMode: 'count', skip: 4 },
     chartTitle: 'v-t 图像',
   },
   {
@@ -105,8 +125,28 @@ export const EXPERIMENTS: LabExperiment[] = [
     controls: [
       { id: 'v0', label: '初速度', min: 0.1, max: 0.8, step: 0.05, unit: 'm/s' },
       { id: 'a', label: '加速度', min: 0.2, max: 2, step: 0.1, unit: 'm/s²' },
+      {
+        id: 'skip',
+        label: '未标出点',
+        min: 0,
+        max: 9,
+        step: 1,
+        unit: '个',
+        digits: 0,
+        showWhen: { id: 'dotMode', is: 'count' },
+      },
     ],
-    params: { v0: 0.2, a: 1.0 },
+    selects: [
+      {
+        id: 'dotMode',
+        label: '打点显示',
+        options: [
+          { value: 'count', label: '计数点' },
+          { value: 'actual', label: '实际打点' },
+        ],
+      },
+    ],
+    params: { v0: 0.2, a: 1.0, dotMode: 'count', skip: 4 },
     chartTitle: 'v-t 图像',
   },
   {

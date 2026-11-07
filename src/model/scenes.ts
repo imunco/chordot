@@ -405,9 +405,11 @@ export function buildObjects(
           ? solidObjects(scene)
           : scene.kind === 'solidIncline'
             ? []
-            : scene.kind === 'motion'
-            ? motionObjects(scene, sim)
-            : sketchObjects(scene, solution, overrides.preview ?? 0)
+            : scene.kind === 'mech'
+              ? []
+              : scene.kind === 'motion'
+                ? motionObjects(scene, sim)
+                : sketchObjects(scene, solution, overrides.preview ?? 0)
   return base.map((o) => ({
     ...o,
     name: overrides.names[o.id] ?? o.name,

@@ -1226,7 +1226,11 @@ export function reducer(state: State, action: Action): State {
         // 新建/加载示例是已知来源，未编辑前不算未保存修改
         dirty: false,
         mode:
-          action.scene.kind === 'incline' || action.scene.kind === 'motion' ? 'physics' : 'math',
+          action.scene.kind === 'incline' ||
+          action.scene.kind === 'motion' ||
+          action.scene.kind === 'mech'
+            ? 'physics'
+            : 'math',
         // 动力学样例直接进运动学面板，否则用户找不到「播放」
         subState: action.scene.kind === 'motion' ? 'kinematics' : 'statics',
         fitToken: state.fitToken + 1,
@@ -1266,7 +1270,9 @@ export function reducer(state: State, action: Action): State {
         stopped: false,
         dirty: false,
         mode:
-          action.doc.scene.kind === 'incline' || action.doc.scene.kind === 'motion'
+          action.doc.scene.kind === 'incline' ||
+          action.doc.scene.kind === 'motion' ||
+          action.doc.scene.kind === 'mech'
             ? 'physics'
             : 'math',
         subState: action.doc.scene.kind === 'motion' ? 'kinematics' : 'statics',

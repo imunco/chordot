@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { LabWindow } from './components/LabWindow'
+import { SymbolLab } from './components/SymbolLab'
 import { hydrate } from './persist'
 import './styles/tokens.css'
 import './styles/app.css'
@@ -15,13 +16,14 @@ async function boot() {
   const query = new URLSearchParams(location.search)
   const lab = query.get('lab')
   const labId = query.get('id') ?? undefined
+  const symbols = query.get('symbols')
 
   // 本地数据最多等 1.2s，等太久不如先出界面
   await Promise.race([hydrate(), new Promise((r) => setTimeout(r, 1200))])
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <ErrorBoundary>
-        {lab ? <LabWindow initialId={labId} /> : <App />}
+        {symbols ? <SymbolLab /> : lab ? <LabWindow initialId={labId} /> : <App />}
       </ErrorBoundary>
     </StrictMode>,
   )

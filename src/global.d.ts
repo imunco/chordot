@@ -42,6 +42,24 @@ declare global {
       }>
       closeWindow: () => void
       openLabWindow: (id?: string) => Promise<boolean>
+      /** 符号公式实验室（独立窗口） */
+      openSymbolWindow: () => Promise<boolean>
+      /** 把符号实验室的公式发给主窗口 */
+      applySymbolForce: (expr: string) => Promise<boolean>
+      onSymbolForce: (cb: (expr: string) => void) => () => void
+      /** 教材画面导出：截当前窗口内容区的一块，返回 base64 PNG */
+      labCapture: (rect: { x: number; y: number; width: number; height: number }) => Promise<{
+        data?: string
+        width?: number
+        height?: number
+        error?: string
+      } | null>
+      /** 实验切换同步：主窗口 ↔ 独立窗口 */
+      syncLab: (id: string) => void
+      onLabSync: (cb: (id: string) => void) => () => void
+      /** 原生全屏（教材全屏演示，能盖住任务栏） */
+      setFullscreen: (on: boolean) => Promise<boolean>
+      onFullscreenChange: (cb: (on: boolean) => void) => () => void
       onLabSwitch: (cb: (id: string) => void) => () => void
       onRequestClose: (cb: () => void) => () => void
       onMenu: (cb: (action: string, arg?: string) => void) => () => void

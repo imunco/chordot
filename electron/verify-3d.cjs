@@ -82,6 +82,12 @@ async function main() {
   `)
 
   const report = {}
+  const failures = []
+  const check = (ok, msg) => {
+    if (ok) return
+    failures.push(msg)
+    console.log('VERIFY FAILED ' + msg)
+  }
   report.views = await js(`window.__view()`)
   report.faces = await js(`window.__faceCount()`)
   report.leftRows = await js(`[...document.querySelectorAll('.left__row .left__name')].map(n => n.textContent)`)
@@ -134,6 +140,62 @@ async function main() {
   const shotOrbit = await win.webContents.capturePage()
   fs.writeFileSync(path.join(outDir, 'solid-orbit.png'), shotOrbit.toPNG())
 
+  /* ── 材质 / 贴图：面用 pattern 填，纹理矩阵跟着 UV 走 ── */
+  await js(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'p',bubbles:true}))`)
+  await wait(400)
+  const setField = (label, value, kind = 'select') =>
+    js(`(() => {
+      const row=[...document.querySelectorAll('.props__row')].find(r=>r.textContent.startsWith(${JSON.stringify(label)}));
+      if(!row) return false;
+      const el=row.querySelector(${kind === 'select' ? "'select'" : "'input'"});
+      if(!el) return false;
+      const proto=${kind === 'select' ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype;
+      const set=Object.getOwnPropertyDescriptor(proto,'value').set;
+      el.focus(); set.call(el,${JSON.stringify(String(value))});
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));
+      if (${kind === 'select' ? 'false' : 'true'}) el.blur();
+      return true
+    })()`)
+
+  report.hasMaterialField = await setField('材质', 'wood')
+  check(report.hasMaterialField, '右栏没有「材质」字段')
+  await wait(500)
+  report.texture = await js(`(() => {
+    const g=document.querySelector('[data-id="s1"]');
+    const pats=[...g.querySelectorAll('pattern')];
+    const fills=[...g.querySelectorAll('polygon')].map(p=>p.getAttribute('fill')||'').filter(f=>f.startsWith('url(#tx-'));
+    return {
+      patterns:pats.length,
+      texturedFills:fills.length,
+      matrix:pats[0]?.getAttribute('patternTransform') ?? null,
+      woodLine:pats[0] ? !!pats[0].querySelector('path') : false,
+    }
+  })()`)
+  check(report.texture.patterns >= 3, `材质没有生成纹理图案（${report.texture.patterns}）`)
+  check(report.texture.texturedFills >= 3, `面没有用纹理填充（${report.texture.texturedFills}）`)
+  check(String(report.texture.matrix).startsWith('matrix('), `纹理没有按 UV 贴到面上（${report.texture.matrix}）`)
+  const shotWood = await win.webContents.capturePage()
+  fs.writeFileSync(path.join(outDir, 'solid-wood.png'), shotWood.toPNG())
+
+  /* ── 旋转后落地：俯仰 35°，中心抬到最低点贴地 ── */
+  const zBefore = await js(`(() => {
+    const row=[...document.querySelectorAll('.props__row')].find(r=>r.textContent.startsWith('高度'));
+    return Number(row?.querySelector('input')?.value)
+  })()`)
+  await setField('俯仰', '35', 'number')
+  await wait(600)
+  const zAfter = await js(`(() => {
+    const row=[...document.querySelectorAll('.props__row')].find(r=>r.textContent.startsWith('高度'));
+    return Number(row?.querySelector('input')?.value)
+  })()`)
+  report.grounded = { before: zBefore, after: zAfter, expect: +(zBefore * (Math.cos(35 * Math.PI / 180) + Math.sin(35 * Math.PI / 180))).toFixed(2) }
+  check(zAfter > zBefore + 0.5, `俯仰后中心没有抬起来（${zBefore} → ${zAfter}）`)
+  check(Math.abs(zAfter - report.grounded.expect) < 0.05, `抬升高度不对（${zAfter} ≠ ${report.grounded.expect}）`)
+  const shotTilt = await win.webContents.capturePage()
+  fs.writeFileSync(path.join(outDir, 'solid-tilt.png'), shotTilt.toPNG())
+
+  report.failures = failures
   console.log('RESULT ' + JSON.stringify(report, null, 2))
   app.quit()
 }

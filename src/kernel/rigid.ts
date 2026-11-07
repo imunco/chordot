@@ -1,6 +1,6 @@
 import * as CANNON from 'cannon-es'
 import type { PhysicsObstacle, SolidShape } from './types'
-import { buildMesh, type Mesh, type Vec3 } from '../model/solid'
+import { buildMesh, groundedZ, type Mesh, type Vec3 } from '../model/solid'
 import { buildIncline3D } from '../model/incline3d'
 
 /**
@@ -81,10 +81,12 @@ export class RigidWorld {
 
   add(shape: SolidShape) {
     const half = shape.size / 2
+    // 旋转过的立体最低点比 center − size/2 更低，直接按 center 落地会先埋进地面再被弹飞
+    const z = Math.max(shape.center[2], groundedZ(shape))
     const body = new CANNON.Body({
       mass: 1,
       material: this.mat,
-      position: new CANNON.Vec3(shape.center[0], shape.center[1], shape.center[2]),
+      position: new CANNON.Vec3(shape.center[0], shape.center[1], z),
       linearDamping: 0.02,
       angularDamping: 0.08,
     })

@@ -9,6 +9,11 @@ export interface Mesh {
   normals?: Vec3[]
   /** 曲面标记：true 时按顶点法线做渐变，false 时整面纯色 */
   smooth?: boolean
+  /**
+   * 纹理坐标：uv[面序号][顶点序号] = [u, v]，取值 0..1。
+   * 立方体 / 多面体逐面铺一张；圆柱 / 圆锥 / 球沿母线连续展开。
+   */
+  uv?: number[][][]
 }
 
 const DEG = Math.PI / 180
@@ -42,13 +47,30 @@ function cylinderMesh(n: number, h: number): Mesh {
   push(h, -h, -1) // 底盖
 
   const faces: number[][] = []
+  const uv: number[][][] = []
+  const disc = (reverse = false) => {
+    const list = [...Array(n).keys()].map((i) => {
+      const a = (i / n) * Math.PI * 2
+      return [0.5 + 0.5 * Math.cos(a), 0.5 + 0.5 * Math.sin(a)]
+    })
+    return reverse ? list.reverse() : list
+  }
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n
     faces.push([i, j, j + n, i + n])
+    // u 用 (i+1)/n 而不是 j/n：最后一格要绕回 1，否则纹理会整片翻过来
+    uv.push([
+      [i / n, 0],
+      [(i + 1) / n, 0],
+      [(i + 1) / n, 1],
+      [i / n, 1],
+    ])
   }
   faces.push([...Array(n).keys()].map((i) => 2 * n + i))
+  uv.push(disc())
   faces.push([...Array(n).keys()].map((i) => 3 * n + i).reverse())
-  return { vertices, faces, normals, smooth: true }
+  uv.push(disc(true))
+  return { vertices, faces, normals, smooth: true, uv }
 }
 
 /** 圆锥：底面半径 h、高 2h；侧面法线按斜率给，顶盖/底面单独拆 */
@@ -73,9 +95,25 @@ function coneMesh(n: number, h: number): Mesh {
   }
 
   const faces: number[][] = []
-  for (let i = 0; i < n; i++) faces.push([i, (i + 1) % n, apex])
+  const uv: number[][][] = []
+  for (let i = 0; i < n; i++) {
+    faces.push([i, (i + 1) % n, apex])
+    uv.push([
+      [i / n, 0],
+      [(i + 1) / n, 0],
+      [(i + 0.5) / n, 1],
+    ])
+  }
   faces.push([...Array(n).keys()].map((i) => apex + 1 + i).reverse())
-  return { vertices, faces, normals, smooth: true }
+  uv.push(
+    [...Array(n).keys()]
+      .map((i) => {
+        const a = (i / n) * Math.PI * 2
+        return [0.5 + 0.5 * Math.cos(a), 0.5 + 0.5 * Math.sin(a)]
+      })
+      .reverse(),
+  )
+  return { vertices, faces, normals, smooth: true, uv }
 }
 
 function translate(mesh: Mesh, center: Vec3): Mesh {
@@ -127,7 +165,7 @@ export function rotateMesh(mesh: Mesh, q: [number, number, number, number], cent
   }
 }
 
-export function buildMesh(shape: SolidShape): Mesh {
+function buildRawMesh(shape: SolidShape): Mesh {
   const s = shape.size
   const h = s / 2
 
@@ -262,12 +300,75 @@ export function buildMesh(shape: SolidShape): Mesh {
       }
 
       const normals = vertices.map((v) => normalize(v))
-      return translate({ vertices, faces, normals, smooth: true }, shape.center)
+      // 球面 UV：u 沿经度、v 沿纬度；极点扇面取相邻两条经线的中点
+      const uv: number[][][] = []
+      for (let j = 0; j < slices; j++) {
+        uv.push([
+          [(j + 0.5) / slices, 0],
+          [j / slices, 1 / stacks],
+          [(j + 1) / slices, 1 / stacks],
+        ])
+      }
+      for (let i = 1; i < stacks - 1; i++) {
+        for (let j = 0; j < slices; j++) {
+          uv.push([
+            [j / slices, i / stacks],
+            [(j + 1) / slices, i / stacks],
+            [(j + 1) / slices, (i + 1) / stacks],
+            [j / slices, (i + 1) / stacks],
+          ])
+        }
+      }
+      for (let j = 0; j < slices; j++) {
+        uv.push([
+          [(j + 0.5) / slices, 1],
+          [(j + 1) / slices, (stacks - 1) / stacks],
+          [j / slices, (stacks - 1) / stacks],
+        ])
+      }
+      return translate({ vertices, faces, normals, smooth: true, uv }, shape.center)
     }
 
     default:
       return { vertices: [], faces: [] }
   }
+}
+
+/**
+ * 没有显式 UV 的网格（立方体 / 四面体 / 八面体 / 棱柱端面）：
+ * 逐面按平面投影归一化到 0..1，等于每个面贴一张完整的纹理。
+ */
+function autoUv(mesh: Mesh): number[][][] {
+  return mesh.faces.map((face) => {
+    const p0 = mesh.vertices[face[0]]
+    const p1 = mesh.vertices[face[1]]
+    const p2 = mesh.vertices[face[2]] ?? p1
+    let e1 = normalize(sub(p1, p0))
+    if (!Number.isFinite(e1[0]) || Math.hypot(e1[0], e1[1], e1[2]) < 1e-9) e1 = [1, 0, 0]
+    const n = normalize(cross(sub(p1, p0), sub(p2, p0)))
+    let e2 = normalize(cross(n, e1))
+    if (!Number.isFinite(e2[0]) || Math.hypot(e2[0], e2[1], e2[2]) < 1e-9) e2 = [0, 1, 0]
+    const raw = face.map((i) => {
+      const d = sub(mesh.vertices[i], p0)
+      return [dot(d, e1), dot(d, e2)]
+    })
+    const us = raw.map((r) => r[0])
+    const vs = raw.map((r) => r[1])
+    const u0 = Math.min(...us)
+    const v0 = Math.min(...vs)
+    const su = Math.max(...us) - u0 || 1
+    const sv = Math.max(...vs) - v0 || 1
+    return raw.map(([u, v]) => [(u - u0) / su, (v - v0) / sv])
+  })
+}
+
+function withAutoUv(mesh: Mesh): Mesh {
+  if (mesh.uv || mesh.faces.length === 0) return mesh
+  return { ...mesh, uv: autoUv(mesh) }
+}
+
+export function buildMesh(shape: SolidShape): Mesh {
+  return withAutoUv(buildRawMesh(shape))
 }
 
 /* ───────── 相机与投影 ───────── */
@@ -308,6 +409,8 @@ export interface FaceView {
   /** 平滑着色：面内从 from 到 to 的线性渐变（屏幕坐标） */
   grad?: { from: string; to: string; x1: number; y1: number; x2: number; y2: number }
   depth: number
+  /** 纹理：uv(0..1) → 屏幕的仿射矩阵 [a b c d e f] */
+  tex?: [number, number, number, number, number, number]
 }
 
 export interface SolidView {
@@ -363,6 +466,35 @@ function convexHull(points: { x: number; y: number }[]): [number, number][] {
   return [...lower.slice(0, -1), ...upper.slice(0, -1)].map((p) => [p.x, p.y] as [number, number])
 }
 
+/**
+ * uv → 屏幕的仿射矩阵：取面内前三个顶点解 2×3 方程。
+ * 四边形第四个点会有很小的偏差，纹理被多边形裁掉，看不出来。
+ */
+function uvMatrix(
+  uv: number[][],
+  p: { x: number; y: number }[],
+): [number, number, number, number, number, number] | undefined {
+  if (uv.length < 3 || p.length < 3) return undefined
+  const [u0, v0] = uv[0]
+  const [u1, v1] = uv[1]
+  const [u2, v2] = uv[2]
+  const du1 = u1 - u0
+  const dv1 = v1 - v0
+  const du2 = u2 - u0
+  const dv2 = v2 - v0
+  const det = du1 * dv2 - du2 * dv1
+  if (Math.abs(det) < 1e-9) return undefined
+  const dx1 = p[1].x - p[0].x
+  const dy1 = p[1].y - p[0].y
+  const dx2 = p[2].x - p[0].x
+  const dy2 = p[2].y - p[0].y
+  const a = (dx1 * dv2 - dx2 * dv1) / det
+  const c = (dx2 * du1 - dx1 * du2) / det
+  const b = (dy1 * dv2 - dy2 * dv1) / det
+  const d = (dy2 * du1 - dy1 * du2) / det
+  return [a, b, c, d, p[0].x - a * u0 - c * v0, p[0].y - b * u0 - d * v0]
+}
+
 /** 正交/透视投影 + 背面剔除 + 画家算法排序（任意网格） */
 export function projectMesh(
   mesh: Mesh,
@@ -387,6 +519,7 @@ export function projectMesh(
     shade: string
     grad?: FaceView['grad']
     normal: Vec3
+    tex?: FaceView['tex']
   }[] = []
   /** 边 → 相邻面法线（按几何位置合并，曲面拆开的顶点也能对上） */
   const edgeMap = new Map<
@@ -394,7 +527,8 @@ export function projectMesh(
     { a: number; b: number; normals: Vec3[]; front: number; back: number }
   >()
 
-  for (const face of mesh.faces) {
+  for (let fi = 0; fi < mesh.faces.length; fi++) {
+    const face = mesh.faces[fi]
     const p0 = mesh.vertices[face[0]]
     const p1 = mesh.vertices[face[1]]
     const p2 = mesh.vertices[face[2]]
@@ -449,12 +583,14 @@ export function projectMesh(
       }
     }
 
+    const faceUv = mesh.uv?.[fi]
     visible.push({
       idx: face,
       depth,
       shade: shadeColor(shadeK),
       grad,
       normal,
+      tex: faceUv ? uvMatrix(faceUv, face.map((i) => flat[i])) : undefined,
     })
   }
   visible.sort((a, b) => a.depth - b.depth)
@@ -494,6 +630,7 @@ export function projectMesh(
       shade: f.shade,
       grad: f.grad,
       depth: f.depth,
+      tex: f.tex,
     })),
     edges,
     hiddenEdges,
@@ -594,6 +731,22 @@ export function projectVector(
 ): [number, number] {
   const { right, up } = cameraBasis(camera)
   return [dot(v, right) * pxPerUnit, -dot(v, up) * pxPerUnit]
+}
+
+/**
+ * 旋转后「落地」所需的高度：返回让最低点刚好贴到 z = 0 的 center[2]。
+ *
+ * 立体是绕中心转的，倾斜后角会伸到地面以下（俯仰 35° 的立方体低角能到 −0.29×边长）。
+ * 摆放时把中心抬到「最低点 = 0」，看起来才像稳稳立在桌面上。
+ */
+export function groundedZ(shape: SolidShape): number {
+  const base = buildMesh(shape)
+  const mesh = shape.rotation ? rotateMesh(base, shape.rotation, shape.center) : base
+  if (mesh.vertices.length === 0) return shape.center[2]
+  let minRel = Infinity
+  for (const v of mesh.vertices) minRel = Math.min(minRel, v[2] - shape.center[2])
+  if (!Number.isFinite(minRel)) return shape.center[2]
+  return -minRel
 }
 
 export const VIEWS: { id: Camera['view']; label: string; azimuth: number; elevation: number }[] = [

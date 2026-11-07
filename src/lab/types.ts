@@ -43,6 +43,8 @@ export interface LabControl {
   unit?: string
   /** 显示几位小数，默认 2 */
   digits?: number
+  /** 只在某个下拉参数取到指定值时才显示（如「未标出点数」只在计数点模式有意义） */
+  showWhen?: { id: string; is: string }
 }
 
 export interface LabSelect {

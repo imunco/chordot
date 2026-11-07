@@ -77,6 +77,11 @@ export function parseDoc(text: string): { doc: Doc } | { error: string } {
     if (!scene.params || typeof scene.params.model !== 'string') {
       return { error: '课件内容损坏：运动参数缺失' }
     }
+  } else if (scene.kind === 'mech') {
+    if (!Array.isArray(scene.params?.parts) || !Array.isArray(scene.params?.links)) {
+      return { error: '课件内容损坏：机构参数缺失' }
+    }
+    if (typeof scene.params.gravity !== 'number') scene.params.gravity = 9.8
   } else {
     return { error: '课件包含当前版本不支持的内容' }
   }

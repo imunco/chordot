@@ -161,6 +161,11 @@ export function solveScene(scene: SceneSpec): Solution {
     return { points: {}, status: 'ok', ms: performance.now() - t0, source: 'analytic' }
   }
 
+  if (scene.kind === 'mech') {
+    // 机构由 Matter 每帧推进，内核只负责画布上的静态几何
+    return { points: {}, status: 'ok', ms: performance.now() - t0, source: 'analytic' }
+  }
+
   const params: TriangleParams = scene.params
   const points: Record<string, Pt> = {}
   for (const p of params.points) points[p.id] = { x: p.x, y: p.y }

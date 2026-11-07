@@ -99,17 +99,22 @@ function renderStage(exp: LabExperiment, m: LabModel, t: number) {
 /* ───────────────────────── 力学：纸带 / 小车 ───────────────────────── */
 
 function TrackStage({ m, t }: { m: LabModel; t: number }) {
-  const { pos, v, v0, a, dots } = m.g
+  const { pos, v, v0, a, tt } = m.g
   const T = 0.02
+  // 计数点模式：每 dotEvery 个计时点只标 1 个，相邻计数点之间 dotEvery-1 个点不画
+  const dotEvery = Math.max(1, Math.round(m.g.dotEvery ?? 1))
+  const countT = m.g.countT ?? T
   const px = 160 + Math.min(pos, 5.3) * 92
+  const actual = Math.min(Math.floor((tt ?? 0) / T) + 1, 400)
   const dotPts: number[] = []
-  for (let i = 0; i < Math.min(dots, 200); i++) {
+  for (let i = 0; i < actual; i += dotEvery) {
     const q = i * T
     dotPts.push(160 + (v0 * q + 0.5 * a * q * q) * 92)
   }
   const last = dotPts[dotPts.length - 1] ?? 120
   // 教材用 xₙ₊₁ − xₙ₋₁ 求中间时刻速度，括号要跨两个打点间隔（2T）
   const prev2 = dotPts[dotPts.length - 3] ?? dotPts[0] ?? 160
+  const dotR = dotEvery > 1 ? 2.5 : 1.9
 
   return (
     <g>
@@ -130,7 +135,14 @@ function TrackStage({ m, t }: { m: LabModel; t: number }) {
       <Txt x={98} y={344} text="纸带" size={10} color={SOFT} anchor="end" />
 
       {dotPts.map((x, i) => (
-        <circle key={i} cx={x} cy={339} r={1.9} fill={INK} opacity={i > dotPts.length - 8 ? 0.9 : 0.55} />
+        <circle
+          key={i}
+          cx={x}
+          cy={339}
+          r={dotR}
+          fill={INK}
+          opacity={dotEvery > 1 ? 0.82 : i > dotPts.length - 8 ? 0.9 : 0.55}
+        />
       ))}
 
       {/* 相邻两点间距 Δx */}
@@ -139,7 +151,14 @@ function TrackStage({ m, t }: { m: LabModel; t: number }) {
           <line x1={prev2} y1={356} x2={prev2} y2={362} stroke={SOFT} strokeWidth={0.8} />
           <line x1={last} y1={356} x2={last} y2={362} stroke={SOFT} strokeWidth={0.8} />
           <line x1={prev2} y1={359} x2={last} y2={359} stroke={SOFT} strokeWidth={0.8} />
-          <Txt x={(prev2 + last) / 2} y={373} text="xₙ₊₁ − xₙ₋₁（2T）" size={9} color={SOFT} mono />
+          <Txt
+            x={(prev2 + last) / 2}
+            y={373}
+            text={`xₙ₊₁ − xₙ₋₁（2T = ${String(Number((2 * countT).toFixed(3)))} s）`}
+            size={9}
+            color={SOFT}
+            mono
+          />
         </g>
       )}
 
@@ -177,7 +196,17 @@ function TrackStage({ m, t }: { m: LabModel; t: number }) {
       <Tag x={px + 12} y={244} text={`v = ${v.toFixed(2)} m/s`} color={WARN} anchor="start" />
 
       <Tag x={px} y={226} text={`s = ${pos.toFixed(2)} m`} color={INK} />
-      <Txt x={380} y={406} text="每 0.02 s 打一个点；取中间时刻前后两个点（相距 2T）求瞬时速度" size={10} color={SOFT} />
+      <Txt
+        x={380}
+        y={406}
+        text={
+          dotEvery > 1
+            ? `每 ${dotEvery} 个计时点取 1 个计数点（相邻计数点间 ${dotEvery - 1} 个点未标出）；取前后两个计数点求瞬时速度`
+            : '每 0.02 s 打一个点（实际密度）；取中间时刻前后两个点求瞬时速度'
+        }
+        size={10}
+        color={SOFT}
+      />
     </g>
   )
 }

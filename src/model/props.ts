@@ -1,4 +1,5 @@
-import type { PhysicsForce, SceneSpec, SolidShape } from '../kernel/types'
+import type { PhysicsForce, SceneSpec, SolidMaterial, SolidShape } from '../kernel/types'
+import { groundedZ } from './solid'
 
 export type FieldValue = number | boolean | string
 
@@ -235,6 +236,11 @@ export function schemaFor(scene: SceneSpec, selectedId?: string | null): PropGro
     const patchShape = (id: string, patch: Partial<SolidShape>) => ({
       shapes: scene.params.shapes.map((s) => (s.id === id ? { ...s, ...patch } : s)),
     })
+    /** 旋转 / 改尺寸后把中心抬到「最低点贴地」，倾斜的立体才不会穿到地面以下 */
+    const settle = (next: SolidShape): SolidShape => {
+      const z = Math.max(next.center[2], groundedZ(next))
+      return z === next.center[2] ? next : { ...next, center: [next.center[0], next.center[1], z] }
+    }
     const forceFields = (shape: SolidShape): Field[] => [
       {
         key: `sf-on-${shape.id}`,
@@ -275,7 +281,7 @@ export function schemaFor(scene: SceneSpec, selectedId?: string | null): PropGro
           () => shape.size,
           { unit: 'm', min: 0.5, max: 10, step: 0.5 },
           (v) => ({
-            shapes: scene.params.shapes.map((s, j) => (j === i ? { ...s, size: v } : s)),
+            shapes: scene.params.shapes.map((s, j) => (j === i ? settle({ ...s, size: v }) : s)),
           }),
         ),
         num(
@@ -299,12 +305,33 @@ export function schemaFor(scene: SceneSpec, selectedId?: string | null): PropGro
             (v) => ({
               shapes: scene.params.shapes.map((s, j) =>
                 j === i
-                  ? { ...s, rotation: quatEuler({ ...eulerDeg(s.rotation), [axis]: v }) }
+                  ? settle({
+                      ...s,
+                      rotation: quatEuler({ ...eulerDeg(s.rotation), [axis]: v }),
+                    })
                   : s,
               ),
             }),
           ),
         ),
+        {
+          key: `mat-${shape.id}`,
+          label: '材质',
+          kind: 'select',
+          options: [
+            { value: 'none', label: '无（灰阶）' },
+            { value: 'paper', label: '纸面' },
+            { value: 'wood', label: '木纹' },
+            { value: 'grid', label: '网格' },
+            { value: 'dots', label: '点阵' },
+            { value: 'metal', label: '金属' },
+          ],
+          get: () => shape.material ?? 'none',
+          set: (v: FieldValue) =>
+            patchShape(shape.id, {
+              material: String(v) === 'none' ? undefined : (String(v) as SolidMaterial),
+            }),
+        } satisfies Field,
         ...(shape.id === selectedId ? forceFields(shape) : []),
       ],
     }))

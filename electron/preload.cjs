@@ -13,6 +13,29 @@ contextBridge.exposeInMainWorld('chordot', {
   importPack: () => ipcRenderer.invoke('pack:import'),
   closeWindow: () => ipcRenderer.send('app:close'),
   openLabWindow: (id) => ipcRenderer.invoke('lab:open-window', { id }),
+  openSymbolWindow: () => ipcRenderer.invoke('symbol:open-window'),
+  /** 把符号实验室拼好的公式发给主窗口（机构里选中的部件） */
+  applySymbolForce: (expr) => ipcRenderer.invoke('symbol:apply', expr),
+  onSymbolForce: (cb) => {
+    const handler = (_e, expr) => cb(String(expr))
+    ipcRenderer.on('symbol:apply', handler)
+    return () => ipcRenderer.removeListener('symbol:apply', handler)
+  },
+  /** 教材画面导出：截当前窗口的一块内容区，返回 base64 PNG */
+  labCapture: (rect) => ipcRenderer.invoke('lab:capture', rect),
+  /** 主窗口 / 独立窗口实验切换同步 */
+  syncLab: (id) => ipcRenderer.send('lab:sync', id),
+  onLabSync: (cb) => {
+    const handler = (_e, id) => cb(String(id))
+    ipcRenderer.on('lab:sync', handler)
+    return () => ipcRenderer.removeListener('lab:sync', handler)
+  },
+  setFullscreen: (on) => ipcRenderer.invoke('window:fullscreen', Boolean(on)),
+  onFullscreenChange: (cb) => {
+    const handler = (_e, on) => cb(Boolean(on))
+    ipcRenderer.on('window:fullscreen', handler)
+    return () => ipcRenderer.removeListener('window:fullscreen', handler)
+  },
   onLabSwitch: (cb) => {
     const handler = (_e, id) => cb(id)
     ipcRenderer.on('lab:switch', handler)

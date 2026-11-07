@@ -139,6 +139,9 @@ export interface Camera {
 
 export type SolidType = 'cube' | 'pyramid' | 'prism' | 'tetra' | 'octahedron' | 'sphere'
 
+/** 立体材质：程序化纹理，不依赖图片资源 */
+export type SolidMaterial = 'none' | 'paper' | 'wood' | 'grid' | 'dots' | 'metal'
+
 export interface SolidShape {
   id: string
   name: string
@@ -151,6 +154,8 @@ export interface SolidShape {
   rotation?: [number, number, number, number]
   /** 只作用在这个物体上的变力 */
   force?: PhysicsForce
+  /** 表面材质；缺省 = 原来的灰阶着色 */
+  material?: SolidMaterial
 }
 
 /** 变力：F(t) 沿某个方向 */
@@ -243,8 +248,78 @@ export interface SolidInclineParams {
   decompose: boolean
 }
 
+/* ───────── 机构装配：拖部件到画布，用弹簧 / 绳 / 杆连成一台机构 ───────── */
+
+export type MechPartKind = 'ball' | 'box' | 'anchor' | 'track' | 'pulley' | 'wheel'
+export type MechLinkKind = 'spring' | 'rope' | 'rod' | 'hinge'
+
+/** 公式力：表达式里可用 x / y / vx / vy / t / m / g，结果单位 N，沿 angle 方向 */
+export interface MechForce {
+  enabled: boolean
+  expr: string
+  /** 力的方向（度，0 = +x） */
+  angle: number
+}
+
+export interface MechPart {
+  id: string
+  kind: MechPartKind
+  /** 世界坐标（米） */
+  x: number
+  y: number
+  /** 球半径 / 方块半边长 / 锚点半径 / 轨道半长，米 */
+  size: number
+  /** 质量 kg；锚点 / 轨道 / 滑轮忽略 */
+  mass: number
+  /** 锁死不动（锚点天然为 true） */
+  fixed?: boolean
+  /** 轨道 / 滑轮的朝向（度，0 = 水平） */
+  angle?: number
+  /** 公式力（机构里也能像三维那样用 F(x,v,t) 推一把） */
+  force?: MechForce
+  /** 轮：中心轴固定（转动副） */
+  pinned?: boolean
+  /** 电机力矩 N·m（中心轴固定的轮才有意义） */
+  motor?: number
+  /** 只能沿这条轨道滑（轨道部件的 id） */
+  onTrack?: string
+  /** 子机构分组 id：同组的部件一起拖动 / 一起复制 */
+  group?: string
+}
+
+export interface MechLink {
+  id: string
+  kind: MechLinkKind
+  /** 两端部件 id */
+  a: string
+  b: string
+  /** 自然长度 m */
+  rest: number
+  /** 弹簧劲度系数 N/m */
+  k?: number
+  /** 阻尼 N·s/m */
+  c?: number
+  /**
+   * 绳依次绕过的滑轮 id（滑轮组）。旧的单滑轮文件只有 via，读入时迁移到这里。
+   */
+  vias?: string[]
+  /** @deprecated 旧的单滑轮字段，保留兼容；新代码读 vias */
+  via?: string
+  /** 连接点相对部件中心的偏移（米，跟着部件一起转）——铰链在任意点铰接靠它 */
+  offsetA?: { x: number; y: number }
+  offsetB?: { x: number; y: number }
+}
+
+export interface MechParams {
+  parts: MechPart[]
+  links: MechLink[]
+  /** 重力加速度 m/s² */
+  gravity: number
+}
+
 export type SceneSpec =
   | { kind: 'incline'; params: InclineParams }
+  | { kind: 'mech'; params: MechParams }
   | { kind: 'triangle'; params: TriangleParams }
   | { kind: 'sketch'; doc: SketchDoc }
   | { kind: 'solid'; params: SolidParams }

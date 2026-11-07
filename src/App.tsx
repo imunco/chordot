@@ -27,6 +27,11 @@ import {
 } from './kernel/scene'
 import type {
   Camera,
+  MechLink,
+  MechLinkKind,
+  MechParams,
+  MechPart,
+  MechPartKind,
   PhysicsForce,
   SceneSpec,
   SketchConstraint,
@@ -47,6 +52,19 @@ import { Onboarding } from './components/Onboarding'
 import { UpdateDialog } from './components/UpdateDialog'
 import { useUpdater } from './updater'
 import { PX_PER_UNIT } from './model/scale'
+import { MechBar } from './components/MechBar'
+import {
+  emptyMechScene,
+  makeLink,
+  makePart,
+  MECH_GROUND_Y,
+  mechPulleyScene,
+  mechCartScene,
+  mechPendulumScene,
+  mechPulleyGroupScene,
+  mechWheelScene,
+  springOscillatorScene,
+} from './model/mech'
 import {
   conflictScene,
   inclineScene,
@@ -424,6 +442,25 @@ export default function App() {
   const [physTotal, setPhysTotal] = useState(0)
   const [physIndex, setPhysIndex] = useState(0)
 
+  /* 机构装配：选中的部件 / 连接件、连接模式、播放状态都在这一层 */
+  const mech = state.doc.scene.kind === 'mech' ? state.doc.scene.params : null
+  const [mechSel, setMechSel] = useState<{ id: string; kind: 'part' | 'link' } | null>(null)
+  const [mechPending, setMechPending] = useState<MechLinkKind | null>(null)
+  const [mechAnchor, setMechAnchor] = useState<string | null>(null)
+  const [mechPlaying, setMechPlaying] = useState(false)
+  const [mechVectors, setMechVectors] = useState(true)
+  const [mechDecompose, setMechDecompose] = useState(false)
+  const [mechReset, setMechReset] = useState(0)
+
+  // 换场景（或打开另一份课件）时，机构的选中 / 播放状态全部归零
+  useEffect(() => {
+    setMechSel(null)
+    setMechPending(null)
+    setMechAnchor(null)
+    setMechPlaying(false)
+    setMechReset((t) => t + 1)
+  }, [state.doc.scene.kind, state.file])
+
   useEffect(() => {
     const scene = state.doc.scene
     if (scene.kind !== 'solid' || !scene.params.physics?.enabled) {
@@ -570,6 +607,8 @@ export default function App() {
     if (state.doc.scene.kind === 'solid') return '正交投影 · 拖动旋转 · 滚轮缩放'
     if (state.doc.scene.kind === 'solidIncline') return '三维斜面 · 拖动旋转 · 滚轮缩放'
     if (state.doc.scene.kind === 'motion') return '1 格 = 1 m'
+    if (state.doc.scene.kind === 'mech')
+      return `1 m = ${Math.round(PX_PER_UNIT * state.zoom)} px · 拖部件移动 · 点连接件再点两个部件`
     if (state.mode === 'physics') return `1 cm ≙ ${Math.round(PX_PER_UNIT / settings.forceScale)} N`
     const s = PX_PER_UNIT * state.zoom
     const halfW = state.canvas.w / 2 / s
@@ -590,8 +629,11 @@ export default function App() {
       // 反而不如保持 1:1 的常规坐标系
     }
     if (pts.length === 0) {
-      dispatch({ type: 'zoom', zoom: 1 })
-      dispatch({ type: 'pan', pan: { x: 0, y: 0 } })
+      // 机构没有 GeoObj：给一个能看清弹簧和小球的默认视角
+      const isMech = state.doc.scene.kind === 'mech'
+      dispatch({ type: 'zoom', zoom: isMech ? 1.35 : 1 })
+      // 机构场景左上角常驻一块部件盘：画面往右挪一点，别把内容压在面板底下
+      dispatch({ type: 'pan', pan: isMech ? { x: 110, y: -26 } : { x: 0, y: 0 } })
       return
     }
     const xs = pts.map((p) => p[0])
@@ -617,7 +659,7 @@ export default function App() {
     const midY = (minY + maxY) / 2
     dispatch({ type: 'zoom', zoom })
     dispatch({ type: 'pan', pan: { x: -midX * PX_PER_UNIT * zoom, y: midY * PX_PER_UNIT * zoom } })
-  }, [objects, state.canvas])
+  }, [objects, state.canvas, state.doc.scene.kind])
 
   /* 新建 / 打开 / 套模板后自动适配视图：样例不该歪在角落里 */
   const fitRef = useRef(fit)
@@ -1085,6 +1127,212 @@ export default function App() {
     })
   }
 
+  /* ───────── 机构装配：部件 / 连接件的编辑 ───────── */
+
+  /** 所有修改都走 scene-patch，撤销栈、保存、导出自动生效 */
+  const patchMech = (patch: Partial<MechParams>) => {
+    if (!mech) return
+    dispatch({ type: 'scene-patch', scene: { kind: 'mech', params: { ...mech, ...patch } } })
+  }
+
+  const addMechPart = (kind: MechPartKind, at?: { x: number; y: number }) => {
+    if (!mech) return
+    const s = PX_PER_UNIT * state.zoom
+    // 点卡片插入时按 4 个方位错开，别都叠在画面中心（拖放不受影响）
+    const k = mech.parts.length % 4
+    const p =
+      at ??
+      {
+        x: -state.pan.x / s + ((k % 3) - 1) * 1.2,
+        y: (40 + state.pan.y) / s + (k === 0 ? 0 : k === 3 ? -1.1 : 0.4),
+      }
+    const part = makePart(kind, p.x, Math.max(MECH_GROUND_Y + 0.35, p.y))
+    patchMech({ parts: [...mech.parts, part] })
+    setMechSel({ id: part.id, kind: 'part' })
+    setMechPending(null)
+    setMechAnchor(null)
+    setMechPlaying(false)
+  }
+
+  const addMechLink = (kind: MechLinkKind, aId: string, bId: string) => {
+    if (!mech || aId === bId) return
+    const a = mech.parts.find((p) => p.id === aId)
+    const b = mech.parts.find((p) => p.id === bId)
+    if (!a || !b) return
+    if (mech.links.some((l) => (l.a === aId && l.b === bId) || (l.a === bId && l.b === aId))) {
+      toast('这两个部件之间已经有连接了')
+      return
+    }
+    const link = makeLink(kind, a, b)
+    patchMech({ links: [...mech.links, link] })
+    setMechSel({ id: link.id, kind: 'link' })
+    // 连好一条就退出连接模式：不然接下来点部件全是「选起点」，没法拖动
+    setMechPending(null)
+    setMechAnchor(null)
+    setMechPlaying(false)
+  }
+
+  const patchMechPart = (id: string, patch: Partial<MechPart>) => {
+    if (!mech) return
+    patchMech({ parts: mech.parts.map((p) => (p.id === id ? { ...p, ...patch } : p)) })
+  }
+
+  const patchMechLink = (id: string, patch: Partial<MechLink>) => {
+    if (!mech) return
+    patchMech({ links: mech.links.map((l) => (l.id === id ? { ...l, ...patch } : l)) })
+  }
+
+  /** 删部件会把连着的连接一起删；删连接只是「拆开」，部件都还在 */
+  const deleteMechSel = () => {
+    if (!mech || !mechSel) return
+    if (mechSel.kind === 'part') {
+      patchMech({
+        parts: mech.parts.filter((p) => p.id !== mechSel.id),
+        links: mech.links.filter((l) => l.a !== mechSel.id && l.b !== mechSel.id),
+      })
+    } else {
+      patchMech({ links: mech.links.filter((l) => l.id !== mechSel.id) })
+    }
+    setMechSel(null)
+    setMechPlaying(false)
+  }
+
+  const loadMech = (
+    preset: 'spring' | 'pendulum' | 'cart' | 'pulley' | 'pulleyGroup' | 'wheel' | 'empty',
+  ) => {
+    const scene =
+      preset === 'spring'
+        ? springOscillatorScene()
+        : preset === 'pendulum'
+          ? mechPendulumScene()
+          : preset === 'cart'
+            ? mechCartScene()
+            : preset === 'pulley'
+              ? mechPulleyScene()
+              : preset === 'pulleyGroup'
+                ? mechPulleyGroupScene()
+              : preset === 'wheel'
+                ? mechWheelScene()
+                : emptyMechScene()
+    const file =
+      preset === 'spring'
+        ? '机构装配·弹簧振子.chordot'
+        : preset === 'pendulum'
+          ? '机构装配·单摆.chordot'
+          : preset === 'cart'
+            ? '机构装配·小车弹簧.chordot'
+            : preset === 'pulley'
+              ? '机构装配·定滑轮.chordot'
+              : preset === 'pulleyGroup'
+                ? '机构装配·滑轮组.chordot'
+              : preset === 'wheel'
+                ? '机构装配·电机轮.chordot'
+                : '机构装配.chordot'
+    dispatch({ type: 'scene', scene, file })
+  }
+
+  const mechUid = (id: string) => `${id}c${Math.random().toString(36).slice(2, 6)}`
+
+  /** 复制一组部件 + 它们之间的连接（滑轮路线里的 id 也要跟着换） */
+  const copyAssembly = (srcParts: MechPart[], srcLinks: MechLink[], dx: number, dy: number) => {
+    const map = new Map<string, string>()
+    const parts = srcParts.map((p) => {
+      const id = mechUid(p.id)
+      map.set(p.id, id)
+      return { ...p, id, x: p.x + dx, y: p.y + dy, group: undefined }
+    })
+    const keep = new Set(srcParts.map((p) => p.id))
+    const links = srcLinks
+      .filter((l) => keep.has(l.a) && keep.has(l.b))
+      .map((l) => {
+        const vias = (l.vias ?? (l.via ? [l.via] : []))
+          .map((v) => map.get(v))
+          .filter((v): v is string => !!v)
+        return {
+          ...l,
+          id: mechUid(l.id),
+          a: map.get(l.a) ?? l.a,
+          b: map.get(l.b) ?? l.b,
+          ...(vias.length ? { vias, via: undefined } : {}),
+        }
+      })
+    return { parts, links }
+  }
+
+  /** 选中件所在的连通子机构（沿连接 BFS） */
+  const componentIds = (startId: string): Set<string> => {
+    const out = new Set<string>([startId])
+    if (!mech) return out
+    const queue = [startId]
+    while (queue.length) {
+      const cur = queue.shift()!
+      for (const l of mech.links) {
+        const other = l.a === cur ? l.b : l.b === cur ? l.a : null
+        if (other && !out.has(other)) {
+          out.add(other)
+          queue.push(other)
+        }
+      }
+    }
+    return out
+  }
+
+  /** 复制整台机构（部件 + 连接整体挪一格），用来做对照实验 */
+  const duplicateMech = () => {
+    if (!mech || mech.parts.length === 0) return
+    const { parts, links } = copyAssembly(mech.parts, mech.links, 1.2, -0.6)
+    patchMech({ parts: [...mech.parts, ...parts], links: [...mech.links, ...links] })
+    setMechSel(null)
+    setMechPlaying(false)
+  }
+
+  /** 只复制选中的那个部件（不带连接） */
+  const duplicatePart = () => {
+    if (!mech || !mechSel || mechSel.kind !== 'part') return
+    const p = mech.parts.find((x) => x.id === mechSel.id)
+    if (!p) return
+    const { parts } = copyAssembly([p], [], 0.6, -0.4)
+    patchMech({ parts: [...mech.parts, ...parts] })
+    setMechSel({ id: parts[0].id, kind: 'part' })
+  }
+
+  /** 复制选中件所在的子机构 */
+  const duplicateSub = () => {
+    if (!mech || !mechSel || mechSel.kind !== 'part') return
+    const ids = componentIds(mechSel.id)
+    const srcParts = mech.parts.filter((p) => ids.has(p.id))
+    const { parts, links } = copyAssembly(srcParts, mech.links, 1.2, -0.6)
+    patchMech({ parts: [...mech.parts, ...parts], links: [...mech.links, ...links] })
+    setMechSel(null)
+    setMechPlaying(false)
+  }
+
+  /** 成组 / 解组：连通件算一个子机构，之后拖任意一个成员整组一起走 */
+  const setMechGroup = (on: boolean) => {
+    if (!mech || !mechSel || mechSel.kind !== 'part') return
+    const ids = componentIds(mechSel.id)
+    const group = on ? `g${Math.random().toString(36).slice(2, 6)}` : undefined
+    patchMech({
+      parts: mech.parts.map((p) => (ids.has(p.id) ? { ...p, group } : p)),
+    })
+  }
+
+  /** 符号实验室发来的公式：落到机构里选中的部件上（存进 .chordot，能撤销） */
+  useEffect(() => {
+    const off = window.chordot?.onSymbolForce?.((expr) => {
+      if (!mech || !mechSel || mechSel.kind !== 'part') {
+        toast('先在机构里选中一个部件，再把公式发过来')
+        return
+      }
+      if (!mech.parts.some((p) => p.id === mechSel.id)) return
+      patchMechPart(mechSel.id, { force: { enabled: true, expr, angle: 0 } })
+      setMechPlaying(false)
+      toast(`已把 F = ${expr} 加到选中的部件上`)
+    })
+    return () => off?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mech, mechSel])
+
   /** 改线段长度 / 角度：起点不动，只挪终点 */
   const editLine = (id: string, patch: { length?: number; angleDeg?: number }) => {
     const scene = state.doc.scene
@@ -1287,7 +1535,11 @@ export default function App() {
         if (picked?.kind === 'force') dispatch({ type: 'decompose', id: picked.id })
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
-        dispatch({ type: 'delete' })
+        if (mech && mechSel) deleteMechSel()
+        else dispatch({ type: 'delete' })
+      } else if (e.key === 'Escape' && mechPending) {
+        setMechPending(null)
+        setMechAnchor(null)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -1310,6 +1562,9 @@ export default function App() {
     updateOpen,
     fit,
     objects,
+    mech,
+    mechSel,
+    mechPending,
   ])
 
   const paletteItems: PaletteItem[] = useMemo(
@@ -1348,6 +1603,9 @@ export default function App() {
       { id: 'sample-conflict', label: '示例：约束冲突', run: loadConflict },
       { id: 'sample-solid', label: '示例：正方体（三维，可旋转）', run: loadSolid },
       { id: 'sample-incline3d', label: '示例：三维斜面受力', run: loadIncline3d },
+      { id: 'sample-mech', label: '机构装配：弹簧振子（可拼可拆）', run: () => loadMech('spring') },
+      { id: 'sample-mech-empty', label: '机构装配：空白装配台', run: () => loadMech('empty') },
+      { id: 'symbols', label: '符号公式实验室（独立窗口）…', run: () => void window.chordot?.openSymbolWindow?.() },
       { id: 'sample-pendulum', label: '示例：单摆（动力学）', run: loadPendulum },
       {
         id: 'sample-spring',
@@ -1544,7 +1802,11 @@ export default function App() {
           forceScale={1}
           svgRef={svgRef}
           onSelect={selectFromCanvas}
-          onClearSelection={() => dispatch({ type: 'select', ids: [] })}
+          onClearSelection={() => {
+            dispatch({ type: 'select', ids: [] })
+            setMechSel(null)
+            if (!mechPending) setMechAnchor(null)
+          }}
           onCanvasSize={(w, h) => dispatch({ type: 'canvas', w, h })}
           onZoom={(zoom) => dispatch({ type: 'zoom', zoom })}
           onCanvasClick={handleCanvasClick}
@@ -1562,7 +1824,68 @@ export default function App() {
           onDragMove={handleDragMove}
             onDragEnd={handleDragEnd}
           onDropShape={(id, at) => insertAny(id, at)}
+          mech={mech}
+          mechSelected={mechSel?.id ?? null}
+          mechPending={mechPending}
+          mechAnchor={mechAnchor}
+          mechPlaying={mechPlaying}
+          mechVectors={mechVectors}
+          mechDecompose={mechDecompose}
+          mechResetToken={mechReset}
+          onMechSelect={(id, kind) => {
+            setMechSel(id && kind ? { id, kind } : null)
+            if (!mechPending) setMechAnchor(null)
+          }}
+          onMechAnchor={setMechAnchor}
+          onMechLink={addMechLink}
+          onMechCommitParts={(parts) => patchMech({ parts })}
+          onMechDrop={(kind, at) => addMechPart(kind, at)}
           />
+          {mech && (
+            <MechBar
+              params={mech}
+              selected={mechSel}
+              pending={mechPending}
+              anchor={mechAnchor}
+              playing={mechPlaying}
+              onPending={(k) => {
+                setMechPending(k)
+                setMechAnchor(null)
+                setMechPlaying(false)
+              }}
+              onAddPart={(kind) => addMechPart(kind)}
+              onPatchPart={patchMechPart}
+              onPatchLink={patchMechLink}
+              onDelete={deleteMechSel}
+              onDisconnect={() => {
+                patchMech({ links: [] })
+                setMechSel(null)
+                setMechPlaying(false)
+              }}
+              onClear={() => {
+                patchMech({ parts: [], links: [] })
+                setMechSel(null)
+                setMechPending(null)
+                setMechAnchor(null)
+                setMechPlaying(false)
+              }}
+              onPlay={setMechPlaying}
+              onReset={() => {
+                setMechPlaying(false)
+                setMechReset((t) => t + 1)
+              }}
+              onPreset={loadMech}
+              vectors={mechVectors}
+              onVectors={setMechVectors}
+              decompose={mechDecompose}
+              onDecompose={setMechDecompose}
+              onDuplicate={duplicateMech}
+              onDuplicatePart={duplicatePart}
+              onDuplicateSub={duplicateSub}
+              onGroup={() => setMechGroup(true)}
+              onUngroup={() => setMechGroup(false)}
+            />
+          )}
           {solidPhysics?.enabled && (
             <Timeline
               playing={state.physicsPlaying}
@@ -1698,6 +2021,9 @@ export default function App() {
               else if (cmd === 'solid') loadSolid()
               else if (cmd === 'pendulum') loadPendulum()
               else if (cmd === 'incline3d') loadIncline3d()
+              else if (cmd === 'mech') loadMech('spring')
+              else if (cmd === 'mech-empty') loadMech('empty')
+              else if (cmd === 'symbols') void window.chordot?.openSymbolWindow?.()
               else if (cmd === 'gallery') dispatch({ type: 'gallery', open: true })
               else if (cmd === 'textbook') dispatch({ type: 'textbook', open: true })
               else if (cmd === 'textbook-window') void window.chordot?.openLabWindow()

@@ -55,6 +55,9 @@ interface Props {
       | 'gallery'
       | 'pendulum'
       | 'incline3d'
+      | 'mech'
+      | 'mech-empty'
+      | 'symbols'
       | 'textbook'
       | 'textbook-window'
       | 'clear'
@@ -161,6 +164,9 @@ export function Toolbar(props: Props) {
       | 'gallery'
       | 'pendulum'
       | 'incline3d'
+      | 'mech'
+      | 'mech-empty'
+      | 'symbols'
       | 'textbook'
       | 'textbook-window'
       | 'clear'
@@ -346,6 +352,16 @@ export function Toolbar(props: Props) {
               </button>
               <button className="menu__item" onClick={() => runCommand('incline3d')}>
                 示例：三维斜面受力
+              </button>
+              <div className="menu__sep" />
+              <button className="menu__item" onClick={() => runCommand('mech')}>
+                机构装配：弹簧振子（部件 → 连线 → 机构）
+              </button>
+              <button className="menu__item" onClick={() => runCommand('mech-empty')}>
+                机构装配：空白装配台
+              </button>
+              <button className="menu__item" onClick={() => runCommand('symbols')}>
+                符号公式实验室（独立窗口）…
               </button>
               <button className="menu__item" onClick={() => runCommand('clear')}>
                 清空画布

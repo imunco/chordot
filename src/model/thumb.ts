@@ -212,6 +212,9 @@ function rawFor(scene: SceneSpec): Raw[] {
       return incline3dRaw(scene)
     case 'motion':
       return motionRaw(scene)
+    case 'mech':
+      // 机构没有「作者数据」可压成缩略图，用空图占位，模板卡显示名称即可
+      return []
     default:
       return sketchRaw(scene)
   }

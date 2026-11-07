@@ -315,15 +315,18 @@ export function ZoomOutIcon({ size = 18 }: { size?: number }) {
   )
 }
 
+/** 放大镜：厚镜圈 + 实心点（像真放大镜），和缩放用的细线 ± 一眼分开 */
 export function LensIcon({ size = 18 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
-      <circle cx="11" cy="11" r="7" />
-      <path d="M16 16 21 21M8.5 11h5M11 8.5v5" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <circle cx="10.2" cy="10.2" r="6.4" />
+      <path d="M14.9 14.9 20.6 20.6" strokeWidth="2.4" />
+      <circle cx="10.2" cy="10.2" r="2.3" fill="currentColor" stroke="none" />
     </svg>
   )
 }
 
+/** 聚光灯：灯头 + 射线，形状和放大镜完全不同，不会混 */
 export function SpotlightIcon({ size = 18 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

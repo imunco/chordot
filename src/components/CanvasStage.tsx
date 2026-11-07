@@ -15,8 +15,14 @@ import { buildIncline3D } from '../model/incline3d'
 import { evalForce } from '../model/force'
 import { forceDir } from '../model/force3d'
 import { SolidIncline } from './SolidIncline'
+import { MaterialPattern } from './solidTexture'
+import { MechStage } from './MechStage'
 import type {
   Camera,
+  MechLinkKind,
+  MechParams,
+  MechPart,
+  MechPartKind,
   PhysicsForce,
   PhysicsObstacle,
   SolidInclineParams,
@@ -157,6 +163,20 @@ interface Props {
   camera: Camera | null
   /** 三维斜面受力场景 */
   solidIncline: SolidInclineParams | null
+  /** 机构装配场景 */
+  mech: MechParams | null
+  mechSelected: string | null
+  mechPending: MechLinkKind | null
+  mechAnchor: string | null
+  mechPlaying: boolean
+  mechVectors: boolean
+  mechDecompose: boolean
+  mechResetToken: number
+  onMechSelect: (id: string | null, kind: 'part' | 'link' | null) => void
+  onMechAnchor: (id: string | null) => void
+  onMechLink: (kind: MechLinkKind, a: string, b: string) => void
+  onMechCommitParts: (parts: MechPart[]) => void
+  onMechDrop: (kind: MechPartKind, at: { x: number; y: number }) => void
   /** 三维物理世界开启中（画地面网格） */
   solidPhysics: boolean
   /** 物理世界里的静态障碍 */
@@ -432,15 +452,14 @@ export function CanvasStage(props: Props) {
   }
 
   /** 屏幕坐标 → 世界坐标 */
-  const toWorld = (e: React.PointerEvent | React.MouseEvent): { x: number; y: number } => {
+  const worldAt = (clientX: number, clientY: number): { x: number; y: number } => {
     const rect = props.svgRef.current?.getBoundingClientRect()
-    const left = rect?.left ?? 0
-    const top = rect?.top ?? 0
     return {
-      x: (e.clientX - left - cx) / s,
-      y: (cy - (e.clientY - top)) / s,
+      x: (clientX - (rect?.left ?? 0) - cx) / s,
+      y: (cy - (clientY - (rect?.top ?? 0))) / s,
     }
   }
+  const toWorld = (e: React.PointerEvent | React.MouseEvent) => worldAt(e.clientX, e.clientY)
 
   /** 光标在画布内的像素坐标 */
   const screenOf = (e: React.PointerEvent | React.MouseEvent): [number, number] => {
@@ -969,12 +988,19 @@ export function CanvasStage(props: Props) {
         onPointerUp={endPointDrag}
         onPointerCancel={endPointDrag}
         onDragOver={(e) => {
-          if (Array.from(e.dataTransfer.types).includes('text/chordot-shape')) {
+          const types = Array.from(e.dataTransfer.types)
+          if (types.includes('text/chordot-shape') || types.includes('text/chordot-mech')) {
             e.preventDefault()
             e.dataTransfer.dropEffect = 'copy'
           }
         }}
         onDrop={(e) => {
+          const mechKind = e.dataTransfer.getData('text/chordot-mech')
+          if (mechKind) {
+            e.preventDefault()
+            props.onMechDrop(mechKind as MechPartKind, worldAt(e.clientX, e.clientY))
+            return
+          }
           const id = e.dataTransfer.getData('text/chordot-shape')
           if (!id) return
           e.preventDefault()
@@ -1130,6 +1156,25 @@ export function CanvasStage(props: Props) {
             )
           })()}
 
+
+        {props.mech && (
+          <MechStage
+            params={props.mech}
+            toScreen={toScreen}
+            toWorld={worldAt}
+            selectedId={props.mechSelected}
+            onSelect={props.onMechSelect}
+            pending={props.mechPending}
+            anchor={props.mechAnchor}
+            onAnchor={props.onMechAnchor}
+            onLink={props.onMechLink}
+            playing={props.mechPlaying}
+            vectors={props.mechVectors}
+            decompose={props.mechDecompose}
+            resetToken={props.mechResetToken}
+            onCommitParts={props.onMechCommitParts}
+          />
+        )}
 
         {props.solidIncline && (
           <SolidIncline
@@ -1347,6 +1392,8 @@ export function CanvasStage(props: Props) {
             const [ex, ey] = projectPoint3([c[0] + r, c[1], c[2]], props.camera!, toScreen)
             const rad = Math.hypot(ex - cx, ey - cy) || 1
             const gid = `sphere-${o.id}`
+            const mat =
+              o.shape.material && o.shape.material !== 'none' ? o.shape.material : null
             return (
               <g key={o.id} data-id={o.id} onPointerDown={(e) => handleObjectDown(e, o.id)}>
                 <defs>
@@ -1355,16 +1402,28 @@ export function CanvasStage(props: Props) {
                     <stop offset="55%" stopColor="#e9e6e1" />
                     <stop offset="100%" stopColor="#c9c4bc" />
                   </radialGradient>
+                  {/* 球细分太密，逐面贴纹理要上千个 pattern；改用屏幕空间图案 + 渐变压暗 */}
+                  {mat && <MaterialPattern id={`sptex-${o.id}`} kind={mat} unit={44} />}
                 </defs>
                 <circle
                   cx={cx}
                   cy={cy}
                   r={rad}
-                  fill={`url(#${gid})`}
+                  fill={mat ? `url(#sptex-${o.id})` : `url(#${gid})`}
                   stroke="#3d5a66"
                   strokeOpacity={0.4}
                   strokeWidth={0.9}
                 />
+                {mat && (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={rad}
+                    fill={`url(#${gid})`}
+                    opacity={0.9}
+                    style={{ mixBlendMode: 'multiply' }}
+                  />
+                )}
                 {sel && (
                   <circle
                     data-ui="1"
@@ -1382,6 +1441,8 @@ export function CanvasStage(props: Props) {
           }
           if (o.kind === 'solid') {
             const view = projectSolid(o.shape, props.camera!, toScreen)
+            const mat =
+              o.shape.material && o.shape.material !== 'none' ? o.shape.material : null
             return (
               <g key={o.id} data-id={o.id} onPointerDown={(e) => handleObjectDown(e, o.id)}>
                 {/* 先用浅灰把轮廓填满：面与面之间的抗锯齿缝隙不会露出纸面白 */}
@@ -1391,18 +1452,44 @@ export function CanvasStage(props: Props) {
                   stroke="none"
                 />
                 {faceDefs(`sf-${o.id}`, view.faces)}
+                {mat && (
+                  <defs>
+                    {view.faces.map((f, i) =>
+                      f.tex ? (
+                        <MaterialPattern
+                          key={`tx${i}`}
+                          id={`tx-${o.id}-${i}`}
+                          kind={mat}
+                          transform={`matrix(${f.tex.map((n) => n.toFixed(3)).join(' ')})`}
+                        />
+                      ) : null,
+                    )}
+                  </defs>
+                )}
                 {view.faces.map((f, i) => {
                   const fill = faceFill(`sf-${o.id}`, f, i)
+                  const texId = mat && f.tex ? `tx-${o.id}-${i}` : null
                   return (
-                    <polygon
-                      key={`f${i}`}
-                      points={f.points.map((p) => p.join(',')).join(' ')}
-                      fill={fill}
-                      // 同色描边 0.6px：填掉相邻面之间的抗锯齿白缝，曲面才连续
-                      stroke={fill}
-                      strokeWidth={0.6}
-                      strokeLinejoin="round"
-                    />
+                    <g key={`f${i}`}>
+                      <polygon
+                        points={f.points.map((p) => p.join(',')).join(' ')}
+                        fill={texId ? `url(#${texId})` : fill}
+                        // 同色描边 0.6px：填掉相邻面之间的抗锯齿白缝，曲面才连续
+                        stroke={texId ? 'none' : fill}
+                        strokeWidth={0.6}
+                        strokeLinejoin="round"
+                      />
+                      {/* 纹理只负责「是什么材料」，明暗仍按光照算，立体感不能丢 */}
+                      {texId && (
+                        <polygon
+                          points={f.points.map((p) => p.join(',')).join(' ')}
+                          fill={fill}
+                          opacity={0.9}
+                          style={{ mixBlendMode: 'multiply' }}
+                          pointerEvents="none"
+                        />
+                      )}
+                    </g>
                   )
                 })}
                 {sel &&
@@ -2175,6 +2262,8 @@ export function CanvasStage(props: Props) {
       {/* 空状态卡片：有批注或在画批注时都收起来，别挡着笔迹 */}
       {props.objects.length === 0 &&
         !props.camera &&
+        !props.mech &&
+        !props.solidIncline &&
         props.strokes.length === 0 &&
         props.tool !== 'pen' &&
         props.tool !== 'eraser' && (

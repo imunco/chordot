@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { EXPERIMENTS } from '../data/textbook'
 import { labModel } from '../lab/models'
 import {
@@ -14,7 +15,9 @@ import { LabStage } from './LabStage'
 import {
   CloseIcon,
   ExpandIcon,
-  FitIcon,
+  ExportIcon,
+  EyeIcon,
+  EyeOffIcon,
   FullscreenIcon,
   LensIcon,
   PauseIcon,
@@ -54,6 +57,21 @@ function defaultSpeed(exp: LabExperiment) {
   return exp.stage === 'projectile' || exp.stage === 'fall' || exp.stage === 'collision' ? 0.5 : 1
 }
 
+/** 导出 SVG 时的 XML 转义 */
+function escapeXml(text: string) {
+  const map: Record<string, string> = { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }
+  return text.replace(/[<>&"]/g, (c) => map[c] ?? c)
+}
+
+/** 文件名里不能出现的字符 */
+function safeName(text: string) {
+  return text.replace(/[\\/:*?"<>|]/g, '·').trim() || '教材实验'
+}
+
+/** 等两帧：让「导出中」的 class 先落到 DOM，截出来的图才没有工具条 */
+const nextFrame = () =>
+  new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+
 interface Props {
   onClose: () => void
   initialId?: string
@@ -62,11 +80,50 @@ interface Props {
 }
 
 export function Textbook({ onClose, initialId, standalone = false }: Props) {
-  useEscape(!standalone, () => {
+  const [full, setFull] = useState(false)
+
+  /** 真·全屏：优先走主进程 setFullScreen，才能盖住 Windows 任务栏 */
+  const applyFull = (on: boolean) => {
+    setFull(on)
+    if (window.chordot?.setFullscreen) {
+      void window.chordot.setFullscreen(on).catch(() => {})
+      return
+    }
+    if (on) void document.documentElement.requestFullscreen?.().catch(() => {})
+    else if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+  }
+
+  useEscape(true, () => {
     // 批注层开着时 Esc 先退出批注，不要顺手把整个实验关掉
-    if (document.querySelector('.screenink')) return
-    onClose()
+    if (document.querySelector('.screenink[data-active="true"]')) return
+    // 全屏演示时 Esc 先退全屏，第二次才关实验
+    if (full) {
+      applyFull(false)
+      return
+    }
+    if (!standalone) onClose()
   })
+
+  // 原生全屏状态可能被 F11 / 系统手势改掉，跟着同步 class
+  useEffect(() => {
+    const onFs = () => setFull(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', onFs)
+    const off = window.chordot?.onFullscreenChange?.((on) => setFull(on))
+    return () => {
+      document.removeEventListener('fullscreenchange', onFs)
+      off?.()
+    }
+  }, [])
+
+  // 关掉教材时一定要退出全屏，否则主窗口会一直留在全屏
+  useEffect(() => {
+    if (!full) return
+    return () => {
+      if (window.chordot?.setFullscreen) void window.chordot.setFullscreen(false).catch(() => {})
+      else if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+    }
+  }, [full])
+
   const [book, setBook] = useState<'全部' | '最近' | LabBook>('全部')
   const [field, setField] = useState<'全部' | LabField>('全部')
   const [favOnly, setFavOnly] = useState(false)
@@ -103,7 +160,21 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
     const list = [next, ...recent.filter((x) => x !== next)].slice(0, 6)
     setRecent(list)
     writeList(RECENT_KEY, list)
+    // 主窗口和独立窗口共用同一个「当前实验」：切了就广播给另一边
+    window.chordot?.syncLab?.(next)
   }
+
+  /** 另一个窗口切了实验：跟着切，但不要再广播回去（否则两边互相打断） */
+  useEffect(() => {
+    const off = window.chordot?.onLabSync?.((next) => {
+      if (!next || next === id || !EXPERIMENTS.some((e) => e.id === next)) return
+      setId(next)
+      const list = [next, ...readList(RECENT_KEY).filter((x) => x !== next)].slice(0, 6)
+      setRecent(list)
+      writeList(RECENT_KEY, list)
+    })
+    return () => off?.()
+  }, [id])
 
   const toggleLarge = () => {
     setLarge((v) => {
@@ -158,7 +229,7 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
       if (el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT') return
-      if (document.querySelector('.screenink')) return
+      if (document.querySelector('.screenink[data-active="true"]')) return
       if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
         e.preventDefault()
         const i = EXPERIMENTS.findIndex((q) => q.id === id)
@@ -176,7 +247,7 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
 
   return (
     <div
-      className={`lab ${standalone ? 'lab--solo' : ''} ${large ? 'lab--large' : ''} ${focus ? 'lab--focus' : ''}`}
+      className={`lab ${standalone ? 'lab--solo' : ''} ${full ? 'lab--full' : ''} ${large ? 'lab--large' : ''} ${focus ? 'lab--focus' : ''}`}
       role="dialog"
       aria-label="教材实验室"
       onClick={standalone ? undefined : onClose}
@@ -321,6 +392,7 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
                 <div
                   key={e.id}
                   className="lab__item"
+                  data-id={e.id}
                   data-active={e.id === id}
                   role="button"
                   tabIndex={0}
@@ -359,6 +431,8 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
             onFav={() => toggleFav(exp.id)}
             onClose={onClose}
             standalone={standalone}
+            full={full}
+            onToggleFull={() => applyFull(!full)}
             onOpenWindow={standalone ? undefined : openWindow}
           />
         </div>
@@ -384,6 +458,8 @@ function LabDetail({
   onFav,
   onClose,
   standalone = false,
+  full = false,
+  onToggleFull,
   onOpenWindow,
 }: {
   exp: LabExperiment
@@ -391,6 +467,8 @@ function LabDetail({
   onFav: () => void
   onClose: () => void
   standalone?: boolean
+  full?: boolean
+  onToggleFull: () => void
   onOpenWindow?: () => void
 }) {
   const [params, setParams] = useState<Record<string, number | string>>({ ...exp.params })
@@ -405,13 +483,54 @@ function LabDetail({
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [cursor, setCursor] = useState({ x: 0, y: 0, inside: false })
   const [lens, setLens] = useState(false)
+  const [lensZoom, setLensZoom] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem('chordot.lab.lensZoom'))
+      return Number.isFinite(v) && v >= 1.5 && v <= 5 ? v : 2.4
+    } catch {
+      return 2.4
+    }
+  })
   const [spot, setSpot] = useState(false)
   const [spotR, setSpotR] = useState(240)
   const [ink, setInk] = useState(false)
-  const [full, setFull] = useState(false)
+  const [inkHidden, setInkHidden] = useState(false)
+  const [inkCount, setInkCount] = useState(0)
+  /** 导出菜单挂在 body 上：右栏会盖住标题栏里的下拉 */
+  const [exportAt, setExportAt] = useState<{ x: number; y: number } | null>(null)
+  const [busy, setBusy] = useState('')
+  const [msg, setMsg] = useState('')
   const [stage, setStage] = useState({ w: 760, h: 430 })
   const stageRef = useRef<HTMLDivElement>(null)
+  const dataRef = useRef<HTMLElement>(null)
   const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
+  /** 双指捏合：按 pointerId 记位置，第二根手指落下才开始 */
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const pinch = useRef<{
+    dist: number
+    zoom: number
+    pan: { x: number; y: number }
+    /** 起点两指中心压住的画面坐标 */
+    u: { x: number; y: number }
+  } | null>(null)
+  const msgTimer = useRef(0)
+  const fullRef = useRef(onToggleFull)
+  fullRef.current = onToggleFull
+
+  const flash = (text: string) => {
+    setMsg(text)
+    window.clearTimeout(msgTimer.current)
+    msgTimer.current = window.setTimeout(() => setMsg(''), 2600)
+  }
+
+  const changeLensZoom = (v: number) => {
+    setLensZoom(v)
+    try {
+      localStorage.setItem('chordot.lab.lensZoom', String(v))
+    } catch {
+      /* 隐私模式静默失败 */
+    }
+  }
 
   useEffect(() => {
     const el = stageRef.current
@@ -460,6 +579,29 @@ function LabDetail({
     if (e.button !== 0 && e.pointerType === 'mouse') return
     const p = stagePoint(e)
     setCursor({ ...p, inside: true })
+    // 主指针落下先清空：手指滑出窗口时收不到 pointerup，残留的僵尸指针会把单指当成双指
+    if (e.isPrimary) pointers.current.clear()
+    pointers.current.set(e.pointerId, p)
+
+    if (pointers.current.size >= 2) {
+      // 双指：捏合缩放，单指拖动立刻让位
+      dragRef.current = null
+      const [a, b] = [...pointers.current.values()]
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+      pinch.current = {
+        dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        zoom,
+        pan: { ...pan },
+        // 反解出两指中心压住的画面坐标：缩放时它始终跟着手指走
+        u: {
+          x: stage.w / 2 + (mid.x - stage.w / 2 - pan.x) / zoom,
+          y: stage.h / 2 + (mid.y - stage.h / 2 - pan.y) / zoom,
+        },
+      }
+      e.preventDefault()
+      return
+    }
+
     if (zoom <= 1) return
     e.preventDefault()
     try {
@@ -473,13 +615,34 @@ function LabDetail({
   const onStageMove = (e: React.PointerEvent) => {
     const p = stagePoint(e)
     setCursor({ ...p, inside: true })
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, p)
+
+    const pin = pinch.current
+    if (pin && pointers.current.size >= 2) {
+      const [a, b] = [...pointers.current.values()]
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1
+      const z = Math.max(1, Math.min(3.5, (pin.zoom * dist) / pin.dist))
+      // 起点中心 u 保持在当前两指中心：捏合的同时也能双指拖动画面
+      const v = clampView(
+        z,
+        mid.x - stage.w / 2 - z * (pin.u.x - stage.w / 2),
+        mid.y - stage.h / 2 - z * (pin.u.y - stage.h / 2),
+      )
+      setZoom(v.zoom)
+      setPan({ x: v.x, y: v.y })
+      return
+    }
+
     const d = dragRef.current
     if (!d) return
     const v = clampView(zoom, d.px + e.clientX - d.x, d.py + e.clientY - d.y)
     setPan({ x: v.x, y: v.y })
   }
 
-  const onStageUp = (e: React.PointerEvent) => {
+  const endPointer = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId)
+    if (pointers.current.size < 2) pinch.current = null
     if (!dragRef.current) return
     dragRef.current = null
     try {
@@ -490,7 +653,129 @@ function LabDetail({
   }
 
   const onStageLeave = () => {
-    if (!dragRef.current) setCursor((c) => ({ ...c, inside: false }))
+    if (!dragRef.current && !pinch.current) setCursor((c) => ({ ...c, inside: false }))
+  }
+
+  const rectUnion = (els: (HTMLElement | null | undefined)[]) => {
+    const rects = els.filter((el): el is HTMLElement => !!el).map((el) => el.getBoundingClientRect())
+    if (rects.length === 0) return null
+    const left = Math.min(...rects.map((r) => r.left))
+    const top = Math.min(...rects.map((r) => r.top))
+    const right = Math.max(...rects.map((r) => r.right))
+    const bottom = Math.max(...rects.map((r) => r.bottom))
+    return { x: left, y: top, width: right - left, height: bottom - top }
+  }
+
+  /** 截当前画面：走主进程 capturePage，所见即所得（缩放、放大镜、批注都在里面） */
+  const exportPng = async (
+    els: (HTMLElement | null | undefined)[],
+    withInk: boolean,
+    name: string,
+    sheet = false,
+  ) => {
+    const api = window.chordot
+    if (!api?.labCapture) {
+      flash('当前环境不支持画面导出，请在桌面版 / 独立窗口里用')
+      return
+    }
+    const html = document.documentElement
+    html.dataset.capturing = '1'
+    if (!withInk) html.dataset.hideInk = '1'
+    // 讲稿图：把底部说明让出来，读数栏一次看全（否则图表会被截一半）
+    if (sheet) html.dataset.sheet = '1'
+    setBusy('png')
+    try {
+      await nextFrame()
+      const rect = rectUnion(els)
+      if (!rect) return
+      const shot = await api.labCapture(rect)
+      if (!shot?.data) {
+        flash('截图失败，请重试')
+        return
+      }
+      const res = await api.exportFile({
+        data: shot.data,
+        encoding: 'base64',
+        name: `${name}.png`,
+        format: 'png',
+      })
+      if (res.canceled) return
+      if (res.error) {
+        flash(`导出失败：${res.error}`)
+        return
+      }
+      flash(`已导出 ${name}.png`)
+    } finally {
+      delete html.dataset.capturing
+      delete html.dataset.hideInk
+      delete html.dataset.sheet
+      setBusy('')
+    }
+  }
+
+  /** 矢量导出：把演示台 SVG 原样搬出来，批注按窗口坐标反算回 760×430 视口 */
+  const exportSvg = async (withInk: boolean) => {
+    const api = window.chordot
+    const svg = stageRef.current?.querySelector('svg.lab__svg') as SVGSVGElement | null
+    if (!api || !svg) return
+    const r = svg.getBoundingClientRect()
+    const vbW = 760
+    const vbH = 430
+    const foot = 40
+    const scale = Math.min(r.width / vbW, r.height / vbH) || 1
+    const offX = (r.width - vbW * scale) / 2
+    const offY = (r.height - vbH * scale) / 2
+    const ink = withInk
+      ? [...document.querySelectorAll<SVGPathElement>('.screenink__canvas path')]
+          .map((p) => p.outerHTML)
+          .join('')
+      : ''
+    const inkGroup = ink
+      ? `<g transform="translate(${(-(r.left + offX) / scale).toFixed(3)} ${(-(
+          r.top + offY
+        ) / scale).toFixed(3)}) scale(${(1 / scale).toFixed(4)})">${ink}</g>`
+      : ''
+    const formula = model.formula
+      ? `${model.formula.expr} ${model.formula.sub ?? ''}`.trim().slice(0, 64)
+      : ''
+    const font = "'Noto Sans SC','Source Han Sans SC',system-ui,sans-serif"
+    const out = `<svg xmlns="http://www.w3.org/2000/svg" width="${vbW * 2}" height="${(vbH + foot) * 2}" viewBox="0 0 ${vbW} ${vbH + foot}">
+<rect x="0" y="0" width="${vbW}" height="${vbH + foot}" fill="#FAFAF8"/>
+<g>${svg.innerHTML}</g>
+${inkGroup}
+<line x1="0" y1="${vbH + 1}" x2="${vbW}" y2="${vbH + 1}" stroke="#e2ded7" stroke-width="1"/>
+<text x="18" y="${vbH + 25}" font-family="${font}" font-size="13" fill="#3d5a66">${escapeXml(exp.name)}</text>
+<text x="${vbW - 18}" y="${vbH + 25}" text-anchor="end" font-family="${font}" font-size="12" fill="#8e8a84">${escapeXml(formula)}</text>
+</svg>`
+    setBusy('svg')
+    try {
+      const res = await api.exportFile({
+        data: out,
+        name: `${safeName(exp.name)}-画面.svg`,
+        format: 'svg',
+      })
+      if (res.canceled) return
+      if (res.error) {
+        flash(`导出失败：${res.error}`)
+        return
+      }
+      flash(`已导出 ${safeName(exp.name)}-画面.svg`)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const doExport = (kind: 'stage-ink' | 'stage-plain' | 'sheet' | 'svg') => {
+    setExportAt(null)
+    const name = safeName(exp.name)
+    if (kind === 'svg') {
+      void exportSvg(true)
+      return
+    }
+    const stageCol = stageRef.current?.closest('.lab__stagecol') as HTMLElement | null
+    if (kind === 'stage-ink') void exportPng([stageRef.current], true, `${name}-画面`)
+    else if (kind === 'stage-plain') void exportPng([stageRef.current], false, `${name}-画面-无批注`)
+    else void exportPng([stageCol, dataRef.current], true, `${name}-讲稿`, true)
   }
 
   const toggleLens = () => {
@@ -524,24 +809,12 @@ function LabDetail({
       if (next) {
         setLens(false)
         setSpot(false)
+        // 隐藏状态下按批注：先把笔迹显示回来，否则像在对空气画
+        setInkHidden(false)
       }
       return next
     })
   }
-
-  const toggleFull = () => {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen()
-    } else {
-      void document.documentElement.requestFullscreen().catch(() => {})
-    }
-  }
-
-  useEffect(() => {
-    const on = () => setFull(Boolean(document.fullscreenElement))
-    document.addEventListener('fullscreenchange', on)
-    return () => document.removeEventListener('fullscreenchange', on)
-  }, [])
 
   // 滚轮缩放：必须用原生监听才能 preventDefault
   useEffect(() => {
@@ -564,13 +837,13 @@ function LabDetail({
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
       if (el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT') return
-      if (document.querySelector('.screenink')) return
+      if (document.querySelector('.screenink[data-active="true"]')) return
       if (e.key === 'i' || e.key === 'I') {
         e.preventDefault()
         toggleInk()
       } else if (e.key === 'f' || e.key === 'F') {
         e.preventDefault()
-        toggleFull()
+        fullRef.current()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -635,7 +908,6 @@ function LabDetail({
   }, [exp, params])
   const accent = FIELD_COLOR[exp.field]
 
-  const lensZoom = 2.4
   const lensR = Math.max(84, Math.min(126, stage.h * 0.3))
   const lensTx = stage.w / 2 + pan.x + (cursor.x - stage.w / 2) * zoom
   const lensTy = stage.h / 2 + pan.y + (cursor.y - stage.h / 2) * zoom
@@ -661,6 +933,37 @@ function LabDetail({
           <button className="btn lab__reset" onClick={reset} title="回到起点重新播放">
             重置
           </button>
+          <div className="lab__export">
+            <button
+              className="iconbtn lab__exportbtn"
+              data-active={!!exportAt}
+              title="导出当前实验画面（含批注 / 讲稿图）"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect()
+                setExportAt((v) => (v ? null : { x: r.right, y: r.bottom + 6 }))
+              }}
+            >
+              <ExportIcon size={16} />
+            </button>
+            {exportAt &&
+              createPortal(
+                <>
+                  <div className="lab__exportmask" onClick={() => setExportAt(null)} />
+                  <div
+                    className="lab__exportmenu"
+                    role="menu"
+                    aria-label="导出"
+                    style={{ left: Math.max(8, exportAt.x - 250), top: exportAt.y }}
+                  >
+                    <button onClick={() => doExport('stage-ink')}>当前画面 PNG（含批注）</button>
+                    <button onClick={() => doExport('stage-plain')}>当前画面 PNG（不含批注）</button>
+                    <button onClick={() => doExport('sheet')}>讲稿图 PNG（画面 + 读数 + 图表）</button>
+                    <button onClick={() => doExport('svg')}>当前画面 SVG（矢量，含批注）</button>
+                  </div>
+                </>,
+                document.body,
+              )}
+          </div>
           {onOpenWindow && (
             <button className="iconbtn lab__windowbtn" title="在独立窗口打开（适合投影 / 双屏）" onClick={onOpenWindow}>
               <WindowIcon size={16} />
@@ -686,7 +989,10 @@ function LabDetail({
             ))}
           </div>
           {model.formula ? (
-            <div className="lab__stageformula">
+            <div
+              className="lab__stageformula"
+              title={`${model.formula.expr}${model.formula.sub ? ` ${model.formula.sub}` : ''}`}
+            >
               <code>{model.formula.expr}</code>
               {model.formula.sub && <span>{model.formula.sub}</span>}
             </div>
@@ -698,14 +1004,15 @@ function LabDetail({
             <button className="lab__viewbtn" title="缩小（滚轮）" onClick={() => zoomAt(zoom / 1.2)}>
               <ZoomOutIcon size={17} />
             </button>
-            <button className="lab__zoomval" title="点击恢复 100%" onClick={resetView}>
+            <button
+              className="lab__zoomval"
+              title="适应窗口：点击恢复 100%（双击画面也可）"
+              onClick={resetView}
+            >
               {Math.round(zoom * 100)}%
             </button>
             <button className="lab__viewbtn" title="放大（滚轮）" onClick={() => zoomAt(zoom * 1.2)}>
               <ZoomInIcon size={17} />
-            </button>
-            <button className="lab__viewbtn" title="适应窗口（双击画面也可）" onClick={resetView}>
-              <FitIcon size={17} />
             </button>
             <span className="lab__viewsep" />
             <button
@@ -732,11 +1039,21 @@ function LabDetail({
             >
               <PencilIcon size={17} />
             </button>
+            {inkCount > 0 && (
+              <button
+                className="lab__viewbtn"
+                data-active={!inkHidden}
+                title={inkHidden ? '显示批注' : '隐藏批注'}
+                onClick={() => setInkHidden((v) => !v)}
+              >
+                {inkHidden ? <EyeOffIcon size={17} /> : <EyeIcon size={17} />}
+              </button>
+            )}
             <button
               className="lab__viewbtn"
               data-active={full}
-              title="全屏（F / F11）"
-              onClick={toggleFull}
+              title="全屏演示（F）：铺满整块屏幕，盖住任务栏"
+              onClick={onToggleFull}
             >
               <FullscreenIcon size={17} exit={full} />
             </button>
@@ -746,10 +1063,12 @@ function LabDetail({
         <div
           className={`lab__stagebox ${zoom > 1 ? 'is-zoomed' : ''}`}
           ref={stageRef}
+          data-zoom={zoom.toFixed(3)}
           onPointerDown={onStageDown}
           onPointerMove={onStageMove}
-          onPointerUp={onStageUp}
-          onPointerCancel={onStageUp}
+          onPointerUp={endPointer}
+          onPointerCancel={endPointer}
+          onLostPointerCapture={endPointer}
           onPointerLeave={onStageLeave}
           onDoubleClick={resetView}
         >
@@ -787,6 +1106,22 @@ function LabDetail({
             </div>
           )}
 
+          {lens && (
+            <div className="lab__spotctl lab__lensctl" onPointerDown={(e) => e.stopPropagation()}>
+              <span>倍率 {lensZoom.toFixed(1)}×</span>
+              <input
+                type="range"
+                min={1.5}
+                max={5}
+                step={0.1}
+                value={lensZoom}
+                onChange={(e) => changeLensZoom(Number(e.target.value))}
+                aria-label="放大镜倍率"
+                data-lens-zoom={lensZoom.toFixed(1)}
+              />
+            </div>
+          )}
+
           {lens && cursor.inside && stage.w > lensR * 2 + 8 && stage.h > lensR * 2 + 8 && (
             <div
               className="lab__lens"
@@ -810,37 +1145,39 @@ function LabDetail({
             </div>
           )}
 
-          {zoom > 1 && <div className="lab__zoombadge">拖动画面移动视角 · 双击复位</div>}
+          {zoom > 1 && <div className="lab__zoombadge">拖动画面 · 双指缩放 · 双击复位</div>}
         </div>
       </div>
 
-      <aside className="lab__data">
+      <aside className="lab__data" ref={dataRef}>
         <div className="lab__datahead">
           实时数据
           <span>播放 / 改参数都会同步</span>
         </div>
         <div className="lab__params">
-          {exp.controls.map((c) => {
-            const value = Number(params[c.id] ?? c.min)
-            const digits = c.digits ?? (c.step >= 1 ? 0 : c.step >= 0.1 ? 1 : 2)
-            return (
-              <label className="lab__ctl" key={c.id}>
-                <span className="lab__ctlname">{c.label}</span>
-                <input
-                  type="range"
-                  min={c.min}
-                  max={c.max}
-                  step={c.step}
-                  value={value}
-                  onChange={(e) => setParams((prev) => ({ ...prev, [c.id]: Number(e.target.value) }))}
-                />
-                <b className="lab__ctlval">
-                  {value.toFixed(digits)}
-                  {c.unit && <i>{c.unit}</i>}
-                </b>
-              </label>
-            )
-          })}
+          {exp.controls
+            .filter((c) => !c.showWhen || String(params[c.showWhen.id] ?? '') === c.showWhen.is)
+            .map((c) => {
+              const value = Number(params[c.id] ?? c.min)
+              const digits = c.digits ?? (c.step >= 1 ? 0 : c.step >= 0.1 ? 1 : 2)
+              return (
+                <label className="lab__ctl" key={c.id}>
+                  <span className="lab__ctlname">{c.label}</span>
+                  <input
+                    type="range"
+                    min={c.min}
+                    max={c.max}
+                    step={c.step}
+                    value={value}
+                    onChange={(e) => setParams((prev) => ({ ...prev, [c.id]: Number(e.target.value) }))}
+                  />
+                  <b className="lab__ctlval">
+                    {value.toFixed(digits)}
+                    {c.unit && <i>{c.unit}</i>}
+                  </b>
+                </label>
+              )
+            })}
 
           {exp.selects?.map((sel) => {
             const value = String(params[sel.id] ?? sel.options[0]?.value ?? '')
@@ -974,7 +1311,20 @@ function LabDetail({
         </div>
       </div>
 
-      <ScreenInk active={ink} onExit={() => setInk(false)} />
+      <ScreenInk
+        active={ink}
+        storageKey={exp.id}
+        hidden={inkHidden}
+        onExit={() => setInk(false)}
+        onHide={() => {
+          setInkHidden(true)
+          setInk(false)
+        }}
+        onCount={setInkCount}
+      />
+
+      {msg && <div className="lab__exportmsg">{msg}</div>}
+      {busy && <div className="lab__exportbusy">{busy === 'svg' ? '正在生成 SVG…' : '正在截图…'}</div>}
     </section>
   )
 }

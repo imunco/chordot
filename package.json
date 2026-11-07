@@ -1,6 +1,6 @@
 {
   "name": "chordot-desktop",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "private": true,
   "description": "弦点 / Chordot — 数学与物理教学作图工具",
   "author": "奇点未码 · 弦点",
@@ -48,17 +48,21 @@
     "verify:menu": "npm run build && electron electron/verify-menu.cjs",
     "verify:dock": "npm run build && electron electron/verify-dock.cjs",
     "verify:textbook": "npm run build && electron electron/verify-textbook.cjs",
-    "verify:bigscreen": "npm run build && electron electron/verify-bigscreen.cjs"
+    "verify:bigscreen": "npm run build && electron electron/verify-bigscreen.cjs",
+    "verify:lab2": "npm run build && electron electron/verify-lab2.cjs",
+    "verify:mech": "npm run build && electron electron/verify-mech.cjs"
   },
   "dependencies": {
     "@salusoft89/planegcs": "^1.3.0",
     "cannon-es": "^0.20.0",
     "mathjs": "^15.2.0",
     "mathlive": "^0.111.4",
+    "matter-js": "^0.20.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@types/matter-js": "^0.20.2",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
