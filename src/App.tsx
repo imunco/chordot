@@ -1317,6 +1317,7 @@ export default function App() {
       { id: 'new', label: '新建课件', hint: 'Ctrl+N', run: () => void newDoc() },
       { id: 'gallery', label: '模板库…', run: () => dispatch({ type: 'gallery', open: true }) },
       { id: 'textbook', label: '教材实验室：高中物理实验…', run: () => dispatch({ type: 'textbook', open: true }) },
+      { id: 'textbook-window', label: '教材实验室：独立窗口（投影 / 双屏）…', run: () => void window.chordot?.openLabWindow() },
       { id: 'open', label: '打开课件…', hint: 'Ctrl+O', run: () => void openDoc() },
       { id: 'save', label: '保存', hint: 'Ctrl+S', run: () => void save() },
       { id: 'save-as', label: '另存为…', hint: 'Ctrl+Shift+S', run: () => void save(true) },
@@ -1413,6 +1414,9 @@ export default function App() {
         break
       case 'textbook':
         dispatch({ type: 'textbook', open: true })
+        break
+      case 'textbook-window':
+        void window.chordot?.openLabWindow()
         break
       case 'tour':
         setTourOpen(true)
@@ -1696,6 +1700,7 @@ export default function App() {
               else if (cmd === 'incline3d') loadIncline3d()
               else if (cmd === 'gallery') dispatch({ type: 'gallery', open: true })
               else if (cmd === 'textbook') dispatch({ type: 'textbook', open: true })
+              else if (cmd === 'textbook-window') void window.chordot?.openLabWindow()
               else if (cmd === 'palette') dispatch({ type: 'palette', open: true })
               else if (cmd === 'shortcuts') setShortcutsOpen(true)
               else setPrefsOpen(true)

@@ -11,7 +11,22 @@ import {
   type LabField,
 } from '../lab/types'
 import { LabStage } from './LabStage'
-import { CloseIcon, PauseIcon, PlayIcon } from './icons'
+import {
+  CloseIcon,
+  ExpandIcon,
+  FitIcon,
+  FullscreenIcon,
+  LensIcon,
+  PauseIcon,
+  PencilIcon,
+  PlayIcon,
+  SpotlightIcon,
+  TextSizeIcon,
+  WindowIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
+} from './icons'
+import { ScreenInk } from './ScreenInk'
 import { useEscape } from './useEscape'
 
 const FAV_KEY = 'chordot.lab.fav'
@@ -42,16 +57,32 @@ function defaultSpeed(exp: LabExperiment) {
 interface Props {
   onClose: () => void
   initialId?: string
+  /** 独立窗口：去掉左侧列表与底部说明，默认专注 + 大屏 */
+  standalone?: boolean
 }
 
-export function Textbook({ onClose, initialId }: Props) {
-  useEscape(true, onClose)
+export function Textbook({ onClose, initialId, standalone = false }: Props) {
+  useEscape(!standalone, () => {
+    // 批注层开着时 Esc 先退出批注，不要顺手把整个实验关掉
+    if (document.querySelector('.screenink')) return
+    onClose()
+  })
   const [book, setBook] = useState<'全部' | '最近' | LabBook>('全部')
   const [field, setField] = useState<'全部' | LabField>('全部')
   const [favOnly, setFavOnly] = useState(false)
   const [query, setQuery] = useState('')
   const [fav, setFav] = useState<string[]>(() => readList(FAV_KEY))
   const [recent, setRecent] = useState<string[]>(() => readList(RECENT_KEY))
+  const [large, setLarge] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('chordot.lab.large') !== '0'
+    } catch {
+      return true
+    }
+  })
+  const [focus, setFocus] = useState(
+    () => standalone || window.innerWidth >= 1500,
+  )
   const [id, setId] = useState<string>(() => {
     const first = initialId && EXPERIMENTS.some((e) => e.id === initialId) ? initialId : null
     const last = readList(RECENT_KEY)[0]
@@ -72,6 +103,36 @@ export function Textbook({ onClose, initialId }: Props) {
     const list = [next, ...recent.filter((x) => x !== next)].slice(0, 6)
     setRecent(list)
     writeList(RECENT_KEY, list)
+  }
+
+  const toggleLarge = () => {
+    setLarge((v) => {
+      const next = !v
+      try {
+        localStorage.setItem('chordot.lab.large', next ? '1' : '0')
+      } catch {
+        /* 隐私模式静默失败 */
+      }
+      return next
+    })
+  }
+
+  const step = (dir: 1 | -1) => {
+    const i = EXPERIMENTS.findIndex((q) => q.id === id)
+    pick(EXPERIMENTS[(i + dir + EXPERIMENTS.length) % EXPERIMENTS.length].id)
+  }
+
+  const openWindow = () => {
+    if (window.chordot?.openLabWindow) {
+      window.chordot.openLabWindow(id)
+      onClose()
+      return
+    }
+    window.open(
+      `${location.pathname}?lab=1&id=${encodeURIComponent(id)}`,
+      '_blank',
+      'width=1600,height=1000',
+    )
   }
 
   const list = useMemo(() => {
@@ -96,7 +157,8 @@ export function Textbook({ onClose, initialId }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
-      if (el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA') return
+      if (el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT') return
+      if (document.querySelector('.screenink')) return
       if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
         e.preventDefault()
         const i = EXPERIMENTS.findIndex((q) => q.id === id)
@@ -113,8 +175,13 @@ export function Textbook({ onClose, initialId }: Props) {
   }, [id, recent])
 
   return (
-    <div className="lab" role="dialog" aria-label="教材实验室" onClick={onClose}>
-      <div className="lab__panel" onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`lab ${standalone ? 'lab--solo' : ''} ${large ? 'lab--large' : ''} ${focus ? 'lab--focus' : ''}`}
+      role="dialog"
+      aria-label="教材实验室"
+      onClick={standalone ? undefined : onClose}
+    >
+      <div className={`lab__panel ${standalone ? 'lab__panel--solo' : ''}`} onClick={(e) => e.stopPropagation()}>
         <header className="lab__head">
           <div className="lab__brand">
             <span className="lab__mark">教材</span>
@@ -123,16 +190,82 @@ export function Textbook({ onClose, initialId }: Props) {
               <div className="lab__sub">人教版（2019）· 课标 2017 年版 2020 年修订</div>
             </div>
           </div>
+
+          {standalone ? (
+            <div className="lab__solo-nav">
+              <button className="iconbtn" title="上一个实验（←）" onClick={() => step(-1)}>
+                ‹
+              </button>
+              <select
+                className="lab__solo-select"
+                value={id}
+                onChange={(e) => pick(e.target.value)}
+                aria-label="选择实验"
+              >
+                {EXPERIMENTS.map((e, i) => (
+                  <option key={e.id} value={e.id}>
+                    {String(i + 1).padStart(2, '0')} · {e.name}
+                  </option>
+                ))}
+              </select>
+              <button className="iconbtn" title="下一个实验（→）" onClick={() => step(1)}>
+                ›
+              </button>
+            </div>
+          ) : null}
+
           <div className="lab__tools">
-            <input
-              className="lab__search"
-              placeholder="搜索实验、章节或关键词…"
-              value={query}
-              spellCheck={false}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <span className="lab__total">{list.length} / {EXPERIMENTS.length} 个实验</span>
-            <button className="iconbtn" title="关闭（Esc）" onClick={onClose}>
+            {!standalone && (
+              <>
+                {focus ? (
+                  <select
+                    className="lab__search lab__search--select"
+                    value={id}
+                    onChange={(e) => pick(e.target.value)}
+                    aria-label="选择实验"
+                  >
+                    {EXPERIMENTS.map((e, i) => (
+                      <option key={e.id} value={e.id}>
+                        {String(i + 1).padStart(2, '0')} · {e.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className="lab__search"
+                    placeholder="搜索实验、章节或关键词…"
+                    value={query}
+                    spellCheck={false}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                )}
+                <span className="lab__total">
+                  {focus ? EXPERIMENTS.length : list.length} / {EXPERIMENTS.length} 个实验
+                </span>
+              </>
+            )}
+            {standalone && <span className="lab__total">{EXPERIMENTS.length} 个实验</span>}
+            {!standalone && (
+              <button
+                className="lab__mode"
+                data-active={large}
+                title={large ? '大屏字号：已放大' : '大屏字号：标准'}
+                onClick={toggleLarge}
+              >
+                <TextSizeIcon size={17} />
+                <span>大屏</span>
+              </button>
+            )}
+            <button
+              className="lab__mode"
+              data-active={focus}
+              title={focus ? '退出专注模式，显示列表与说明' : '专注模式：收起列表与说明，放大动画'}
+              onClick={() => setFocus((v) => !v)}
+            >
+              <ExpandIcon size={17} />
+              <span>{focus ? '退出专注' : '专注'}</span>
+            </button>
+            <button className="iconbtn" title={standalone ? '关闭窗口' : '关闭（Esc）'} onClick={onClose}>
               <CloseIcon size={16} />
             </button>
           </div>
@@ -225,6 +358,8 @@ export function Textbook({ onClose, initialId }: Props) {
             fav={fav.includes(exp.id)}
             onFav={() => toggleFav(exp.id)}
             onClose={onClose}
+            standalone={standalone}
+            onOpenWindow={standalone ? undefined : openWindow}
           />
         </div>
       </div>
@@ -248,11 +383,15 @@ function LabDetail({
   fav,
   onFav,
   onClose,
+  standalone = false,
+  onOpenWindow,
 }: {
   exp: LabExperiment
   fav: boolean
   onFav: () => void
   onClose: () => void
+  standalone?: boolean
+  onOpenWindow?: () => void
 }) {
   const [params, setParams] = useState<Record<string, number | string>>({ ...exp.params })
   const [playing, setPlaying] = useState(true)
@@ -260,6 +399,183 @@ function LabDetail({
   const [t, setT] = useState(0)
   const [tab, setTab] = useState<TabId>('principle')
   const clock = useRef(0)
+
+  /* 大屏演示：缩放 / 拖动 / 放大镜 / 聚光灯 / 批注 / 全屏 */
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [cursor, setCursor] = useState({ x: 0, y: 0, inside: false })
+  const [lens, setLens] = useState(false)
+  const [spot, setSpot] = useState(false)
+  const [spotR, setSpotR] = useState(240)
+  const [ink, setInk] = useState(false)
+  const [full, setFull] = useState(false)
+  const [stage, setStage] = useState({ w: 760, h: 430 })
+  const stageRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
+
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const measure = () => {
+      const r = el.getBoundingClientRect()
+      if (r.width > 0 && r.height > 0) setStage({ w: r.width, h: r.height })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const clampView = (z: number, x: number, y: number) => {
+    const mx = Math.max(0, ((z - 1) * stage.w) / 2)
+    const my = Math.max(0, ((z - 1) * stage.h) / 2)
+    return {
+      zoom: z,
+      x: Math.max(-mx, Math.min(mx, x)),
+      y: Math.max(-my, Math.min(my, y)),
+    }
+  }
+
+  const zoomAt = (next: number, cx = stage.w / 2, cy = stage.h / 2) => {
+    const z = Math.max(1, Math.min(3.5, next))
+    if (Math.abs(z - zoom) < 0.001) return
+    const mx = cx - stage.w / 2
+    const my = cy - stage.h / 2
+    const v = clampView(z, pan.x + mx * (zoom - z), pan.y + my * (zoom - z))
+    setZoom(v.zoom)
+    setPan({ x: v.x, y: v.y })
+  }
+
+  const resetView = () => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }
+
+  const stagePoint = (e: React.PointerEvent) => {
+    const r = stageRef.current?.getBoundingClientRect()
+    return { x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) }
+  }
+
+  const onStageDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return
+    const p = stagePoint(e)
+    setCursor({ ...p, inside: true })
+    if (zoom <= 1) return
+    e.preventDefault()
+    try {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch {
+      /* 合成事件没有活动指针，忽略 */
+    }
+    dragRef.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y }
+  }
+
+  const onStageMove = (e: React.PointerEvent) => {
+    const p = stagePoint(e)
+    setCursor({ ...p, inside: true })
+    const d = dragRef.current
+    if (!d) return
+    const v = clampView(zoom, d.px + e.clientX - d.x, d.py + e.clientY - d.y)
+    setPan({ x: v.x, y: v.y })
+  }
+
+  const onStageUp = (e: React.PointerEvent) => {
+    if (!dragRef.current) return
+    dragRef.current = null
+    try {
+      ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
+    } catch {
+      /* 指针已离开窗口 */
+    }
+  }
+
+  const onStageLeave = () => {
+    if (!dragRef.current) setCursor((c) => ({ ...c, inside: false }))
+  }
+
+  const toggleLens = () => {
+    setLens((v) => {
+      const next = !v
+      if (next) {
+        setSpot(false)
+        setInk(false)
+        setCursor((c) => (c.inside ? c : { x: stage.w / 2, y: stage.h / 2, inside: true }))
+      }
+      return next
+    })
+  }
+
+  const toggleSpot = () => {
+    setSpot((v) => {
+      const next = !v
+      if (next) {
+        setLens(false)
+        setInk(false)
+        setSpotR(Math.round(Math.max(100, Math.min(240, stage.h * 0.45))))
+        setCursor((c) => (c.inside ? c : { x: stage.w / 2, y: stage.h / 2, inside: true }))
+      }
+      return next
+    })
+  }
+
+  const toggleInk = () => {
+    setInk((v) => {
+      const next = !v
+      if (next) {
+        setLens(false)
+        setSpot(false)
+      }
+      return next
+    })
+  }
+
+  const toggleFull = () => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen()
+    } else {
+      void document.documentElement.requestFullscreen().catch(() => {})
+    }
+  }
+
+  useEffect(() => {
+    const on = () => setFull(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', on)
+    return () => document.removeEventListener('fullscreenchange', on)
+  }, [])
+
+  // 滚轮缩放：必须用原生监听才能 preventDefault
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const r = el.getBoundingClientRect()
+      const cx = e.clientX - r.left
+      const cy = e.clientY - r.top
+      setCursor({ x: cx, y: cy, inside: true })
+      zoomAt(zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12), cx, cy)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [zoom, pan, stage])
+
+  // I 批注 / F 全屏；输入框与批注层里让位
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      if (el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT') return
+      if (document.querySelector('.screenink')) return
+      if (e.key === 'i' || e.key === 'I') {
+        e.preventDefault()
+        toggleInk()
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault()
+        toggleFull()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     if (!playing) return
@@ -288,7 +604,7 @@ function LabDetail({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
-      if (el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA') return
+      if (el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT') return
       if (e.code !== 'Space') return
       e.preventDefault()
       setPlaying((v) => !v)
@@ -319,6 +635,13 @@ function LabDetail({
   }, [exp, params])
   const accent = FIELD_COLOR[exp.field]
 
+  const lensZoom = 2.4
+  const lensR = Math.max(84, Math.min(126, stage.h * 0.3))
+  const lensTx = stage.w / 2 + pan.x + (cursor.x - stage.w / 2) * zoom
+  const lensTy = stage.h / 2 + pan.y + (cursor.y - stage.h / 2) * zoom
+  const lensLeft = Math.max(4, Math.min(stage.w - lensR * 2 - 4, cursor.x - lensR))
+  const lensTop = Math.max(4, Math.min(stage.h - lensR * 2 - 4, cursor.y - lensR))
+
   return (
     <section className="lab__detail">
       <div className="lab__titlebar">
@@ -338,7 +661,12 @@ function LabDetail({
           <button className="btn lab__reset" onClick={reset} title="回到起点重新播放">
             重置
           </button>
-          <button className="iconbtn" title="关闭（Esc）" onClick={onClose}>
+          {onOpenWindow && (
+            <button className="iconbtn lab__windowbtn" title="在独立窗口打开（适合投影 / 双屏）" onClick={onOpenWindow}>
+              <WindowIcon size={16} />
+            </button>
+          )}
+          <button className="iconbtn" title={standalone ? '关闭窗口' : '关闭（Esc）'} onClick={onClose}>
             <CloseIcon size={15} />
           </button>
         </div>
@@ -365,10 +693,124 @@ function LabDetail({
           ) : (
             <span className="lab__hintline">右侧滑杆即时生效，画面与读数同步</span>
           )}
+
+          <div className="lab__viewtools">
+            <button className="lab__viewbtn" title="缩小（滚轮）" onClick={() => zoomAt(zoom / 1.2)}>
+              <ZoomOutIcon size={17} />
+            </button>
+            <button className="lab__zoomval" title="点击恢复 100%" onClick={resetView}>
+              {Math.round(zoom * 100)}%
+            </button>
+            <button className="lab__viewbtn" title="放大（滚轮）" onClick={() => zoomAt(zoom * 1.2)}>
+              <ZoomInIcon size={17} />
+            </button>
+            <button className="lab__viewbtn" title="适应窗口（双击画面也可）" onClick={resetView}>
+              <FitIcon size={17} />
+            </button>
+            <span className="lab__viewsep" />
+            <button
+              className="lab__viewbtn"
+              data-active={lens}
+              title="放大镜：跟随指针，放大局部"
+              onClick={toggleLens}
+            >
+              <LensIcon size={17} />
+            </button>
+            <button
+              className="lab__viewbtn"
+              data-active={spot}
+              title="聚光灯：压暗四周，只留光圈"
+              onClick={toggleSpot}
+            >
+              <SpotlightIcon size={17} />
+            </button>
+            <button
+              className="lab__viewbtn"
+              data-active={ink}
+              title="全屏批注：可直接在动画和读数上圈画（I）"
+              onClick={toggleInk}
+            >
+              <PencilIcon size={17} />
+            </button>
+            <button
+              className="lab__viewbtn"
+              data-active={full}
+              title="全屏（F / F11）"
+              onClick={toggleFull}
+            >
+              <FullscreenIcon size={17} exit={full} />
+            </button>
+          </div>
         </div>
 
-        <div className="lab__stagebox">
-          <LabStage exp={exp} m={model} t={t} />
+        <div
+          className={`lab__stagebox ${zoom > 1 ? 'is-zoomed' : ''}`}
+          ref={stageRef}
+          onPointerDown={onStageDown}
+          onPointerMove={onStageMove}
+          onPointerUp={onStageUp}
+          onPointerCancel={onStageUp}
+          onPointerLeave={onStageLeave}
+          onDoubleClick={resetView}
+        >
+          <div
+            className="lab__stagezoom"
+            style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+          >
+            <LabStage exp={exp} m={model} t={t} />
+          </div>
+
+          {spot && (
+            <div
+              className="lab__spot"
+              style={
+                {
+                  '--sx': `${cursor.x}px`,
+                  '--sy': `${cursor.y}px`,
+                  '--sr': `${spotR}px`,
+                } as CSSProperties
+              }
+            />
+          )}
+          {spot && (
+            <div className="lab__spotctl" onPointerDown={(e) => e.stopPropagation()}>
+              <span>光圈</span>
+              <input
+                type="range"
+                min={100}
+                max={340}
+                step={10}
+                value={spotR}
+                onChange={(e) => setSpotR(Number(e.target.value))}
+                aria-label="聚光灯大小"
+              />
+            </div>
+          )}
+
+          {lens && cursor.inside && stage.w > lensR * 2 + 8 && stage.h > lensR * 2 + 8 && (
+            <div
+              className="lab__lens"
+              style={{ left: lensLeft, top: lensTop, width: lensR * 2, height: lensR * 2 }}
+            >
+              <div
+                className="lab__lensinner"
+                style={{
+                  width: stage.w,
+                  height: stage.h,
+                  transform: `translate(${lensR - lensTx * lensZoom}px, ${lensR - lensTy * lensZoom}px) scale(${lensZoom})`,
+                }}
+              >
+                <div
+                  className="lab__lensview"
+                  style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+                >
+                  <LabStage exp={exp} m={model} t={t} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {zoom > 1 && <div className="lab__zoombadge">拖动画面移动视角 · 双击复位</div>}
         </div>
       </div>
 
@@ -531,6 +973,8 @@ function LabDetail({
           )}
         </div>
       </div>
+
+      <ScreenInk active={ink} onExit={() => setInk(false)} />
     </section>
   )
 }

@@ -64,6 +64,7 @@ function buildAppMenu({ sendMenu, recent }) {
         { role: 'toggleDevTools', label: '开发者工具' },
         { type: 'separator' },
         { label: '教材实验室…', click: () => sendMenu('textbook') },
+        { label: '教材实验室（独立窗口）…', click: () => sendMenu('textbook-window') },
         { type: 'separator' },
         // 讲台投影时去掉标题栏和任务栏，多出一整条画布
         { role: 'togglefullscreen', label: '全屏（F11）', accelerator: 'F11' },

@@ -12,6 +12,12 @@ contextBridge.exposeInMainWorld('chordot', {
   exportPack: (payload) => ipcRenderer.invoke('pack:export', payload),
   importPack: () => ipcRenderer.invoke('pack:import'),
   closeWindow: () => ipcRenderer.send('app:close'),
+  openLabWindow: (id) => ipcRenderer.invoke('lab:open-window', { id }),
+  onLabSwitch: (cb) => {
+    const handler = (_e, id) => cb(id)
+    ipcRenderer.on('lab:switch', handler)
+    return () => ipcRenderer.removeListener('lab:switch', handler)
+  },
   onRequestClose: (cb) => {
     const handler = () => cb()
     ipcRenderer.on('app:request-close', handler)

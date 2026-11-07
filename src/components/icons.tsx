@@ -296,3 +296,86 @@ export function PaletteIcon({ size = 16 }: { size?: number }) {
     </svg>
   )
 }
+
+export function ZoomInIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M15.5 15.5 21 21M7.5 10.5h6M10.5 7.5v6" />
+    </svg>
+  )
+}
+
+export function ZoomOutIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M15.5 15.5 21 21M7.5 10.5h6" />
+    </svg>
+  )
+}
+
+export function LensIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <path d="M16 16 21 21M8.5 11h5M11 8.5v5" />
+    </svg>
+  )
+}
+
+export function SpotlightIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="13" r="4.5" />
+      <path d="M12 3v2M4.9 5.9l1.4 1.4M19.1 5.9l-1.4 1.4M3 13h2M19 13h2M6 21h12" />
+    </svg>
+  )
+}
+
+export function HandIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 11V6.5a1.5 1.5 0 0 1 3 0V11M11 10V5a1.5 1.5 0 0 1 3 0v6M14 11V6.5a1.5 1.5 0 0 1 3 0V13c0 4-2.2 7-6 7-2.2 0-3.6-1-4.8-2.8L4 13.5a1.5 1.5 0 0 1 2.4-1.8L8 14" />
+    </svg>
+  )
+}
+
+export function FullscreenIcon({ size = 18, exit = false }: { size?: number; exit?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {exit ? (
+        <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+      ) : (
+        <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+      )}
+    </svg>
+  )
+}
+
+export function WindowIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="5" width="13" height="11" rx="1.5" />
+      <path d="M8 19h11a2 2 0 0 0 2-2V8" />
+    </svg>
+  )
+}
+
+export function TextSizeIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 6h8M8 6v13M5.5 19h5" />
+      <path d="M14 11h6M17 11v8M15 19h4" />
+    </svg>
+  )
+}
+
+export function ExpandIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+      <path d="M9 9 4 4M15 9l5-5M9 15l-5 5M15 15l5 5" opacity=".35" />
+    </svg>
+  )
+}

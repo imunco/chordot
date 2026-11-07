@@ -56,6 +56,7 @@ interface Props {
       | 'pendulum'
       | 'incline3d'
       | 'textbook'
+      | 'textbook-window'
       | 'clear'
       | 'palette',
   ) => void
@@ -161,6 +162,7 @@ export function Toolbar(props: Props) {
       | 'pendulum'
       | 'incline3d'
       | 'textbook'
+      | 'textbook-window'
       | 'clear'
       | 'palette',
   ) => {
@@ -299,6 +301,9 @@ export function Toolbar(props: Props) {
             <div className="menu" role="menu">
               <button className="menu__item" onClick={() => runCommand('textbook')}>
                 教材实验室…
+              </button>
+              <button className="menu__item" onClick={() => runCommand('textbook-window')}>
+                教材实验室（独立窗口）…
               </button>
               <button className="menu__item" onClick={() => runCommand('gallery')}>
                 模板库…

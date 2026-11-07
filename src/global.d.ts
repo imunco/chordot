@@ -41,6 +41,8 @@ declare global {
         error?: string
       }>
       closeWindow: () => void
+      openLabWindow: (id?: string) => Promise<boolean>
+      onLabSwitch: (cb: (id: string) => void) => () => void
       onRequestClose: (cb: () => void) => () => void
       onMenu: (cb: (action: string, arg?: string) => void) => () => void
       update?: {

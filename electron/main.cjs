@@ -81,6 +81,7 @@ function ensureVisible(bounds) {
 }
 
 let mainWindow = null
+let labWindow = null
 let forceClose = false
 
 function createWindow() {
@@ -143,6 +144,7 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+    if (labWindow && !labWindow.isDestroyed()) labWindow.close()
   })
 
   if (isDev) {
@@ -151,6 +153,79 @@ function createWindow() {
     mainWindow.loadURL('app://chordot/index.html')
   }
 }
+
+/** 教材实验室独立窗口：适合双屏 / 投影，主窗口继续留着画布 */
+function createLabWindow(id) {
+  if (labWindow && !labWindow.isDestroyed()) {
+    labWindow.show()
+    labWindow.focus()
+    if (id) {
+      const send = () => {
+        if (labWindow && !labWindow.isDestroyed()) labWindow.webContents.send('lab:switch', id)
+      }
+      if (labWindow.webContents.isLoading()) labWindow.webContents.once('did-finish-load', send)
+      else send()
+    }
+    return labWindow
+  }
+
+  const saved = readState()
+  const bounds = ensureVisible(saved.labBounds)
+  const wa = screen.getPrimaryDisplay().workArea
+  const width = bounds?.width ?? Math.min(1680, Math.round(wa.width * 0.94))
+  const height = bounds?.height ?? Math.min(1040, Math.round(wa.height * 0.94))
+  const x = bounds?.x ?? Math.round(wa.x + (wa.width - width) / 2)
+  const y = bounds?.y ?? Math.round(wa.y + (wa.height - height) / 2)
+
+  labWindow = new BrowserWindow({
+    width,
+    height,
+    x,
+    y,
+    minWidth: 980,
+    minHeight: 680,
+    show: false,
+    backgroundColor: '#FAFAF8',
+    title: '教材实验室 · 弦点',
+    autoHideMenuBar: true,
+    ...(windowIcon ? { icon: windowIcon } : {}),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+
+  if (saved.labMaximized) labWindow.maximize()
+  labWindow.once('ready-to-show', () => labWindow.show())
+
+  const persist = () => {
+    if (!labWindow || labWindow.isDestroyed()) return
+    const maximized = labWindow.isMaximized()
+    const b = maximized ? readState().labBounds : labWindow.getBounds()
+    writeState({ labBounds: b, labMaximized: maximized })
+  }
+  labWindow.on('resize', persist)
+  labWindow.on('move', persist)
+  labWindow.on('close', persist)
+  labWindow.on('closed', () => {
+    labWindow = null
+  })
+
+  const query = `?lab=1${id ? `&id=${encodeURIComponent(id)}` : ''}`
+  if (isDev) {
+    labWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}${query}`)
+  } else {
+    labWindow.loadURL(`app://chordot/index.html${query}`)
+  }
+  return labWindow
+}
+
+ipcMain.handle('lab:open-window', (_e, payload) => {
+  createLabWindow(typeof payload?.id === 'string' ? payload.id : '')
+  return true
+})
 
 /** 把菜单动作转给渲染层（Alt 唤出菜单栏，或点菜单项） */
 function sendMenu(action, arg) {
@@ -184,6 +259,7 @@ ipcMain.on('ui:set-state', (_e, patch) => {
 
 ipcMain.on('app:close', () => {
   forceClose = true
+  if (labWindow && !labWindow.isDestroyed()) labWindow.close()
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close()
 })
 
@@ -212,6 +288,7 @@ app.whenReady().then(() => {
   registerStoreIpc()
   createWindow()
   buildMenu()
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

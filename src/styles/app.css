@@ -4575,3 +4575,820 @@ math-field.fexpr__input {
   font-size: 10px;
   color: var(--text-disabled);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   大屏演示：字号 / 专注 / 独立窗口 / 缩放 / 放大镜 / 聚光灯 / 批注
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 头部模式按钮 */
+.lab__mode {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 9px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+}
+
+.lab__mode:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.lab__mode[data-active='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.lab__mode span {
+  line-height: 1;
+}
+
+/* 独立窗口的选择器 */
+.lab__solo-nav {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.lab__solo-nav .iconbtn {
+  width: 38px;
+  height: 38px;
+  font-size: 22px;
+  color: var(--text-secondary);
+  border-radius: 8px;
+}
+
+.lab__solo-nav .iconbtn:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.lab__solo-select {
+  width: min(560px, 42vw);
+  height: 38px;
+  padding: 0 12px;
+  font-size: 15px;
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.lab__solo-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* 大屏字号：只放大信息，不动布局骨架 */
+.lab--large .lab__title {
+  font-size: 23px;
+}
+
+.lab--large .lab__tagline {
+  font-size: 13px;
+}
+
+.lab--large .lab__kicker {
+  font-size: 11.5px;
+}
+
+.lab--large .lab__kind {
+  font-size: 10px;
+}
+
+.lab--large .lab__readlabel {
+  font-size: 10px;
+}
+
+.lab--large .lab__readvalue {
+  font-size: 15px;
+}
+
+.lab--large .lab__readhint {
+  font-size: 9px;
+}
+
+.lab--large .lab__ctlname {
+  font-size: 10.5px;
+}
+
+.lab--large .lab__ctlval {
+  font-size: 11px;
+}
+
+.lab--large .lab__select {
+  height: 28px;
+  font-size: 11px;
+}
+
+.lab--large .lab__datahead {
+  font-size: 14px;
+}
+
+.lab--large .lab__tab {
+  font-size: 13px;
+}
+
+.lab--large .lab__tabbody {
+  font-size: 12.5px;
+}
+
+.lab--large .lab__itemname {
+  font-size: 13px;
+}
+
+.lab--large .lab__itemmeta {
+  font-size: 10.5px;
+}
+
+.lab--large .lab__book {
+  height: 29px;
+  font-size: 12px;
+}
+
+.lab--large .lab__field {
+  height: 25px;
+  font-size: 11.5px;
+}
+
+.lab--large .lab__stageformula code {
+  font-size: 11.5px;
+}
+
+.lab--large .lab__stageformula span {
+  font-size: 10px;
+}
+
+.lab--large .lab__detail {
+  grid-template-rows: auto minmax(0, 1fr) 210px;
+}
+
+/* 专注：收起左栏和底部说明，把画面让出来 */
+.lab--focus .lab__side {
+  display: none;
+}
+
+.lab--focus .lab__body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lab--focus .lab__detail {
+  grid-template-columns: minmax(0, 1fr) 370px;
+  grid-template-rows: auto minmax(0, 1fr) 0;
+}
+
+.lab--focus .lab__notes {
+  display: none;
+}
+
+/* 独立窗口：铺满整窗，去掉侧栏，数据栏加宽 */
+.lab--solo {
+  background: var(--surface);
+}
+
+.lab--solo .lab__panel {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.lab--solo .lab__head {
+  flex: 0 0 66px;
+  padding: 0 18px;
+}
+
+.lab--solo .lab__body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lab--solo .lab__side {
+  display: none;
+}
+
+.lab--solo .lab__detail {
+  grid-template-columns: minmax(0, 1fr) 390px;
+  grid-template-rows: auto minmax(0, 1fr) 200px;
+}
+
+.lab--solo .lab__brandline {
+  font-size: 16px;
+}
+
+.lab--solo .lab__sub {
+  font-size: 11px;
+}
+
+.lab--solo .lab__mark {
+  width: 44px;
+  height: 44px;
+  font-size: 13px;
+}
+
+.lab--solo .lab__mode {
+  height: 38px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.lab--solo .lab__total {
+  font-size: 12px;
+}
+
+.lab--solo .lab__titlebar {
+  padding: 12px 18px 8px 20px;
+}
+
+.lab--solo .lab__title {
+  font-size: 30px;
+}
+
+.lab--solo .lab__tagline {
+  font-size: 14.5px;
+}
+
+.lab--solo .lab__kicker {
+  font-size: 12px;
+}
+
+.lab--solo .lab__star {
+  width: 40px;
+  height: 38px;
+  font-size: 17px;
+}
+
+.lab--solo .lab__reset {
+  height: 38px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+
+.lab--solo .lab__stagecol {
+  padding: 0 16px 14px 20px;
+}
+
+.lab--solo .lab__stagebar {
+  min-height: 40px;
+  gap: 8px;
+}
+
+.lab--solo .lab__play {
+  height: 38px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.lab--solo .lab__speeds .segmented__btn {
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.lab--solo .lab__stageformula code {
+  font-size: 12px;
+}
+
+.lab--solo .lab__stageformula span {
+  font-size: 10.5px;
+}
+
+.lab--solo .lab__viewbtn {
+  width: 34px;
+  height: 34px;
+}
+
+.lab--solo .lab__zoomval {
+  height: 34px;
+  min-width: 48px;
+  font-size: 12px;
+}
+
+.lab--solo .lab__data {
+  padding: 4px 14px 16px;
+}
+
+.lab--solo .lab__datahead {
+  font-size: 15px;
+}
+
+.lab--solo .lab__reads {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.lab--solo .lab__read {
+  padding: 6px 8px;
+}
+
+.lab--solo .lab__readlabel {
+  font-size: 12px;
+}
+
+.lab--solo .lab__readvalue {
+  font-size: 20px;
+}
+
+.lab--solo .lab__readhint {
+  font-size: 10px;
+}
+
+.lab--solo .lab__ctl {
+  grid-template-columns: 96px minmax(0, 1fr) 70px;
+  gap: 8px;
+}
+
+.lab--solo .lab__ctlname {
+  font-size: 12px;
+}
+
+.lab--solo .lab__ctlval {
+  font-size: 13px;
+}
+
+.lab--solo .lab__select {
+  height: 32px;
+  font-size: 13px;
+}
+
+.lab--solo .lab__ctl input[type='range'] {
+  height: 20px;
+}
+
+.lab--solo .lab__charthead {
+  font-size: 12px;
+}
+
+.lab--solo .lab__legend {
+  font-size: 10.5px;
+}
+
+.lab--solo .lab__tab {
+  height: 34px;
+  font-size: 14px;
+}
+
+.lab--solo .lab__tabbody {
+  font-size: 14px;
+  padding: 10px 20px 16px;
+}
+
+.lab--solo .lab__concl {
+  font-size: 12px;
+}
+
+.lab--solo .lab__fcard code {
+  font-size: 14px;
+}
+
+.lab--solo .lab__fcard span {
+  font-size: 11px;
+}
+
+.lab--solo .lab__chips span {
+  font-size: 11.5px;
+}
+
+.lab--solo .lab__cols h4 {
+  font-size: 11.5px;
+}
+
+/* 演示台工具条 */
+.lab__stageformula {
+  margin-left: 0;
+  max-width: 36%;
+}
+
+.lab__viewtools {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.lab__viewbtn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+}
+
+.lab__viewbtn:hover {
+  color: var(--text-primary);
+  background: var(--hover);
+}
+
+.lab__viewbtn[data-active='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.lab__zoomval {
+  min-width: 42px;
+  height: 30px;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  border-radius: var(--r-sm);
+}
+
+.lab__zoomval:hover {
+  background: var(--hover);
+}
+
+.lab__viewsep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+/* 画面缩放 / 拖动 */
+.lab__stagebox {
+  touch-action: none;
+  user-select: none;
+}
+
+.lab__stagebox.is-zoomed {
+  cursor: grab;
+}
+
+.lab__stagebox.is-zoomed:active {
+  cursor: grabbing;
+}
+
+.lab__stagezoom {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+
+.lab__stagezoom .lab__svg {
+  width: 100%;
+  height: 100%;
+}
+
+.lab__zoombadge {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 7;
+  padding: 3px 9px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+/* 放大镜 */
+.lab__lens {
+  position: absolute;
+  z-index: 6;
+  overflow: hidden;
+  background: #fafaf8;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 8px 24px rgba(31, 31, 29, 0.22), inset 0 0 0 1px #fff;
+  pointer-events: none;
+}
+
+.lab__lens::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px;
+  border: 1px solid rgba(61, 90, 102, 0.5);
+  border-radius: 50%;
+}
+
+.lab__lensinner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
+.lab__lensview {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 50%;
+}
+
+/* 聚光灯 */
+.lab__spot {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: radial-gradient(
+    circle var(--sr) at var(--sx) var(--sy),
+    transparent 0,
+    transparent calc(var(--sr) - 16px),
+    rgba(20, 20, 18, 0.62) var(--sr)
+  );
+}
+
+.lab__spotctl {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.lab__spotctl input[type='range'] {
+  width: 110px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+/* 全屏批注 */
+.screenink {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.screenink--eraser {
+  cursor: cell;
+}
+
+.screenink__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.screenink__hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  font-size: 13px;
+  color: #fff;
+  background: rgba(31, 31, 29, 0.78);
+  border-radius: 16px;
+  pointer-events: none;
+}
+
+.screenink__bar {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 8px 26px rgba(31, 31, 29, 0.18);
+}
+
+.screenink__colors,
+.screenink__widths {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.screenink__color {
+  width: 30px;
+  height: 30px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(31, 31, 29, 0.12);
+}
+
+.screenink__color[data-active='true'] {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.screenink__width {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.screenink__width i {
+  display: block;
+  background: var(--text-primary);
+  border-radius: 50%;
+}
+
+.screenink__width[data-active='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.screenink__tool {
+  height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.screenink__tool[data-active='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.screenink__tool:disabled {
+  opacity: 0.35;
+}
+
+.screenink__exit {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 8px;
+}
+
+.screenink__exit:hover {
+  background: #2f4a55;
+}
+
+/* 窄屏：先收起公式，把演示工具留住 */
+@media (max-width: 1360px) {
+  .lab__stageformula {
+    max-width: 24%;
+  }
+
+  .lab__hintline {
+    display: none;
+  }
+
+  .lab__viewsep {
+    display: none;
+  }
+}
+
+@media (max-width: 1200px) {
+  .lab__mode span {
+    display: none;
+  }
+
+  .lab__mode {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .lab--solo .lab__solo-select {
+    width: 30vw;
+  }
+
+  .lab--solo .lab__total {
+    display: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .lab--solo .lab__detail {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  .lab--solo .lab__sub {
+    display: none;
+  }
+
+  .lab--focus .lab__detail {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+}
+
+
+/* 独立窗口 + 专注：第三行必须收成 0，否则底部会留一条空白 */
+.lab--solo.lab--focus .lab__detail {
+  grid-template-rows: auto minmax(0, 1fr) 0;
+}
+
+.lab--solo.lab--focus .lab__notes {
+  display: none;
+}
+
+/* 全屏时让教材面板真正铺满，而不是仍被 1460×940 限制 */
+html:fullscreen .lab__panel {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+}
+
+
+/* 播放按钮不允许换行（窄一点的演示台上“暂停”会被挤成两行） */
+.lab__play {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.lab__speeds {
+  flex: 0 0 auto;
+}
+
+
+/* 专注模式下用下拉框代替搜索框：列表收起了，仍能直接切换实验 */
+.lab__search--select {
+  padding: 0 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lab--large .lab__search--select {
+  font-size: 13px;
+}
+
+/* 大屏上批注条再放大一档：手指和粗笔都好点 */
+.screenink__bar {
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.screenink__color {
+  width: 34px;
+  height: 34px;
+}
+
+.screenink__width {
+  width: 38px;
+  height: 38px;
+}
+
+.screenink__tool,
+.screenink__exit {
+  height: 38px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.lab__spotctl {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.lab__spotctl input[type='range'] {
+  width: 130px;
+}
+
+.lab__zoombadge {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+/* 关键：让 body 的隐式行占满剩余高度，详情/演示台才能真的铺开 */
+.lab__body {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.lab__detail {
+  height: 100%;
+}
