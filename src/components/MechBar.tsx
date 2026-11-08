@@ -15,6 +15,9 @@ interface Props {
   pending: MechLinkKind | null
   anchor: string | null
   playing: boolean
+  /** 编辑 = 摆零件；真实 = 按物理运行，拖动即施力 */
+  editing: boolean
+  onEditing: (v: boolean) => void
   onPending: (kind: MechLinkKind | null) => void
   onAddPart: (kind: MechPartKind) => void
   onPatchPart: (id: string, patch: Partial<MechPart>) => void
@@ -112,6 +115,8 @@ export function MechBar({
   pending,
   anchor,
   playing,
+  editing,
+  onEditing,
   onPending,
   onAddPart,
   onPatchPart,
@@ -147,10 +152,32 @@ export function MechBar({
       : `点第一个部件作为连接起点（当前：${LINKS.find((l) => l.kind === pending)?.label}）`
     : params.parts.length === 0
       ? '把左边的部件拖到画布上，或点一下放到画面中央'
-      : '拖部件可移动；点连接件再点两个部件，就连成一台机构'
+      : editing
+        ? '拖部件可移动；点连接件再点两个部件，就连成一台机构'
+        : '真实模式：按住部件拖动就是施力；选中部件可改力的大小与方向，立刻生效'
 
   return (
     <div className="mechbar" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="mechbar__mode" data-editing={editing}>
+        <div className="mechbar__seg">
+          <button data-active={editing} onClick={() => onEditing(true)} title="摆零件、连结构、改参数；物理暂停">
+            编辑
+          </button>
+          <button
+            data-active={!editing}
+            onClick={() => onEditing(false)}
+            title="按真实物理运行：重力、弹簧、摩擦全部生效；拖动部件就是施力"
+          >
+            真实
+          </button>
+        </div>
+        <span className="mechbar__modehint">
+          {editing
+            ? '编辑：拖动摆放零件、点连接件把两个部件连起来'
+            : '真实：正在按物理规律运行，按住部件拖动 = 施力拉它'}
+        </span>
+      </div>
+
       <div className="mechbar__row">
         <span className="mechbar__label">部件</span>
         {PARTS.map((p) => (
@@ -346,57 +373,162 @@ export function MechBar({
           </div>
           {part.kind !== 'anchor' && part.kind !== 'track' && part.kind !== 'pulley' && (
             <div className="mechbar__force">
-              <label className="mechbar__check">
-                <input
-                  type="checkbox"
-                  checked={Boolean(part.force?.enabled)}
+              <div className="mechbar__forcerow">
+                <label className="mechbar__check">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(part.force?.enabled)}
+                    onChange={(e) =>
+                      onPatchPart(part.id, {
+                        force: {
+                          mode: part.force?.mode ?? 'const',
+                          n: part.force?.n ?? 5,
+                          expr: part.force?.expr ?? '0.5*m*g',
+                          angle: part.force?.angle ?? 0,
+                          enabled: e.target.checked,
+                        },
+                      })
+                    }
+                  />
+                  施加力
+                </label>
+                <select
+                  className="mechbar__select"
+                  value={part.force?.mode ?? 'const'}
                   onChange={(e) =>
                     onPatchPart(part.id, {
                       force: {
+                        enabled: part.force?.enabled ?? true,
+                        n: part.force?.n ?? 5,
                         expr: part.force?.expr ?? '0.5*m*g',
                         angle: part.force?.angle ?? 0,
-                        enabled: e.target.checked,
+                        mode: e.target.value as 'const' | 'expr',
                       },
                     })
                   }
-                />
-                公式力
-              </label>
-              <input
-                className="mechbar__expr"
-                spellCheck={false}
-                placeholder="F(x,v,t)  可用 x y vx vy t m g"
-                value={part.force?.expr ?? ''}
-                onChange={(e) =>
-                  onPatchPart(part.id, {
-                    force: {
-                      enabled: part.force?.enabled ?? true,
-                      angle: part.force?.angle ?? 0,
-                      expr: e.target.value,
-                    },
-                  })
-                }
-                title="表达式用 mathjs 语法，结果是牛顿"
-              />
-              <label>
-                方向
-                <Num
-                  value={part.force?.angle ?? 0}
-                  unit="°"
-                  min={-180}
-                  max={180}
-                  step={5}
-                  onCommit={(v) =>
-                    onPatchPart(part.id, {
-                      force: {
-                        enabled: part.force?.enabled ?? true,
-                        expr: part.force?.expr ?? '0',
-                        angle: v,
-                      },
-                    })
-                  }
-                />
-              </label>
+                  title="恒力：直接给牛顿数；公式力：随位置/速度/时间变化"
+                >
+                  <option value="const">恒力</option>
+                  <option value="expr">公式</option>
+                </select>
+              </div>
+
+              {(part.force?.mode ?? 'const') === 'const' ? (
+                <>
+                  <label>
+                    大小
+                    <Num
+                      value={part.force?.n ?? 5}
+                      unit="N"
+                      min={-500}
+                      max={500}
+                      step={0.5}
+                      onCommit={(v) =>
+                        onPatchPart(part.id, {
+                          force: {
+                            enabled: part.force?.enabled ?? true,
+                            mode: 'const',
+                            expr: part.force?.expr ?? '',
+                            n: v,
+                            angle: part.force?.angle ?? 0,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    方向
+                    <Num
+                      value={part.force?.angle ?? 0}
+                      unit="°"
+                      min={-180}
+                      max={180}
+                      step={5}
+                      onCommit={(v) =>
+                        onPatchPart(part.id, {
+                          force: {
+                            enabled: part.force?.enabled ?? true,
+                            mode: 'const',
+                            expr: part.force?.expr ?? '',
+                            n: part.force?.n ?? 5,
+                            angle: v,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <div className="mechbar__dirs">
+                    {[
+                      { label: '→', angle: 0, hint: '向右' },
+                      { label: '↑', angle: 90, hint: '向上' },
+                      { label: '←', angle: 180, hint: '向左' },
+                      { label: '↓', angle: -90, hint: '向下' },
+                    ].map((d) => (
+                      <button
+                        key={d.label}
+                        className="mechbar__chip"
+                        data-on={(part.force?.angle ?? 0) === d.angle}
+                        title={d.hint}
+                        onClick={() =>
+                          onPatchPart(part.id, {
+                            force: {
+                              enabled: part.force?.enabled ?? true,
+                              mode: 'const',
+                              expr: part.force?.expr ?? '',
+                              n: part.force?.n ?? 5,
+                              angle: d.angle,
+                            },
+                          })
+                        }
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <input
+                    className="mechbar__expr"
+                    spellCheck={false}
+                    placeholder="F(x,v,t)  可用 x y vx vy t m g"
+                    value={part.force?.expr ?? ''}
+                    onChange={(e) =>
+                      onPatchPart(part.id, {
+                        force: {
+                          enabled: part.force?.enabled ?? true,
+                          mode: 'expr',
+                          n: part.force?.n ?? 5,
+                          angle: part.force?.angle ?? 0,
+                          expr: e.target.value,
+                        },
+                      })
+                    }
+                    title="表达式用 mathjs 语法，结果是牛顿"
+                  />
+                  <label>
+                    方向
+                    <Num
+                      value={part.force?.angle ?? 0}
+                      unit="°"
+                      min={-180}
+                      max={180}
+                      step={5}
+                      onCommit={(v) =>
+                        onPatchPart(part.id, {
+                          force: {
+                            enabled: part.force?.enabled ?? true,
+                            mode: 'expr',
+                            expr: part.force?.expr ?? '0',
+                            n: part.force?.n ?? 5,
+                            angle: v,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </>
+              )}
             </div>
           )}
         </div>

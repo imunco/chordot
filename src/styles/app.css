@@ -4662,39 +4662,39 @@ math-field.fexpr__input {
 
 /* 大屏字号：只放大信息，不动布局骨架 */
 .lab--large .lab__title {
-  font-size: 23px;
+  font-size: 30px;
 }
 
 .lab--large .lab__tagline {
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .lab--large .lab__kicker {
-  font-size: 11.5px;
+  font-size: 13px;
 }
 
 .lab--large .lab__kind {
-  font-size: 10px;
+  font-size: 11.5px;
 }
 
 .lab--large .lab__readlabel {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .lab--large .lab__readvalue {
-  font-size: 15px;
+  font-size: 20px;
 }
 
 .lab--large .lab__readhint {
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .lab--large .lab__ctlname {
-  font-size: 10.5px;
+  font-size: 13px;
 }
 
 .lab--large .lab__ctlval {
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .lab--large .lab__select {
@@ -4703,23 +4703,23 @@ math-field.fexpr__input {
 }
 
 .lab--large .lab__datahead {
-  font-size: 14px;
+  font-size: 17px;
 }
 
 .lab--large .lab__tab {
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .lab--large .lab__tabbody {
-  font-size: 12.5px;
+  font-size: 15px;
 }
 
 .lab--large .lab__itemname {
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .lab--large .lab__itemmeta {
-  font-size: 10.5px;
+  font-size: 12.5px;
 }
 
 .lab--large .lab__book {
@@ -4733,11 +4733,11 @@ math-field.fexpr__input {
 }
 
 .lab--large .lab__stageformula code {
-  font-size: 11.5px;
+  font-size: 14px;
 }
 
 .lab--large .lab__stageformula span {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .lab--large .lab__detail {
@@ -5180,6 +5180,20 @@ math-field.fexpr__input {
   pointer-events: none;
 }
 
+/* 橡皮光标：圈出来的就是真正会被擦掉的区域 */
+.screenink__eraser {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(61, 90, 102, 0.9);
+  background: rgba(240, 244, 246, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75) inset;
+  pointer-events: none;
+  will-change: transform;
+  transition: opacity 120ms ease;
+}
+
 .screenink__hint {
   position: absolute;
   top: 14px;
@@ -5558,6 +5572,63 @@ html[data-capturing='1'][data-sheet='1'] .lab__notes {
   gap: 6px;
   flex-wrap: wrap;
 }
+
+/* 编辑 / 真实 双模式：一眼看出现在会不会动 */
+.mechbar__mode {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mechbar__seg {
+  flex: none;
+  display: inline-flex;
+  padding: 2px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+.mechbar__seg button {
+  padding: 5px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mechbar__seg button[data-active='true'] {
+  color: #fff;
+  background: #3d5a66;
+  box-shadow: 0 1px 3px rgba(31, 31, 29, 0.2);
+}
+
+.mechbar__mode[data-editing='false'] .mechbar__seg button[data-active='true'] {
+  background: #b0652f;
+}
+
+.mechbar__modehint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.mechbar__forcerow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.mechbar__dirs {
+  display: inline-flex;
+  gap: 4px;
+}
+
 
 .mechbar__label {
   flex: none;
@@ -6108,4 +6179,177 @@ html[data-capturing='1'][data-sheet='1'] .lab__notes {
   color: #fff;
   background: var(--accent);
   border-color: transparent;
+}
+
+/* 物理模式下还没有装配台时的引导卡 */
+.physprompt {
+  position: absolute;
+  right: 18px;
+  top: 18px;
+  z-index: 12;
+  width: 296px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 10px 26px rgba(31, 31, 29, 0.12);
+}
+
+.physprompt b {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.physprompt p {
+  margin: 6px 0 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.physprompt__row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.physprompt__row button {
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.physprompt__row button:hover {
+  border-color: #3d5a66;
+  color: #3d5a66;
+}
+
+/* 函数面板：分类 + 软键盘 + 实时提示 */
+.fnpad {
+  padding: 0 8px 4px;
+}
+
+.fnpad__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 6px;
+}
+
+.fnpad__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fnpad__count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.fnpad__count[data-full='true'] {
+  color: #b0652f;
+}
+
+.fnpad__toggle {
+  margin-left: auto;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.fnpad__toggle[data-active='true'] {
+  color: #fff;
+  background: #3d5a66;
+  border-color: #3d5a66;
+}
+
+.fnpad__tpl {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  padding-bottom: 4px;
+}
+
+.fnpad__chip {
+  height: 24px;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.fnpad__chip:hover:not(:disabled) {
+  color: #3d5a66;
+  border-color: #3d5a66;
+}
+
+.fnpad__chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.fnpad__keys {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px;
+  padding: 4px 0 2px;
+}
+
+.fnpad__key {
+  height: 28px;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.fnpad__key:hover {
+  background: var(--surface-2);
+  border-color: #3d5a66;
+}
+
+.fnpad__key[data-act='back'],
+.fnpad__key[data-act='clear'] {
+  color: var(--text-secondary);
+  background: var(--surface-2);
+}
+
+.fnpad__key[data-act='enter'] {
+  color: #fff;
+  background: #3d5a66;
+  border-color: #3d5a66;
+  font-size: 12px;
+}
+
+.fnpad__msg {
+  margin: 2px 0 0;
+  min-height: 16px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.fnpad__msg[data-error='true'] {
+  color: #b0392b;
+}
+
+.fnpad__field {
+  padding: 2px 0 4px;
 }

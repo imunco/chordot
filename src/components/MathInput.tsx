@@ -66,6 +66,19 @@ interface Props {
   value?: string
   /** 附加到 <math-field> 自身的类名，便于外部定位 */
   fieldClass?: string
+  /** 把「插入 / 退格 / 清空 / 提交」的句柄交给外面，软键盘按钮才操作得到输入框 */
+  onReady?: (api: MathInputApi) => void
+  /** 每次输入变化（软键盘、物理键盘都算），用来做实时校验 */
+  onChange?: (expr: string) => void
+}
+
+export interface MathInputApi {
+  insert: (tex: string) => void
+  focus: () => void
+  backspace: () => void
+  clear: () => void
+  submit: () => boolean
+  text: () => string
 }
 
 export function MathInput({
@@ -76,10 +89,14 @@ export function MathInput({
   onEscape,
   value,
   fieldClass,
+  onReady,
+  onChange,
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const field = useRef<MathfieldElement | null>(null)
   const last = useRef(initial)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
 
   useEffect(() => {
     configure()
@@ -122,9 +139,29 @@ export function MathInput({
       onSubmit(expr)
     }
 
+    onReady?.({
+      insert: (tex) => {
+        mf.focus()
+        mf.insert(tex, { format: 'latex', focus: true })
+      },
+      focus: () => mf.focus(),
+      backspace: () => {
+        mf.focus()
+        mf.executeCommand('deleteBackward')
+      },
+      clear: () => {
+        mf.focus()
+        mf.value = ''
+      },
+      submit,
+      text: () => fromTex(mf),
+    })
+    const onInput = () => onChangeRef.current?.(fromTex(mf))
+    mf.addEventListener('input', onInput)
     mf.addEventListener('keydown', onKey)
     mf.addEventListener('blur', onBlur)
     return () => {
+      mf.removeEventListener('input', onInput)
       mf.removeEventListener('keydown', onKey)
       mf.removeEventListener('blur', onBlur)
       mf.remove()

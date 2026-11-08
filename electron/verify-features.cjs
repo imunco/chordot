@@ -120,10 +120,12 @@ app.whenReady().then(async () => {
     await step('curveLabels', `(() => {
       const svg = document.querySelector('svg.canvas__svg');
       const labels = [...svg.querySelectorAll('text')].filter(t => t.getAttribute('font-style') === 'italic');
-      const ends = [...svg.querySelectorAll('polyline')].map(p => {
+      // 曲线现在采样到 ±48，整条折线的端点早跑出视口了：
+      // 标签贴的是「最后一个可见点」，所以只在视口内的顶点里找最近距离
+      const box = svg.getBoundingClientRect();
+      const ends = [...svg.querySelectorAll('polyline')].flatMap(p => {
         const pts = (p.getAttribute('points') || '').trim().split(' ');
-        const l = pts[pts.length - 1].split(',');
-        return [+l[0], +l[1]];
+        return pts.map(s => s.split(',').map(Number)).filter(q => q[0] >= 0 && q[0] <= box.width && q[1] >= 0 && q[1] <= box.height);
       });
       return labels.map(l => {
         const x = +l.getAttribute('x'), y = +l.getAttribute('y');

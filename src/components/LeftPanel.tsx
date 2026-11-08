@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GeoObj } from '../model/types'
 import { MathInput } from './MathInput'
+import type { MathInputApi } from './MathInput'
+import { FnPad } from './FnPad'
+import { checkExpression } from '../kernel/scene'
 import { CURVE_COLORS } from '../model/palette'
 import {
   CircleIcon,
@@ -55,9 +58,24 @@ function kindIcon(kind: GeoObj['kind']) {
   }
 }
 
+/** 表达式条数上限：和参考图一样，一屏最多 6 条 */
+const MAX_FN = 6
+const PAD_KEY = 'chordot.fnpad.open'
+
 export function LeftPanel(props: Props) {
   const dragging = useRef(false)
+  /** 函数输入框的插入句柄：软键盘按钮直接补在光标处 */
+  const apiRef = useRef<MathInputApi | null>(null)
+  const [exprHint, setExprHint] = useState('')
+  const [padOpen, setPadOpen] = useState(() => {
+    try {
+      return localStorage.getItem(PAD_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
   const [menu, setMenu] = useState<{ x: number; y: number; obj: GeoObj } | null>(null)
+  const fnCount = props.objects.filter((o) => o.kind === 'function').length
 
   useEffect(() => {
     if (!menu) return
@@ -256,11 +274,38 @@ export function LeftPanel(props: Props) {
       )}
 
       <div className="left__footer">
-        <MathInput
-          initial=""
-          className="left__input-host"
-          fieldClass="left__input"
-          onSubmit={(expr) => props.onSubmitExpr(expr)}
+        <FnPad
+          api={apiRef}
+          count={fnCount}
+          max={MAX_FN}
+          error={exprHint}
+          open={padOpen}
+          onToggle={() => {
+            const next = !padOpen
+            setPadOpen(next)
+            try {
+              localStorage.setItem(PAD_KEY, next ? '1' : '0')
+            } catch {
+              /* 隐私模式忽略 */
+            }
+          }}
+          field={
+            <MathInput
+              initial=""
+              className="left__input-host"
+              fieldClass="left__input"
+              onChange={(expr) => setExprHint(checkExpression(expr) ?? '')}
+              onReady={(api) => {
+                apiRef.current = api
+              }}
+              onSubmit={(expr) => {
+                if (fnCount >= MAX_FN) return false
+                const ok = props.onSubmitExpr(expr)
+                if (ok) setExprHint('')
+                return ok
+              }}
+            />
+          }
         />
       </div>
     </aside>

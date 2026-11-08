@@ -25,6 +25,9 @@ const STEP = 1 / 120
 const DEG = Math.PI / 180
 /** body.velocity 是 Matter 归一化到 baseDelta(16.67ms) 后的每帧位移，换成 m/s 乘这个 */
 const VEL_SCALE = 1000 / 16.667
+/** 真实模式下「按住拖」的等效弹簧：劲度与最大拉力（N） */
+const PULL_K = 90
+const PULL_MAX = 60
 
 interface Rig {
   engine: Matter.Engine
@@ -43,6 +46,8 @@ interface Props {
   onAnchor: (id: string | null) => void
   onLink: (kind: MechLinkKind, a: string, b: string) => void
   playing: boolean
+  /** 编辑模式：拖动 = 摆放零件；真实模式：拖动 = 施力拉它 */
+  editing: boolean
   /** 显示速度 / 受力箭头 */
   vectors: boolean
   /** 受力分解：重力 / 支持力 / 摩擦力分开画 */
@@ -201,6 +206,7 @@ export function MechStage({
   onAnchor,
   onLink,
   playing,
+  editing,
   vectors,
   decompose,
   resetToken,
@@ -219,6 +225,8 @@ export function MechStage({
     /** 同组部件相对被拖部件的偏移（一起搬） */
     members: { id: string; ox: number; oy: number }[]
   } | null>(null)
+  /** 真实模式：按住部件 = 用一段「手」去拉它，松手力消失（不是瞬移） */
+  const pullRef = useRef<{ id: string; x: number; y: number } | null>(null)
   /** 每步累加的各部件合力（N，世界坐标），只用来画箭头 */
   const forcesRef = useRef(new Map<string, { x: number; y: number }>())
   const timeRef = useRef(0)
@@ -418,22 +426,44 @@ export function MechStage({
       if (!body || body.isStatic) continue
       // 电机：给中心轴固定的轮加力矩
       if (part.motor) body.torque += part.motor * 1e-6
-      // 公式力 F(x,y,vx,vy,t,m,g)
-      if (part.force?.enabled && part.force.expr.trim()) {
-        const F = evalForceExpr(part.force.expr, {
-          x: body.position.x,
-          y: body.position.y,
-          vx: body.velocity.x * VEL_SCALE,
-          vy: body.velocity.y * VEL_SCALE,
-          t: timeRef.current,
-          m: part.mass,
-          g: params.gravity,
-        })
+      // 施加的力：恒力直接给大小，公式力按 F(x,y,vx,vy,t,m,g) 求值
+      if (part.force?.enabled) {
         const th = (part.force.angle ?? 0) * DEG
-        apply(body, part.id, Math.cos(th) * F, Math.sin(th) * F)
+        const F =
+          part.force.mode === 'const'
+            ? Math.max(-2000, Math.min(2000, part.force.n ?? 0))
+            : part.force.expr.trim()
+              ? evalForceExpr(part.force.expr, {
+                  x: body.position.x,
+                  y: body.position.y,
+                  vx: body.velocity.x * VEL_SCALE,
+                  vy: body.velocity.y * VEL_SCALE,
+                  t: timeRef.current,
+                  m: part.mass,
+                  g: params.gravity,
+                })
+              : 0
+        if (F) apply(body, part.id, Math.cos(th) * F, Math.sin(th) * F)
       }
       // 重力只用来画合力箭头（引擎自己会施加重力）
       add(part.id, 0, -part.mass * params.gravity)
+    }
+
+    // 真实模式：手按住的那个部件被一根「隐形弹簧」拉向指针，松手立刻消失
+    const pull = pullRef.current
+    if (pull) {
+      const body = rig.bodies.get(pull.id)
+      if (body && !body.isStatic) {
+        const dx = pull.x - body.position.x
+        const dy = pull.y - body.position.y
+        const len = Math.hypot(dx, dy)
+        if (len > 1e-4) {
+          const f = Math.min(PULL_MAX, PULL_K * len)
+          apply(body, pull.id, (dx / len) * f, (dy / len) * f)
+        }
+      } else {
+        pullRef.current = null
+      }
     }
     forcesRef.current = forces
     Matter.Engine.update(rig.engine, dt * 1000)
@@ -535,6 +565,19 @@ export function MechStage({
       }
       return
     }
+    if (!editing) {
+      // 真实模式：不搬零件，按住就是施力
+      if (isStaticPart(part)) return
+      const w = toWorld(e.clientX, e.clientY)
+      pullRef.current = { id: part.id, x: w.x, y: w.y }
+      try {
+        ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+      } catch {
+        /* 合成事件忽略 */
+      }
+      setTick((t) => (t + 1) % 1000000)
+      return
+    }
     const w = toWorld(e.clientX, e.clientY)
     const p = posOf(part)
     // 同组（子机构）一起搬：记下每个成员相对它的偏移
@@ -555,6 +598,13 @@ export function MechStage({
   }
 
   const movePart = (e: React.PointerEvent) => {
+    if (pullRef.current) {
+      e.stopPropagation()
+      const w = toWorld(e.clientX, e.clientY)
+      pullRef.current = { ...pullRef.current, x: w.x, y: w.y }
+      setTick((t) => (t + 1) % 1000000)
+      return
+    }
     const d = dragRef.current
     if (!d) return
     e.stopPropagation()
@@ -579,6 +629,17 @@ export function MechStage({
   }
 
   const upPart = (e: React.PointerEvent) => {
+    if (pullRef.current) {
+      pullRef.current = null
+      e.stopPropagation()
+      try {
+        ;(e.currentTarget as Element).releasePointerCapture(e.pointerId)
+      } catch {
+        /* 忽略 */
+      }
+      setTick((t) => (t + 1) % 1000000)
+      return
+    }
     const d = dragRef.current
     dragRef.current = null
     if (!d) return
@@ -1040,6 +1101,33 @@ export function MechStage({
 
       {/* 部件 */}
       {params.parts.filter((p) => p.kind !== 'pulley').map(renderPart)}
+
+      {/* 真实模式：按住部件时画出「手」的拉力 */}
+      {!editing && pullRef.current && (() => {
+        const p = params.parts.find((q) => q.id === pullRef.current?.id)
+        const rig = rigRef.current
+        const body = p ? rig?.bodies.get(p.id) : undefined
+        if (!p || !body) return null
+        const [x, y] = toScreen([body.position.x, body.position.y])
+        const [tx, ty] = toScreen([pullRef.current!.x, pullRef.current!.y])
+        return (
+          <g data-pull="1" pointerEvents="none">
+            <line
+              x1={x}
+              y1={y}
+              x2={tx}
+              y2={ty}
+              stroke="#b08a3e"
+              strokeWidth={2}
+              strokeDasharray="5 4"
+            />
+            <circle cx={tx} cy={ty} r={4} fill="#b08a3e" />
+            <text x={tx + 8} y={ty - 8} className="mech__label" fill="#8a6a28">
+              拉力
+            </text>
+          </g>
+        )
+      })()}
 
 
       {/* 速度 / 受力箭头 */}

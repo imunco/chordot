@@ -169,6 +169,7 @@ interface Props {
   mechPending: MechLinkKind | null
   mechAnchor: string | null
   mechPlaying: boolean
+  mechEditing: boolean
   mechVectors: boolean
   mechDecompose: boolean
   mechResetToken: number
@@ -852,7 +853,7 @@ export function CanvasStage(props: Props) {
       let at: [number, number] | null = null
       for (let i = run.length - 1; i >= 0; i--) {
         const [px, py] = toScreen(run[i])
-        if (px >= 2 && px <= size.w - 40 && py >= 18 && py <= size.h - 6) {
+        if (px >= 2 && px <= size.w - 56 && py >= 18 && py <= size.h - 6) {
           at = [px, py]
           break
         }
@@ -1169,6 +1170,7 @@ export function CanvasStage(props: Props) {
             onAnchor={props.onMechAnchor}
             onLink={props.onMechLink}
             playing={props.mechPlaying}
+            editing={props.mechEditing}
             vectors={props.mechVectors}
             decompose={props.mechDecompose}
             resetToken={props.mechResetToken}

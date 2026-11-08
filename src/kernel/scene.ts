@@ -257,9 +257,10 @@ export function seedForConstraint(
 
 /* ───────── 函数采样 ───────── */
 
-const SAMPLE_X0 = -12
-const SAMPLE_X1 = 12
-const SAMPLE_N = 720
+/** 采样范围要比常见视口宽得多，否则放大 / 平移后曲线会在两端「断掉」 */
+const SAMPLE_X0 = -48
+const SAMPLE_X1 = 48
+const SAMPLE_N = 3600
 
 /** 允许 2x、3(x+1) 这类中学写法 */
 /**
@@ -275,6 +276,35 @@ export function normalizeExpr(expr: string): string {
     .replace(/\barc(sin|cos|tan)\s*\(/g, 'a$1(')
     // 2x → 2*x；科学计数法 1e5 和函数名里的数字（log10、log2）不能被拆开
     .replace(/(?<![a-zA-Z0-9])(\d)\s*(?![eE]\d)([a-zA-Z(])/g, '$1*$2')
+}
+
+/**
+ * 轻量校验：只编译 + 抽几个点试算，不生成曲线。
+ * 输入框每次按键都调用它（3600 点采样太贵，不能拿来做实时反馈）。
+ */
+export function checkExpression(expr: string): string | null {
+  const source = expr.trim()
+  if (!source) return null
+  let node: { evaluate: (scope: Record<string, number>) => unknown }
+  try {
+    node = compile(normalizeExpr(source))
+  } catch {
+    try {
+      node = compile(source)
+    } catch {
+      return '抱歉，你的表达式有些难懂'
+    }
+  }
+  let ok = 0
+  for (let i = 0; i < 9; i++) {
+    try {
+      const v = node.evaluate({ x: -8 + i * 2 })
+      if (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e4) ok++
+    } catch {
+      /* 单点失败不算错 */
+    }
+  }
+  return ok === 0 ? '在当前范围内没有可绘制的点' : null
 }
 
 export function sampleFunction(expr: string): { curves: Pt[][]; error?: string } {

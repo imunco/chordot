@@ -448,6 +448,8 @@ export default function App() {
   const [mechPending, setMechPending] = useState<MechLinkKind | null>(null)
   const [mechAnchor, setMechAnchor] = useState<string | null>(null)
   const [mechPlaying, setMechPlaying] = useState(false)
+  /** 编辑 / 真实：编辑时物理暂停、可摆零件；真实时按物理运行、拖动即施力 */
+  const [mechEditing, setMechEditing] = useState(true)
   const [mechVectors, setMechVectors] = useState(true)
   const [mechDecompose, setMechDecompose] = useState(false)
   const [mechReset, setMechReset] = useState(0)
@@ -1229,6 +1231,11 @@ export default function App() {
                 ? '机构装配·电机轮.chordot'
                 : '机构装配.chordot'
     dispatch({ type: 'scene', scene, file })
+    setMechSel(null)
+    setMechPending(null)
+    setMechAnchor(null)
+    setMechPlaying(false)
+    setMechEditing(true)
   }
 
   const mechUid = (id: string) => `${id}c${Math.random().toString(36).slice(2, 6)}`
@@ -1325,7 +1332,10 @@ export default function App() {
         return
       }
       if (!mech.parts.some((p) => p.id === mechSel.id)) return
-      patchMechPart(mechSel.id, { force: { enabled: true, expr, angle: 0 } })
+      patchMechPart(mechSel.id, {
+        // 收到公式就切到「公式」模式，否则恒力模式下看不到这条表达式
+        force: { enabled: true, mode: 'expr', expr, angle: 0 },
+      })
       setMechPlaying(false)
       toast(`已把 F = ${expr} 加到选中的部件上`)
     })
@@ -1829,6 +1839,7 @@ export default function App() {
           mechPending={mechPending}
           mechAnchor={mechAnchor}
           mechPlaying={mechPlaying}
+          mechEditing={mechEditing}
           mechVectors={mechVectors}
           mechDecompose={mechDecompose}
           mechResetToken={mechReset}
@@ -1841,13 +1852,31 @@ export default function App() {
           onMechCommitParts={(parts) => patchMech({ parts })}
           onMechDrop={(kind, at) => addMechPart(kind, at)}
           />
+          {state.mode === 'physics' && !mech && state.doc.scene.kind === 'sketch' && (
+            <div className="physprompt">
+              <b>物理模式</b>
+              <p>画布里的图形还只是几何。要让它受重力、弹簧、摩擦的作用动起来，先开一张装配台：</p>
+              <div className="physprompt__row">
+                <button onClick={() => loadMech('empty')}>空白装配台</button>
+                <button onClick={() => loadMech('spring')}>弹簧振子</button>
+                <button onClick={() => loadMech('pulleyGroup')}>滑轮组</button>
+              </div>
+            </div>
+          )}
           {mech && (
-            <MechBar
-              params={mech}
+            <MechBar              params={mech}
               selected={mechSel}
               pending={mechPending}
               anchor={mechAnchor}
               playing={mechPlaying}
+              editing={mechEditing}
+              onEditing={(v) => {
+                setMechEditing(v)
+                // 切到真实就立刻跑起来；切回编辑就停下，方便摆零件
+                setMechPlaying(!v)
+                if (v) setMechPending(null)
+                if (v) setMechAnchor(null)
+              }}
               onPending={(k) => {
                 setMechPending(k)
                 setMechAnchor(null)
@@ -1869,7 +1898,11 @@ export default function App() {
                 setMechAnchor(null)
                 setMechPlaying(false)
               }}
-              onPlay={setMechPlaying}
+              onPlay={(v) => {
+                setMechPlaying(v)
+                // 在编辑模式下按播放，等同于切到真实
+                if (v) setMechEditing(false)
+              }}
               onReset={() => {
                 setMechPlaying(false)
                 setMechReset((t) => t + 1)

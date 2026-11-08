@@ -248,6 +248,15 @@ app.whenReady().then(async () => {
       const get=(name)=>{const r=rows.find(x=>x.textContent.trim().startsWith(name)); return r?+r.querySelector('input').value:null};
       return { x:get('x'), y:get('y') }
     })()`)
+  // 新语义：播放后处于「真实」模式，拖动是施力；要改坐标得先切回「编辑」
+  await js(`[...document.querySelectorAll('.mechbar__seg button')].find(b=>b.textContent==='编辑')?.click()`)
+  await wait(400)
+  report.editMode = await js(`(() => ({
+    seg: [...document.querySelectorAll('.mechbar__seg button')].map(b=>b.textContent),
+    active: [...document.querySelectorAll('.mechbar__seg button')].find(b=>b.dataset.active==='true')?.textContent,
+  }))()`)
+  check(report.editMode.seg.length === 2, `没有编辑/真实模式切换（${JSON.stringify(report.editMode)}）`)
+  check(report.editMode.active === '编辑', `切回编辑模式失败（${report.editMode.active}）`)
   await clickPart('box')
   await wait(350)
   const before = await posOf()
@@ -335,13 +344,19 @@ app.whenReady().then(async () => {
     const cb=[...document.querySelectorAll('.mechbar__force input[type=checkbox]')][0];
     if(!cb) return false;
     if(!cb.checked) cb.click();
-    const inp=document.querySelector('.mechbar__expr');
-    if(!inp) return false;
+    // 恒力：直接填牛顿数，方向 0°
+    const rows=[...document.querySelectorAll('.mechbar__force label')];
+    const mag=rows.find(r=>r.textContent.includes('大小'));
+    if(!mag) return 'no-mag';
+    const i=mag.querySelector('input');
     const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
-    set.call(inp,'30'); inp.dispatchEvent(new Event('input',{bubbles:true}));
+    i.focus(); set.call(i,'30'); i.dispatchEvent(new Event('input',{bubbles:true})); i.blur();
+    const dir=rows.find(r=>r.textContent.includes('方向'));
+    const d=dir&&dir.querySelector('input');
+    if(d){ d.focus(); set.call(d,'0'); d.dispatchEvent(new Event('input',{bubbles:true})); d.blur(); }
     return true
   })()`)
-  check(fOk, '选中方块后没有公式力输入框')
+  check(fOk === true, `选中方块后没有恒力输入框（${fOk}）`)
   await wait(350)
   // 仿真位置只在引擎里，文档坐标不变 —— 量屏幕上的实际位置
   const screenX = () => js(`(() => {
@@ -356,7 +371,7 @@ app.whenReady().then(async () => {
   const fx1 = await screenX()
   await js(`document.querySelector('.mechbar__play')?.click()`)
   report.forceExpr = { before: fx0, after: fx1 }
-  check(fx0 !== null && fx1 !== null && fx1 > fx0 + 8, `公式力没有推动方块（${fx0} → ${fx1}）`)
+  check(fx0 !== null && fx1 !== null && fx1 > fx0 + 8, `施加的力没有推动方块（${fx0} → ${fx1}）`)
 
   /* ── 7. 符号公式实验室（独立窗口） ── */
   await js(`window.chordot.openSymbolWindow()`)

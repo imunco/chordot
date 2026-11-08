@@ -1,6 +1,14 @@
-import type { ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 
 /** 教材演示台共用的小零件：箭头、标签、台面、网格、表盘 */
+
+/**
+ * 画面内文字的整体倍率。
+ *
+ * 大屏演示时整张图会被放大到 1.6 倍左右，但投影距离远，字仍然偏小；
+ * 这里把「图里的字」再乘一个系数，几何不动、只放大文字。
+ */
+export const LabTextScale = createContext(1)
 
 export const INK = '#3d5a66'
 export const SOFT = '#8e8a84'
@@ -78,9 +86,11 @@ export function Tag({
   anchor?: 'start' | 'middle' | 'end'
   opacity?: number
 }) {
+  const scale = useContext(LabTextScale)
+  const size2 = size * scale
   const w =
-    [...text].reduce((s, ch) => s + (ch.charCodeAt(0) > 255 ? size : size * 0.58), 0) + 10
-  const h = size + 9
+    [...text].reduce((s, ch) => s + (ch.charCodeAt(0) > 255 ? size2 : size2 * 0.58), 0) + 10 * scale
+  const h = size2 + 9 * scale
   const rx = anchor === 'start' ? x - 5 : anchor === 'end' ? x - w + 5 : x - w / 2
   return (
     <g opacity={opacity}>
@@ -98,7 +108,7 @@ export function Tag({
       <text
         x={x}
         y={y}
-        fontSize={size}
+        fontSize={size2}
         fontWeight={bold ? 600 : 400}
         fill={color}
         fontFamily={FONT}
@@ -131,11 +141,12 @@ export function Txt({
   opacity?: number
   mono?: boolean
 }) {
+  const scale = useContext(LabTextScale)
   return (
     <text
       x={x}
       y={y}
-      fontSize={size}
+      fontSize={size * scale}
       fontWeight={bold ? 600 : 400}
       fill={color}
       fontFamily={mono ? MONO : FONT}

@@ -1,11 +1,13 @@
 import type { LabExperiment, LabModel } from '../lab/types'
 import { fmtSci } from '../lab/models'
-import { Arrow, Bench, Box, Dial, Flow, Grid, INK, LINE, PAPER, Shadow, SOFT, Tag, Txt, WARN } from './labkit'
+import { Arrow, Bench, Box, Dial, Flow, Grid, INK, LINE, LabTextScale, PAPER, Shadow, SOFT, Tag, Txt, WARN } from './labkit'
 
 interface Props {
   exp: LabExperiment
   m: LabModel
   t: number
+  /** 画面内文字的额外倍率（大屏演示时放大，几何不变） */
+  textScale?: number
 }
 
 /**
@@ -14,8 +16,9 @@ interface Props {
  * 每个实验一个场景，共用纸面配色与线宽；几何全部按 760×430 的视口绘制，
  * 由外层按容器宽度等比缩放，因此在任何窗口尺寸下都不会变形。
  */
-export function LabStage({ exp, m, t }: Props) {
+export function LabStage({ exp, m, t, textScale = 1 }: Props) {
   return (
+    <LabTextScale.Provider value={textScale}>
     <svg className="lab__svg" viewBox="0 0 760 430" role="img" aria-label={exp.name}>
       <defs>
         <radialGradient id="labGlow" cx="50%" cy="50%" r="50%">
@@ -42,6 +45,7 @@ export function LabStage({ exp, m, t }: Props) {
       <Grid />
       {renderStage(exp, m, t)}
     </svg>
+    </LabTextScale.Provider>
   )
 }
 
@@ -268,32 +272,38 @@ function SpringStage({ m }: { m: LabModel }) {
   const scale = 260 / Math.max(0.2, l0 + maxX + 0.02)
   const top = 54
   const endY = top + l * scale
+  // 弹簧从横梁下端一直画到挂钩：两端各留一小段直段，中间才是线圈
   const coils = 14
   const amp = 22
-  const pts: string[] = []
+  const coilTop = top + 6
+  const coilBottom = endY - 8
+  const pts: string[] = [`M380 ${top}`, `L380 ${coilTop}`]
   for (let i = 0; i <= coils; i++) {
-    const yy = top + 10 + ((endY - top - 26) * i) / coils
+    const yy = coilTop + ((coilBottom - coilTop) * i) / coils
     const xx = 380 + (i === 0 || i === coils ? 0 : i % 2 === 0 ? amp : -amp)
-    pts.push(`${i === 0 ? 'M' : 'L'}${xx} ${yy}`)
+    pts.push(`L${xx} ${yy}`)
   }
+  pts.push(`L380 ${endY}`)
   return (
     <g>
       <Txt x={380} y={32} text="竖直悬挂弹簧：逐个挂钩码，记录 F 与 x" size={12.5} color={INK} bold />
       <rect x={250} y={44} width={260} height={9} rx={3} fill="#e2ded8" stroke={LINE} strokeWidth={0.8} />
       <path d={pts.join(' ')} fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      {/* 挂钩：钩码就挂在这个环上，不能画成悬空 */}
+      <circle cx={380} cy={endY + 3} r={3.4} fill="none" stroke={INK} strokeWidth={1.4} />
 
       {/* 指针与长度 */}
       <line x1={380} y1={top} x2={380} y2={endY} stroke={SOFT} strokeWidth={0.6} strokeDasharray="3 4" opacity={0.5} />
       <line x1={352} y1={endY} x2={408} y2={endY} stroke={INK} strokeWidth={1.2} />
 
-      {/* 钩码 */}
+      {/* 钩码：从挂钩往下串 */}
       {Array.from({ length: idx }, (_, i) => (
         <g key={i}>
-          <rect x={356} y={endY + 4 + i * 17} width={48} height={14} rx={3} fill="#f2f0ec" stroke={INK} strokeWidth={1} />
-          <line x1={364} y1={endY + 8 + i * 17} x2={396} y2={endY + 8 + i * 17} stroke={SOFT} strokeWidth={0.6} />
+          <rect x={356} y={endY + 7 + i * 17} width={48} height={14} rx={3} fill="#f2f0ec" stroke={INK} strokeWidth={1} />
+          <line x1={364} y1={endY + 11 + i * 17} x2={396} y2={endY + 11 + i * 17} stroke={SOFT} strokeWidth={0.6} />
         </g>
       ))}
-      <Txt x={380} y={endY + 20 + idx * 17} text={`${idx} 个钩码`} size={9.5} color={SOFT} />
+      {idx > 0 && <Txt x={380} y={endY + 24 + idx * 17} text={`${idx} 个钩码`} size={9.5} color={SOFT} />}
 
       {/* 力箭头 */}
       <Arrow x1={430} y1={endY - 10} x2={430} y2={endY - 10 - Math.min(90, F * 14)} color={WARN} />
@@ -831,8 +841,8 @@ function MultimeterStage({ m }: { m: LabModel }) {
       <Txt x={cx + r - 6} y={cy - 8} text="0" size={12} color={SOFT} anchor="end" mono />
       <Txt x={cx - r + 6} y={cy - 8} text="∞" size={12} color={SOFT} anchor="start" />
 
-      {/* 指针 */}
-      <g transform={`rotate(${a} ${cx} ${cy})`}>
+      {/* 指针：刻度和指针必须扫过同一半圆（SVG 里顺时针为正，所以要取负角） */}
+      <g transform={`rotate(${-a} ${cx} ${cy})`}>
         <line x1={cx} y1={cy} x2={cx + r - 14} y2={cy} stroke={WARN} strokeWidth={2.4} strokeLinecap="round" />
         <polygon points={`${cx + r - 14},${cy} ${cx + r - 25},${cy - 4} ${cx + r - 25},${cy + 4}`} fill={WARN} />
       </g>

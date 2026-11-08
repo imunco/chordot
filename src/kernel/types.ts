@@ -256,6 +256,10 @@ export type MechLinkKind = 'spring' | 'rope' | 'rod' | 'hinge'
 /** 公式力：表达式里可用 x / y / vx / vy / t / m / g，结果单位 N，沿 angle 方向 */
 export interface MechForce {
   enabled: boolean
+  /** const = 恒力（大小 n 牛顿，方向 angle）；expr = 公式力（mathjs 表达式） */
+  mode?: 'const' | 'expr'
+  /** 恒力大小，N */
+  n?: number
   expr: string
   /** 力的方向（度，0 = +x） */
   angle: number

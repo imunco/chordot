@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 
 /**
  * 全屏批注层。
@@ -44,7 +44,8 @@ const ALPHAS = [1, 0.55, 0.25]
 /** 粗细的参考窗口宽度：1000px 窗口下 4 / 7 / 10px */
 const REF_W = 1000
 const KEY_PREFIX = 'chordot.lab.ink.'
-const ERASER_R = 18
+/** 橡皮半径（像素）：圆形覆盖区域内一律擦掉，边缘外留一点余量 */
+const ERASER_R = 16
 const HIT_R = 10
 
 /** 中点二次曲线：比逐点折线顺滑，又不需要引入额外依赖 */
@@ -153,7 +154,132 @@ const cornerPoint = (b: Box, c: Corner): Point => ({
   y: c === 'nw' || c === 'ne' ? b.y0 : b.y1,
 })
 
+/* ───────── 橡皮：按覆盖区域裁剪折线 ───────── */
+
+/** 线段 a→b 落在圆内的参数区间 [t0,t1]；不相交时 t1 <= t0 */
+function insideSpan(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  r: number,
+): [number, number] {
+  const dx = bx - ax
+  const dy = by - ay
+  const fx = ax - cx
+  const fy = ay - cy
+  const a = dx * dx + dy * dy
+  const c0 = fx * fx + fy * fy - r * r
+  if (a < 1e-12) return c0 <= 0 ? [0, 1] : [1, 0]
+  const b = 2 * (fx * dx + fy * dy)
+  const disc = b * b - 4 * a * c0
+  if (disc <= 0) return c0 <= 0 ? [0, 1] : [1, 0]
+  const sq = Math.sqrt(disc)
+  let t0 = (-b - sq) / (2 * a)
+  let t1 = (-b + sq) / (2 * a)
+  if (c0 > 0) {
+    // 两端都在圆外：只有真正穿过圆才有一段在里面
+    if (t1 <= 0 || t0 >= 1) return [1, 0]
+  }
+  t0 = Math.max(0, t0)
+  t1 = Math.min(1, t1)
+  return t1 > t0 ? [t0, t1] : [1, 0]
+}
+
+/**
+ * 把圆覆盖的那一段从折线上挖掉，返回剩下的若干段。
+ *
+ * 逐段解析求交（不是采样），擦一条几百个点的长笔迹也只是一次线性扫描；
+ * 断口正好落在圆周上，所以擦出来的边界就是橡皮拖过的区域。
+ */
+function carvePolyline(pts: Point[], cx: number, cy: number, r: number): Point[][] {
+  const out: Point[][] = []
+  if (pts.length === 0) return out
+  let run: Point[] | null = null
+  const flush = () => {
+    if (run && run.length > 1) out.push(run)
+    run = null
+  }
+  const at = (a: Point, b: Point, t: number): Point => ({
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+  })
+
+  if (Math.hypot(pts[0].x - cx, pts[0].y - cy) > r) run = [pts[0]]
+
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]
+    const b = pts[i]
+    const [t0, t1] = insideSpan(a.x, a.y, b.x, b.y, cx, cy, r)
+    if (t1 <= t0) {
+      // 整段都在圆外
+      if (!run) run = [a]
+      run.push(b)
+      continue
+    }
+    if (t0 > 0) {
+      if (!run) run = [a]
+      run.push(at(a, b, t0))
+    }
+    flush()
+    if (t1 < 1) run = [at(a, b, t1)]
+  }
+  flush()
+  return out
+}
+
 const OPPOSITE: Record<Corner, Corner> = { nw: 'se', ne: 'sw', sw: 'ne', se: 'nw' }
+
+/**
+ * 笔迹渲染缓存：笔迹对象是不可变的，只有被改过才会换新对象。
+ * 有了它，擦一笔时其余几十条笔迹不用重新生成 <path> 的 d（这是原来卡顿的主因）。
+ */
+const pathCache = new WeakMap<InkStroke, { w: number; h: number; d: string }>()
+const boxCache = new WeakMap<InkStroke, Box>()
+
+function cachedPath(s: InkStroke, w: number, h: number): string {
+  const hit = pathCache.get(s)
+  // 窗口尺寸变了，像素坐标就变了：缓存必须带上宽高，否则缩放后笔迹不跟着缩
+  if (hit && hit.w === w && hit.h === h) return hit.d
+  const d = inkPath(s.pts.map((p) => ({ x: p.x * w, y: p.y * h })))
+  pathCache.set(s, { w, h, d })
+  return d
+}
+
+function cachedBox(s: InkStroke): Box {
+  const hit = boxCache.get(s)
+  if (hit) return hit
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  for (const p of s.pts) {
+    if (p.x < x0) x0 = p.x
+    if (p.y < y0) y0 = p.y
+    if (p.x > x1) x1 = p.x
+    if (p.y > y1) y1 = p.y
+  }
+  const box = { x0, y0, x1, y1 }
+  boxCache.set(s, box)
+  return box
+}
+
+/** 单条笔迹：d 走缓存，笔迹没变时 React 也不会重算 */
+const InkPath = memo(function InkPath({ stroke, w, h }: { stroke: InkStroke; w: number; h: number }) {
+  return (
+    <path
+      d={cachedPath(stroke, w, h)}
+      fill="none"
+      stroke={stroke.color}
+      strokeWidth={stroke.width * w}
+      strokeOpacity={stroke.alpha}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  )
+})
 
 function insideBox(b: Box, p: Point, pad = 0): boolean {
   return p.x >= b.x0 - pad && p.x <= b.x1 + pad && p.y >= b.y0 - pad && p.y <= b.y1 + pad
@@ -169,6 +295,8 @@ interface Gesture {
   box?: Box
   corner?: Corner
   anchor?: Point
+  /** 橡皮：上一个擦除点，用来插值补擦 */
+  last?: Point
 }
 
 interface Props {
@@ -266,17 +394,77 @@ export function ScreenInk({ active, storageKey, hidden = false, onExit, onHide, 
     return { x: (e.clientX - (r?.left ?? 0)) / w, y: (e.clientY - (r?.top ?? 0)) / h }
   }
 
+  /** 橡皮光标：直接改 transform，不走 state，避免每个 pointermove 都重渲染整层笔迹 */
+  const cursorRef = useRef<HTMLDivElement>(null)
+  const paintCursor = (clientX: number, clientY: number) => {
+    const el = cursorRef.current
+    const r = rootRef.current?.getBoundingClientRect()
+    if (!el || !r) return
+    el.style.opacity = '1'
+    el.style.transform = `translate(${clientX - r.left - ERASER_R}px, ${clientY - r.top - ERASER_R}px)`
+  }
+
   const pushHistory = (snapshot: InkStroke[] = strokesRef.current) => {
     setPast((prev) => [...prev.slice(-40), snapshot])
   }
 
-  const eraseAt = (p: Point) => {
-    setStrokes((prev) =>
-      prev.filter(
-        (s) =>
-          !s.pts.some((q) => Math.hypot((q.x - p.x) * size.w, (q.y - p.y) * size.h) <= ERASER_R),
-      ),
-    )
+  /**
+   * 擦掉橡皮圆覆盖的那一段。
+   *
+   * 不是「命中哪条就删整条」，而是把被盖住的部分从折线里剪掉，
+   * 一条长笔迹被擦中间会断成两条。只处理与圆相交的笔迹（先按包围盒筛）。
+   */
+  const eraseAt = (p: Point, from?: Point) => {
+    const r = ERASER_R
+    const cx = p.x * size.w
+    const cy = p.y * size.h
+    // 快速拖动时从左一点插值到右一点，避免中间漏擦
+    const steps = from
+      ? Math.min(8, Math.max(1, Math.ceil(Math.hypot((p.x - from.x) * size.w, (p.y - from.y) * size.h) / r) * 2))
+      : 1
+    const discs: { x: number; y: number }[] = []
+    for (let i = 1; i <= steps; i++) {
+      const t = steps === 1 ? 1 : i / steps
+      discs.push(
+        from
+          ? { x: (from.x + (p.x - from.x) * t) * size.w, y: (from.y + (p.y - from.y) * t) * size.h }
+          : { x: cx, y: cy },
+      )
+    }
+
+    setStrokes((prev) => {
+      let changed = false
+      const next = prev.flatMap((s) => {
+        const b = cachedBox(s)
+        const hit = discs.some(
+          (d) =>
+            d.x + r >= b.x0 * size.w &&
+            d.x - r <= b.x1 * size.w &&
+            d.y + r >= b.y0 * size.h &&
+            d.y - r <= b.y1 * size.h,
+        )
+        if (!hit) return [s]
+        // 逐圆挖，一个圆可能把一条笔迹切成多段
+        let pieces: Point[][] = [s.pts]
+        for (const d of discs) {
+          pieces = pieces.flatMap((pts) =>
+            carvePolyline(
+              pts.map((q) => ({ x: q.x * size.w, y: q.y * size.h })),
+              d.x,
+              d.y,
+              r,
+            ).map((part) => part.map((q) => ({ x: q.x / size.w, y: q.y / size.h }))),
+          )
+          if (pieces.length === 0) break
+        }
+        const before = pieces.length
+        const kept = pieces.filter((part) => part.length > 1)
+        if (kept.length === 1 && kept[0].length === s.pts.length) return [s]
+        changed = changed || before !== 1 || kept.length !== 1 || kept[0].length !== s.pts.length
+        return kept.map((pts, i) => (i === 0 ? { ...s, pts } : { ...s, id: `${s.id}~${i}`, pts }))
+      })
+      return changed ? next : prev
+    })
   }
 
   const hitStroke = (p: Point, list: InkStroke[]): InkStroke | null => {
@@ -306,6 +494,7 @@ export function ScreenInk({ active, storageKey, hidden = false, onExit, onHide, 
       /* 合成事件没有活动指针，忽略 */
     }
     const p = norm(e)
+    if (tool === 'eraser') paintCursor(e.clientX, e.clientY)
 
     if (tool === 'select') {
       const list = strokesRef.current
@@ -347,7 +536,7 @@ export function ScreenInk({ active, storageKey, hidden = false, onExit, onHide, 
 
     if (tool === 'eraser') {
       pushHistory()
-      gesture.current = { mode: 'eraser', start: p, base: [], ids: [] }
+      gesture.current = { mode: 'eraser', start: p, base: [], ids: [], last: p }
       eraseAt(p)
       return
     }
@@ -365,6 +554,7 @@ export function ScreenInk({ active, storageKey, hidden = false, onExit, onHide, 
   }
 
   const move = (e: React.PointerEvent) => {
+    if (active && tool === 'eraser') paintCursor(e.clientX, e.clientY)
     const g = gesture.current
     if (!active || !g) return
     e.preventDefault()
@@ -382,7 +572,11 @@ export function ScreenInk({ active, storageKey, hidden = false, onExit, onHide, 
     }
 
     if (g.mode === 'eraser') {
-      eraseAt(p)
+      // 指针事件可能很密：位移不到 1px 就跳过，省掉无意义的裁剪
+      const last = g.last ?? g.start
+      if (Math.hypot((p.x - last.x) * size.w, (p.y - last.y) * size.h) < 1) return
+      eraseAt(p, last)
+      g.last = p
       return
     }
 
@@ -547,19 +741,20 @@ export function ScreenInk({ active, storageKey, hidden = false, onExit, onHide, 
       onPointerCancel={active ? up : undefined}
       role={active ? 'application' : undefined}
       aria-label={active ? '全屏批注' : undefined}
+      onPointerLeave={() => {
+        if (cursorRef.current) cursorRef.current.style.opacity = '0'
+      }}
     >
+      {active && tool === 'eraser' && (
+        <div
+          className="screenink__eraser"
+          ref={cursorRef}
+          style={{ width: ERASER_R * 2, height: ERASER_R * 2, opacity: 0 }}
+        />
+      )}
       <svg className="screenink__canvas" aria-hidden="true">
         {strokes.map((s) => (
-          <path
-            key={s.id}
-            d={inkPath(toPx(s.pts))}
-            fill="none"
-            stroke={s.color}
-            strokeWidth={s.width * W}
-            strokeOpacity={s.alpha}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          <InkPath key={s.id} stroke={s} w={W} h={H} />
         ))}
         {draft && (
           <path

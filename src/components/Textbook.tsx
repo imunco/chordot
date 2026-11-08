@@ -432,6 +432,7 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
             onClose={onClose}
             standalone={standalone}
             full={full}
+            large={large}
             onToggleFull={() => applyFull(!full)}
             onOpenWindow={standalone ? undefined : openWindow}
           />
@@ -459,6 +460,7 @@ function LabDetail({
   onClose,
   standalone = false,
   full = false,
+  large = false,
   onToggleFull,
   onOpenWindow,
 }: {
@@ -468,6 +470,7 @@ function LabDetail({
   onClose: () => void
   standalone?: boolean
   full?: boolean
+  large?: boolean
   onToggleFull: () => void
   onOpenWindow?: () => void
 }) {
@@ -1076,7 +1079,7 @@ ${inkGroup}
             className="lab__stagezoom"
             style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
           >
-            <LabStage exp={exp} m={model} t={t} />
+            <LabStage exp={exp} m={model} t={t} textScale={large ? 1.22 : 1} />
           </div>
 
           {spot && (
@@ -1139,7 +1142,7 @@ ${inkGroup}
                   className="lab__lensview"
                   style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
                 >
-                  <LabStage exp={exp} m={model} t={t} />
+                  <LabStage exp={exp} m={model} t={t} textScale={large ? 1.22 : 1} />
                 </div>
               </div>
             </div>
