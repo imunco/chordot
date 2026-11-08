@@ -7,6 +7,8 @@ import { SymbolLab } from './components/SymbolLab'
 import { hydrate } from './persist'
 import './styles/tokens.css'
 import './styles/app.css'
+// 机构装配（物理模式）的专属样式：面板 / 图标网格 / 世界面板，覆盖 app.css 里的旧 .mechbar 规则
+import './styles/mech.css'
 
 /**
  * 先把磁盘上的用户数据同步回 localStorage 再渲染，

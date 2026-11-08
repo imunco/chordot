@@ -5699,8 +5699,9 @@ html[data-capturing='1'][data-sheet='1'] .lab__notes {
 
 .mechbar__presets {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 3px 10px;
   font-size: 11px;
   color: var(--text-secondary);
 }
@@ -5794,6 +5795,257 @@ html[data-capturing='1'][data-sheet='1'] .lab__notes {
   font-size: 11px;
   color: var(--text-secondary);
 }
+
+/* ───────── 0.14.0：机构部件盘分类 / 世界面板 / 多选 / 实时读数 ───────── */
+
+.mechbar {
+  width: min(524px, calc(100% - 28px));
+}
+
+.mechbar__cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.mechbar__cat {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mechbar__cat[data-active='true'] {
+  color: #fff;
+  background: #3d5a66;
+}
+
+.mechbar__search {
+  flex: 1 1 120px;
+  min-width: 100px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  color: var(--text-primary);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.mechbar__parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 4px;
+}
+
+.mechbar__parts .mechbar__part {
+  width: 100%;
+  height: 28px;
+  padding: 0 4px;
+  font-size: 11.5px;
+  text-align: center;
+}
+
+.mechbar__part[hidden] {
+  display: none;
+}
+
+.mechbar__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.mechbar__group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 0;
+  border-top: 1px dashed var(--border);
+}
+
+.mechbar__group:first-of-type {
+  border-top: none;
+}
+
+.mechbar__heading {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+
+.mechbar__world {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 7px 0;
+  border-top: 1px dashed var(--border);
+}
+
+.mechbar__world label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.mechbar__world .mechbar__num {
+  width: 56px;
+}
+
+.mechbar__multi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px dashed var(--border);
+}
+
+.mechbar__live {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 6px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  border-top: 1px dashed var(--border);
+}
+
+.mechbar__live b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.mechbar__dim {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #2f5560;
+  background: #eef3f4;
+  border-radius: 6px;
+}
+
+.mechbar__fieldrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.mechbar__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.mechbar__presetgrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  padding-top: 2px;
+}
+
+.mech__label {
+  font-family: 'IBM Plex Sans SC', 'Microsoft YaHei', sans-serif;
+  font-size: 10.5px;
+  fill: #5c5a56;
+  paint-order: stroke;
+  stroke: #fbfaf7;
+  stroke-width: 3;
+}
+
+.mech__grid line {
+  stroke: #e8e4dc;
+  stroke-width: 0.7;
+}
+
+.mech__grid line[data-major='1'] {
+  stroke: #d9d4ca;
+  stroke-width: 1;
+}
+
+/* 部件盘 / 世界面板 / 多选 / 实时读数的补充类名（mech-ui 使用） */
+.mechbar__palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mechbar__palette .mechbar__part {
+  flex: 0 0 auto;
+  min-width: 62px;
+  height: 26px;
+  padding: 0 8px;
+}
+
+.mechbar__row--palette,
+.mechbar__row--links,
+.mechbar__row--presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.mechbar__world .mechbar__gravity,
+.mechbar__world .mechbar__timescale,
+.mechbar__world .mechbar__airdrag,
+.mechbar__world .mechbar__collisions,
+.mechbar__world .mechbar__grid,
+.mechbar__world .mechbar__measure {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.mechbar__liveitem {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.mechbar__text {
+  height: 24px;
+  padding: 0 7px;
+  font-size: 11.5px;
+  color: var(--text-primary);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.mechbar__group {
+  flex: 1 1 100%;
+}
+
+.mechbar__live {
+  position: sticky;
+  bottom: -10px;
+  margin: 0 -12px -10px;
+  padding: 6px 12px 10px;
+  background: rgba(255, 255, 255, 0.97);
+  z-index: 2;
+}
+
+/* 分类页签切换时，非当前分类的部件按钮必须真的隐藏（UA 的 [hidden] 会被 display:flex/grid 覆盖） */
+.mechbar__part[hidden] {
+  display: none !important;
+}
+
 
 /* ───────── 符号公式实验室（独立窗口） ───────── */
 

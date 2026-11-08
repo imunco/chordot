@@ -57,6 +57,11 @@ interface Props {
       | 'incline3d'
       | 'mech'
       | 'mech-empty'
+      | 'mech-gear'
+      | 'mech-crank'
+      | 'mech-piston'
+      | 'mech-rocket'
+      | 'mech-magnet'
       | 'symbols'
       | 'textbook'
       | 'textbook-window'
@@ -166,6 +171,11 @@ export function Toolbar(props: Props) {
       | 'incline3d'
       | 'mech'
       | 'mech-empty'
+      | 'mech-gear'
+      | 'mech-crank'
+      | 'mech-piston'
+      | 'mech-rocket'
+      | 'mech-magnet'
       | 'symbols'
       | 'textbook'
       | 'textbook-window'
@@ -358,7 +368,22 @@ export function Toolbar(props: Props) {
                 机构装配：弹簧振子（部件 → 连线 → 机构）
               </button>
               <button className="menu__item" onClick={() => runCommand('mech-empty')}>
-                机构装配：空白装配台
+                机构装配：空白装配台（23 种部件可选）
+              </button>
+              <button className="menu__item" onClick={() => runCommand('mech-gear')}>
+                机构装配：齿轮传动
+              </button>
+              <button className="menu__item" onClick={() => runCommand('mech-crank')}>
+                机构装配：曲柄滑块
+              </button>
+              <button className="menu__item" onClick={() => runCommand('mech-piston')}>
+                机构装配：液压缸
+              </button>
+              <button className="menu__item" onClick={() => runCommand('mech-rocket')}>
+                机构装配：火箭推力
+              </button>
+              <button className="menu__item" onClick={() => runCommand('mech-magnet')}>
+                机构装配：磁铁（失重）
               </button>
               <button className="menu__item" onClick={() => runCommand('symbols')}>
                 符号公式实验室（独立窗口）…

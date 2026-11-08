@@ -20,6 +20,7 @@ import { MechStage } from './MechStage'
 import type {
   Camera,
   MechLinkKind,
+  MechLive,
   MechParams,
   MechPart,
   MechPartKind,
@@ -166,18 +167,29 @@ interface Props {
   /** 机构装配场景 */
   mech: MechParams | null
   mechSelected: string | null
+  mechSelectedIds: string[]
   mechPending: MechLinkKind | null
   mechAnchor: string | null
   mechPlaying: boolean
   mechEditing: boolean
   mechVectors: boolean
   mechDecompose: boolean
+  mechLabels: boolean
+  mechTrails: boolean
+  mechGrid: number
+  mechSnapAngle: boolean
+  mechMeasure: { a: string; b: string } | null
+  mechMeasureMode: boolean
   mechResetToken: number
+  /** 引擎实时读数（MechStage 写入，MechBar 轮询） */
+  mechLive: { current: MechLive }
   onMechSelect: (id: string | null, kind: 'part' | 'link' | null) => void
+  onMechSelectMany: (ids: string[]) => void
   onMechAnchor: (id: string | null) => void
   onMechLink: (kind: MechLinkKind, a: string, b: string) => void
   onMechCommitParts: (parts: MechPart[]) => void
   onMechDrop: (kind: MechPartKind, at: { x: number; y: number }) => void
+  onMechMeasurePart: (id: string) => void
   /** 三维物理世界开启中（画地面网格） */
   solidPhysics: boolean
   /** 物理世界里的静态障碍 */
@@ -1164,7 +1176,9 @@ export function CanvasStage(props: Props) {
             toScreen={toScreen}
             toWorld={worldAt}
             selectedId={props.mechSelected}
+            selectedIds={props.mechSelectedIds}
             onSelect={props.onMechSelect}
+            onSelectMany={props.onMechSelectMany}
             pending={props.mechPending}
             anchor={props.mechAnchor}
             onAnchor={props.onMechAnchor}
@@ -1173,8 +1187,16 @@ export function CanvasStage(props: Props) {
             editing={props.mechEditing}
             vectors={props.mechVectors}
             decompose={props.mechDecompose}
+            labels={props.mechLabels}
+            trails={props.mechTrails}
+            grid={props.mechGrid}
+            snapAngle={props.mechSnapAngle}
+            measure={props.mechMeasure}
+            measureMode={props.mechMeasureMode}
+            onMeasurePart={props.onMechMeasurePart}
             resetToken={props.mechResetToken}
             onCommitParts={props.onMechCommitParts}
+            live={props.mechLive}
           />
         )}
 

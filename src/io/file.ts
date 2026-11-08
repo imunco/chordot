@@ -1,5 +1,6 @@
 import type { SceneSpec, SketchDoc, Stroke } from '../kernel/types'
 import type { Doc } from '../state'
+import { normalizeMechParams } from '../model/mech'
 
 export const FILE_VERSION = 1
 
@@ -81,7 +82,8 @@ export function parseDoc(text: string): { doc: Doc } | { error: string } {
     if (!Array.isArray(scene.params?.parts) || !Array.isArray(scene.params?.links)) {
       return { error: '课件内容损坏：机构参数缺失' }
     }
-    if (typeof scene.params.gravity !== 'number') scene.params.gravity = 9.8
+    // 旧版机构文件只有 6 种部件 / 4 种连接：补齐新字段、迁移 via → vias、补世界参数
+    scene.params = normalizeMechParams(scene.params)
   } else {
     return { error: '课件包含当前版本不支持的内容' }
   }

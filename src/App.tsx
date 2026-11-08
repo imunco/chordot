@@ -29,6 +29,7 @@ import type {
   Camera,
   MechLink,
   MechLinkKind,
+  MechLive,
   MechParams,
   MechPart,
   MechPartKind,
@@ -53,18 +54,7 @@ import { UpdateDialog } from './components/UpdateDialog'
 import { useUpdater } from './updater'
 import { PX_PER_UNIT } from './model/scale'
 import { MechBar } from './components/MechBar'
-import {
-  emptyMechScene,
-  makeLink,
-  makePart,
-  MECH_GROUND_Y,
-  mechPulleyScene,
-  mechCartScene,
-  mechPendulumScene,
-  mechPulleyGroupScene,
-  mechWheelScene,
-  springOscillatorScene,
-} from './model/mech'
+import { makeLink, makePart, MECH_GROUND_Y, presetById, type MechPresetId } from './model/mech'
 import {
   conflictScene,
   inclineScene,
@@ -445,6 +435,8 @@ export default function App() {
   /* 机构装配：选中的部件 / 连接件、连接模式、播放状态都在这一层 */
   const mech = state.doc.scene.kind === 'mech' ? state.doc.scene.params : null
   const [mechSel, setMechSel] = useState<{ id: string; kind: 'part' | 'link' } | null>(null)
+  /** 多选：部件 id 列表（含主选 mechSel） */
+  const [mechSelIds, setMechSelIds] = useState<string[]>([])
   const [mechPending, setMechPending] = useState<MechLinkKind | null>(null)
   const [mechAnchor, setMechAnchor] = useState<string | null>(null)
   const [mechPlaying, setMechPlaying] = useState(false)
@@ -452,14 +444,34 @@ export default function App() {
   const [mechEditing, setMechEditing] = useState(true)
   const [mechVectors, setMechVectors] = useState(true)
   const [mechDecompose, setMechDecompose] = useState(false)
+  /** 画面标注：名称 / 轨迹 / 网格吸附步长 / 角度吸附 / 测距 */
+  const [mechLabels, setMechLabels] = useState(true)
+  const [mechTrails, setMechTrails] = useState(false)
+  const [mechGrid, setMechGrid] = useState(0.1)
+  const [mechSnapAngle, setMechSnapAngle] = useState(true)
+  const [mechMeasure, setMechMeasure] = useState<{ a: string; b: string } | null>(null)
+  const [mechMeasureMode, setMechMeasureMode] = useState(false)
   const [mechReset, setMechReset] = useState(0)
+  /** 引擎实时读数：MechStage 每帧写入，MechBar 轮询显示（避免每帧重渲染整个 App） */
+  const mechLive = useRef<MechLive>({
+    t: 0,
+    running: false,
+    ke: 0,
+    pe: 0,
+    elastic: 0,
+    momentum: 0,
+    parts: {},
+  })
 
   // 换场景（或打开另一份课件）时，机构的选中 / 播放状态全部归零
   useEffect(() => {
     setMechSel(null)
+    setMechSelIds([])
     setMechPending(null)
     setMechAnchor(null)
     setMechPlaying(false)
+    setMechMeasure(null)
+    setMechMeasureMode(false)
     setMechReset((t) => t + 1)
   }, [state.doc.scene.kind, state.file])
 
@@ -610,7 +622,7 @@ export default function App() {
     if (state.doc.scene.kind === 'solidIncline') return '三维斜面 · 拖动旋转 · 滚轮缩放'
     if (state.doc.scene.kind === 'motion') return '1 格 = 1 m'
     if (state.doc.scene.kind === 'mech')
-      return `1 m = ${Math.round(PX_PER_UNIT * state.zoom)} px · 拖部件移动 · 点连接件再点两个部件`
+      return `1 m = ${Math.round(PX_PER_UNIT * state.zoom)} px · 拖部件移动 · Shift 多选 · 空格播放`
     if (state.mode === 'physics') return `1 cm ≙ ${Math.round(PX_PER_UNIT / settings.forceScale)} N`
     const s = PX_PER_UNIT * state.zoom
     const halfW = state.canvas.w / 2 / s
@@ -1151,6 +1163,7 @@ export default function App() {
     const part = makePart(kind, p.x, Math.max(MECH_GROUND_Y + 0.35, p.y))
     patchMech({ parts: [...mech.parts, part] })
     setMechSel({ id: part.id, kind: 'part' })
+    setMechSelIds([part.id])
     setMechPending(null)
     setMechAnchor(null)
     setMechPlaying(false)
@@ -1168,6 +1181,7 @@ export default function App() {
     const link = makeLink(kind, a, b)
     patchMech({ links: [...mech.links, link] })
     setMechSel({ id: link.id, kind: 'link' })
+    setMechSelIds([])
     // 连好一条就退出连接模式：不然接下来点部件全是「选起点」，没法拖动
     setMechPending(null)
     setMechAnchor(null)
@@ -1188,54 +1202,31 @@ export default function App() {
   const deleteMechSel = () => {
     if (!mech || !mechSel) return
     if (mechSel.kind === 'part') {
+      const ids = new Set<string>([mechSel.id, ...mechSelIds])
       patchMech({
-        parts: mech.parts.filter((p) => p.id !== mechSel.id),
-        links: mech.links.filter((l) => l.a !== mechSel.id && l.b !== mechSel.id),
+        parts: mech.parts.filter((p) => !ids.has(p.id)),
+        links: mech.links.filter((l) => !ids.has(l.a) && !ids.has(l.b)),
       })
     } else {
       patchMech({ links: mech.links.filter((l) => l.id !== mechSel.id) })
     }
     setMechSel(null)
+    setMechSelIds([])
     setMechPlaying(false)
   }
 
-  const loadMech = (
-    preset: 'spring' | 'pendulum' | 'cart' | 'pulley' | 'pulleyGroup' | 'wheel' | 'empty',
-  ) => {
-    const scene =
-      preset === 'spring'
-        ? springOscillatorScene()
-        : preset === 'pendulum'
-          ? mechPendulumScene()
-          : preset === 'cart'
-            ? mechCartScene()
-            : preset === 'pulley'
-              ? mechPulleyScene()
-              : preset === 'pulleyGroup'
-                ? mechPulleyGroupScene()
-              : preset === 'wheel'
-                ? mechWheelScene()
-                : emptyMechScene()
-    const file =
-      preset === 'spring'
-        ? '机构装配·弹簧振子.chordot'
-        : preset === 'pendulum'
-          ? '机构装配·单摆.chordot'
-          : preset === 'cart'
-            ? '机构装配·小车弹簧.chordot'
-            : preset === 'pulley'
-              ? '机构装配·定滑轮.chordot'
-              : preset === 'pulleyGroup'
-                ? '机构装配·滑轮组.chordot'
-              : preset === 'wheel'
-                ? '机构装配·电机轮.chordot'
-                : '机构装配.chordot'
-    dispatch({ type: 'scene', scene, file })
+  const loadMech = (preset: MechPresetId) => {
+    const p = presetById(preset)
+    dispatch({ type: 'scene', scene: p.make(), file: p.file })
     setMechSel(null)
+    setMechSelIds([])
     setMechPending(null)
     setMechAnchor(null)
     setMechPlaying(false)
     setMechEditing(true)
+    setMechMeasure(null)
+    setMechMeasureMode(false)
+    setMechReset((t) => t + 1)
   }
 
   const mechUid = (id: string) => `${id}c${Math.random().toString(36).slice(2, 6)}`
@@ -1290,37 +1281,119 @@ export default function App() {
     const { parts, links } = copyAssembly(mech.parts, mech.links, 1.2, -0.6)
     patchMech({ parts: [...mech.parts, ...parts], links: [...mech.links, ...links] })
     setMechSel(null)
+    setMechSelIds([])
     setMechPlaying(false)
   }
 
-  /** 只复制选中的那个部件（不带连接） */
+  /** 复制选中的部件（多选就一起复制，不带连接） */
   const duplicatePart = () => {
     if (!mech || !mechSel || mechSel.kind !== 'part') return
-    const p = mech.parts.find((x) => x.id === mechSel.id)
-    if (!p) return
-    const { parts } = copyAssembly([p], [], 0.6, -0.4)
+    const ids = new Set<string>([mechSel.id, ...mechSelIds])
+    const src = mech.parts.filter((x) => ids.has(x.id))
+    if (src.length === 0) return
+    const { parts } = copyAssembly(src, [], 0.6, -0.4)
     patchMech({ parts: [...mech.parts, ...parts] })
     setMechSel({ id: parts[0].id, kind: 'part' })
+    setMechSelIds(parts.map((p) => p.id))
   }
 
-  /** 复制选中件所在的子机构 */
+  /** 复制选中件所在的子机构（多选时复制它们所在的连通件） */
   const duplicateSub = () => {
     if (!mech || !mechSel || mechSel.kind !== 'part') return
-    const ids = componentIds(mechSel.id)
+    const ids = new Set<string>()
+    const roots = mechSelIds.length > 1 ? mechSelIds : [mechSel.id]
+    for (const r of roots) for (const id of componentIds(r)) ids.add(id)
     const srcParts = mech.parts.filter((p) => ids.has(p.id))
     const { parts, links } = copyAssembly(srcParts, mech.links, 1.2, -0.6)
     patchMech({ parts: [...mech.parts, ...parts], links: [...mech.links, ...links] })
     setMechSel(null)
+    setMechSelIds([])
     setMechPlaying(false)
   }
 
-  /** 成组 / 解组：连通件算一个子机构，之后拖任意一个成员整组一起走 */
+  /** 成组 / 解组：多选时按选中的部件成组，单选时按连通件成组 */
   const setMechGroup = (on: boolean) => {
-    if (!mech || !mechSel || mechSel.kind !== 'part') return
-    const ids = componentIds(mechSel.id)
+    if (!mech) return
+    const ids = new Set<string>()
+    if (mechSelIds.length > 1) for (const id of mechSelIds) ids.add(id)
+    else if (mechSel?.kind === 'part') for (const id of componentIds(mechSel.id)) ids.add(id)
+    if (ids.size === 0) return
     const group = on ? `g${Math.random().toString(36).slice(2, 6)}` : undefined
     patchMech({
       parts: mech.parts.map((p) => (ids.has(p.id) ? { ...p, group } : p)),
+    })
+  }
+
+  /** 多选 / 单选（MechStage 点部件时调用） */
+  const selectMech = (id: string | null, kind: 'part' | 'link' | null) => {
+    setMechSel(id && kind ? { id, kind } : null)
+    if (kind !== 'part') setMechSelIds([])
+    if (!mechPending) setMechAnchor(null)
+  }
+
+  /** Shift 点选：直接给一组部件 id */
+  const selectMechMany = (ids: string[]) => {
+    setMechSelIds(ids)
+    setMechSel(ids.length ? { id: ids[ids.length - 1], kind: 'part' } : null)
+  }
+
+  const mechSelectedParts = () => (mech ? mech.parts.filter((p) => mechSelIds.includes(p.id)) : [])
+
+  /** 对齐：把多选部件的主坐标对齐到主选件 */
+  const alignMech = (axis: 'x' | 'y') => {
+    if (!mech || mechSelIds.length < 2) return
+    const primary =
+      mech.parts.find((p) => p.id === mechSel?.id) ?? mech.parts.find((p) => p.id === mechSelIds[0])
+    if (!primary) return
+    const target = axis === 'x' ? primary.x : primary.y
+    patchMech({
+      parts: mech.parts.map((p) =>
+        mechSelIds.includes(p.id) ? (axis === 'x' ? { ...p, x: target } : { ...p, y: target }) : p,
+      ),
+    })
+  }
+
+  /** 分布：把多选部件在两端之间等距排开（至少 3 个） */
+  const distributeMech = (axis: 'x' | 'y') => {
+    if (!mech) return
+    const sel = mechSelectedParts()
+      .slice()
+      .sort((a, b) => (axis === 'x' ? a.x - b.x : a.y - b.y))
+    if (sel.length < 3) return
+    const first = axis === 'x' ? sel[0].x : sel[0].y
+    const last = axis === 'x' ? sel[sel.length - 1].x : sel[sel.length - 1].y
+    const step = (last - first) / (sel.length - 1)
+    const at = new Map(sel.map((p, i) => [p.id, first + step * i]))
+    patchMech({
+      parts: mech.parts.map((p) => {
+        const v = at.get(p.id)
+        if (v === undefined) return p
+        return axis === 'x' ? { ...p, x: Math.round(v * 1000) / 1000 } : { ...p, y: Math.round(v * 1000) / 1000 }
+      }),
+    })
+  }
+
+  /** 旋转选中的部件：按 15° 吸附（可在世界面板关掉） */
+  const rotateMech = (delta: number) => {
+    if (!mech) return
+    const ids = mechSelIds.length ? mechSelIds : mechSel?.kind === 'part' ? [mechSel.id] : []
+    if (ids.length === 0) return
+    const step = mechSnapAngle ? 15 : 1
+    patchMech({
+      parts: mech.parts.map((p) => {
+        if (!ids.includes(p.id)) return p
+        const next = Math.round(((p.angle ?? 0) + delta) / step) * step
+        return { ...p, angle: ((next + 180) % 360) - 180 }
+      }),
+    })
+  }
+
+  /** 测距：点第一个部件 → 点第二个部件 → 出尺寸线；再点一个重新开始 */
+  const measureMechPart = (id: string) => {
+    setMechMeasure((m) => {
+      if (!m || (m.a && m.b)) return { a: id, b: '' }
+      if (m.a === id) return null
+      return { a: m.a, b: id }
     })
   }
 
@@ -1519,6 +1592,14 @@ export default function App() {
       if (mod) return
 
       if (e.key === ' ') {
+        // 机构优先：空格播放 / 暂停（播放即切到真实模式）
+        if (mech) {
+          e.preventDefault()
+          const next = !mechPlaying
+          setMechPlaying(next)
+          if (next) setMechEditing(false)
+          return
+        }
         // 物理世界优先：空格暂停/继续
         if (state.doc.scene.kind === 'solid' && state.doc.scene.params.physics?.enabled) {
           e.preventDefault()
@@ -1531,6 +1612,47 @@ export default function App() {
           else void actionsRef.current.playSim()
         }
         return
+      }
+
+      // 机构专用快捷键：R 旋转 / V 矢量 / D 受力分解 / E 编辑真实切换 / L 标签 / T 轨迹
+      if (mech) {
+        const k = e.key.toLowerCase()
+        if (k === 'r') {
+          e.preventDefault()
+          rotateMech(e.shiftKey ? -15 : 15)
+          return
+        }
+        if (k === 'v') {
+          e.preventDefault()
+          setMechVectors((v) => !v)
+          return
+        }
+        if (k === 'd') {
+          e.preventDefault()
+          setMechDecompose((v) => !v)
+          return
+        }
+        if (k === 'e') {
+          e.preventDefault()
+          const next = !mechEditing
+          setMechEditing(next)
+          setMechPlaying(!next)
+          if (next) {
+            setMechPending(null)
+            setMechAnchor(null)
+          }
+          return
+        }
+        if (k === 'l') {
+          e.preventDefault()
+          setMechLabels((v) => !v)
+          return
+        }
+        if (k === 't') {
+          e.preventDefault()
+          setMechTrails((v) => !v)
+          return
+        }
       }
 
       if (e.key === 'p' || e.key === 'P') {
@@ -1547,9 +1669,16 @@ export default function App() {
         e.preventDefault()
         if (mech && mechSel) deleteMechSel()
         else dispatch({ type: 'delete' })
-      } else if (e.key === 'Escape' && mechPending) {
-        setMechPending(null)
-        setMechAnchor(null)
+      } else if (e.key === 'Escape') {
+        if (mechMeasureMode || mechMeasure) {
+          setMechMeasure(null)
+          setMechMeasureMode(false)
+          return
+        }
+        if (mechPending) {
+          setMechPending(null)
+          setMechAnchor(null)
+        }
       }
     }
     window.addEventListener('keydown', onKey)
@@ -1574,7 +1703,13 @@ export default function App() {
     objects,
     mech,
     mechSel,
+    mechSelIds,
     mechPending,
+    mechPlaying,
+    mechEditing,
+    mechSnapAngle,
+    mechMeasure,
+    mechMeasureMode,
   ])
 
   const paletteItems: PaletteItem[] = useMemo(
@@ -1615,6 +1750,11 @@ export default function App() {
       { id: 'sample-incline3d', label: '示例：三维斜面受力', run: loadIncline3d },
       { id: 'sample-mech', label: '机构装配：弹簧振子（可拼可拆）', run: () => loadMech('spring') },
       { id: 'sample-mech-empty', label: '机构装配：空白装配台', run: () => loadMech('empty') },
+      { id: 'sample-mech-gear', label: '机构装配：齿轮传动（电机 + 惰轮）', run: () => loadMech('gearTrain') },
+      { id: 'sample-mech-crank', label: '机构装配：曲柄滑块', run: () => loadMech('crankSlider') },
+      { id: 'sample-mech-piston', label: '机构装配：液压缸', run: () => loadMech('piston') },
+      { id: 'sample-mech-rocket', label: '机构装配：火箭推力', run: () => loadMech('rocket') },
+      { id: 'sample-mech-magnet', label: '机构装配：磁铁（失重）', run: () => loadMech('magnet') },
       { id: 'symbols', label: '符号公式实验室（独立窗口）…', run: () => void window.chordot?.openSymbolWindow?.() },
       { id: 'sample-pendulum', label: '示例：单摆（动力学）', run: loadPendulum },
       {
@@ -1728,6 +1868,7 @@ export default function App() {
       <TitleBar file={state.file} dirty={state.dirty} />
 
       <div className="workspace">
+        {state.doc.scene.kind !== 'mech' && (
         <LeftPanel
           objects={objects}
           selected={state.selected}
@@ -1758,6 +1899,7 @@ export default function App() {
           }
           onSubmitExpr={submitExpression}
         />
+        )}
 
         <div className="canvas-col">
           <CanvasStage
@@ -1836,21 +1978,28 @@ export default function App() {
           onDropShape={(id, at) => insertAny(id, at)}
           mech={mech}
           mechSelected={mechSel?.id ?? null}
+          mechSelectedIds={mechSelIds}
           mechPending={mechPending}
           mechAnchor={mechAnchor}
           mechPlaying={mechPlaying}
           mechEditing={mechEditing}
           mechVectors={mechVectors}
           mechDecompose={mechDecompose}
+          mechLabels={mechLabels}
+          mechTrails={mechTrails}
+          mechGrid={mechGrid}
+          mechSnapAngle={mechSnapAngle}
+          mechMeasure={mechMeasure}
+          mechMeasureMode={mechMeasureMode}
           mechResetToken={mechReset}
-          onMechSelect={(id, kind) => {
-            setMechSel(id && kind ? { id, kind } : null)
-            if (!mechPending) setMechAnchor(null)
-          }}
+          mechLive={mechLive}
+          onMechSelect={selectMech}
+          onMechSelectMany={selectMechMany}
           onMechAnchor={setMechAnchor}
           onMechLink={addMechLink}
           onMechCommitParts={(parts) => patchMech({ parts })}
           onMechDrop={(kind, at) => addMechPart(kind, at)}
+          onMechMeasurePart={measureMechPart}
           />
           {state.mode === 'physics' && !mech && state.doc.scene.kind === 'sketch' && (
             <div className="physprompt">
@@ -1864,12 +2013,23 @@ export default function App() {
             </div>
           )}
           {mech && (
-            <MechBar              params={mech}
+            <MechBar
+              params={mech}
               selected={mechSel}
+              selectedIds={mechSelIds}
+              live={mechLive}
               pending={mechPending}
               anchor={mechAnchor}
               playing={mechPlaying}
               editing={mechEditing}
+              vectors={mechVectors}
+              decompose={mechDecompose}
+              labels={mechLabels}
+              trails={mechTrails}
+              grid={mechGrid}
+              snapAngle={mechSnapAngle}
+              measure={mechMeasure}
+              measureMode={mechMeasureMode}
               onEditing={(v) => {
                 setMechEditing(v)
                 // 切到真实就立刻跑起来；切回编辑就停下，方便摆零件
@@ -1885,17 +2045,22 @@ export default function App() {
               onAddPart={(kind) => addMechPart(kind)}
               onPatchPart={patchMechPart}
               onPatchLink={patchMechLink}
+              onPatchParams={patchMech}
               onDelete={deleteMechSel}
               onDisconnect={() => {
                 patchMech({ links: [] })
                 setMechSel(null)
+                setMechSelIds([])
                 setMechPlaying(false)
               }}
               onClear={() => {
                 patchMech({ parts: [], links: [] })
                 setMechSel(null)
+                setMechSelIds([])
                 setMechPending(null)
                 setMechAnchor(null)
+                setMechMeasure(null)
+                setMechMeasureMode(false)
                 setMechPlaying(false)
               }}
               onPlay={(v) => {
@@ -1908,15 +2073,26 @@ export default function App() {
                 setMechReset((t) => t + 1)
               }}
               onPreset={loadMech}
-              vectors={mechVectors}
               onVectors={setMechVectors}
-              decompose={mechDecompose}
               onDecompose={setMechDecompose}
+              onLabels={setMechLabels}
+              onTrails={setMechTrails}
+              onGrid={setMechGrid}
+              onSnapAngle={setMechSnapAngle}
+              onMeasureMode={(v) => {
+                setMechMeasureMode(v)
+                if (!v) setMechMeasure(null)
+              }}
+              onMeasureClear={() => setMechMeasure(null)}
               onDuplicate={duplicateMech}
               onDuplicatePart={duplicatePart}
               onDuplicateSub={duplicateSub}
               onGroup={() => setMechGroup(true)}
               onUngroup={() => setMechGroup(false)}
+              onSelectMany={selectMechMany}
+              onAlign={alignMech}
+              onDistribute={distributeMech}
+              onRotate={rotateMech}
             />
           )}
           {solidPhysics?.enabled && (
@@ -2056,6 +2232,11 @@ export default function App() {
               else if (cmd === 'incline3d') loadIncline3d()
               else if (cmd === 'mech') loadMech('spring')
               else if (cmd === 'mech-empty') loadMech('empty')
+              else if (cmd === 'mech-gear') loadMech('gearTrain')
+              else if (cmd === 'mech-crank') loadMech('crankSlider')
+              else if (cmd === 'mech-piston') loadMech('piston')
+              else if (cmd === 'mech-rocket') loadMech('rocket')
+              else if (cmd === 'mech-magnet') loadMech('magnet')
               else if (cmd === 'symbols') void window.chordot?.openSymbolWindow?.()
               else if (cmd === 'gallery') dispatch({ type: 'gallery', open: true })
               else if (cmd === 'textbook') dispatch({ type: 'textbook', open: true })

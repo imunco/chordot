@@ -248,10 +248,58 @@ export interface SolidInclineParams {
   decompose: boolean
 }
 
-/* ───────── 机构装配：拖部件到画布，用弹簧 / 绳 / 杆连成一台机构 ───────── */
+/* ───────── 机构装配：拖部件到画布，用连接 / 约束 / 传动连成一台机构 ───────── */
 
-export type MechPartKind = 'ball' | 'box' | 'anchor' | 'track' | 'pulley' | 'wheel'
-export type MechLinkKind = 'spring' | 'rope' | 'rod' | 'hinge'
+/** 部件大类：部件盘按这个分组 */
+export type MechCategory = 'body' | 'support' | 'drive' | 'field'
+
+export type MechPartKind =
+  /* 刚体 */
+  | 'ball'
+  | 'box'
+  | 'cart'
+  | 'plank'
+  | 'disc'
+  | 'hoop'
+  | 'wedge'
+  | 'weight'
+  /* 支撑 / 场地 */
+  | 'anchor'
+  | 'bracket'
+  | 'wall'
+  | 'track'
+  | 'arcTrack'
+  /* 传动 */
+  | 'pulley'
+  | 'movablePulley'
+  | 'gear'
+  | 'rack'
+  | 'wheel'
+  | 'flywheel'
+  | 'conveyor'
+  /* 装置 / 场 */
+  | 'thruster'
+  | 'magnet'
+  | 'planet'
+
+export type MechLinkKind =
+  /* 弹性连接 */
+  | 'spring'
+  | 'damper'
+  /* 刚性连接 */
+  | 'rope'
+  | 'rod'
+  | 'hinge'
+  | 'weld'
+  /* 传动连接 */
+  | 'belt'
+  | 'gearPair'
+  | 'rackPinion'
+  /* 直线驱动 */
+  | 'piston'
+
+/** 材质预设：摩擦 / 恢复系数一组给好，仍可在检查器里单独覆盖 */
+export type MechMaterial = 'steel' | 'wood' | 'rubber' | 'plastic' | 'ice'
 
 /** 公式力：表达式里可用 x / y / vx / vy / t / m / g，结果单位 N，沿 angle 方向 */
 export interface MechForce {
@@ -271,24 +319,52 @@ export interface MechPart {
   /** 世界坐标（米） */
   x: number
   y: number
-  /** 球半径 / 方块半边长 / 锚点半径 / 轨道半长，米 */
+  /** 主尺寸（米）：圆半径 / 方块半边长 / 板半长 / 轨道半长 / 齿轮节圆半径 / 楔块半底宽 */
   size: number
-  /** 质量 kg；锚点 / 轨道 / 滑轮忽略 */
+  /** 次尺寸（米）：板厚的一半 / 墙高的一半 / 楔块高 / 小车高 */
+  size2?: number
+  /** 质量 kg；锚点 / 轨道 / 滑轮等固定件忽略 */
   mass: number
-  /** 锁死不动（锚点天然为 true） */
+  /** 锁死不动（锚点等天然为 true） */
   fixed?: boolean
-  /** 轨道 / 滑轮的朝向（度，0 = 水平） */
+  /** 朝向（度，0 = 水平）：板 / 杆 / 轨道 / 楔块 / 弧轨道 / 传送带 / 推力器用 */
   angle?: number
   /** 公式力（机构里也能像三维那样用 F(x,v,t) 推一把） */
   force?: MechForce
-  /** 轮：中心轴固定（转动副） */
+  /** 转动件：中心轴固定（转动副） */
   pinned?: boolean
-  /** 电机力矩 N·m（中心轴固定的轮才有意义） */
+  /** 电机力矩 N·m（中心轴固定的轮 / 齿轮 / 飞轮才有意义） */
   motor?: number
+  /** 齿轮齿数（只影响外观与齿距，传动比按节圆半径算） */
+  teeth?: number
+  /** 材质预设：给出默认摩擦 / 恢复系数 */
+  material?: MechMaterial
+  /** 覆盖材质给的摩擦因数 */
+  friction?: number
+  /** 覆盖材质给的恢复系数 */
+  restitution?: number
+  /** 自重比例：0 = 失重，1 = 正常，负值 = 反重力 */
+  gravityScale?: number
+  /** 推力器：沿 angle 方向的推力 N */
+  thrust?: number
+  /** 磁铁：磁极 N / S */
+  pole?: 'N' | 'S'
+  /** 磁铁 / 引力源的强度（N·m² 或 m³/s²） */
+  strength?: number
+  /** 传送带表面速度 m/s（正值沿 angle 方向） */
+  speed?: number
+  /** 圆弧轨道的圆心角（度） */
+  span?: number
   /** 只能沿这条轨道滑（轨道部件的 id） */
   onTrack?: string
   /** 子机构分组 id：同组的部件一起拖动 / 一起复制 */
   group?: string
+  /** 画布上显示的标签（缺省用部件名） */
+  label?: string
+  /** 锁定：编辑模式里拖不动（防止误碰） */
+  locked?: boolean
+  /** 强调色（渲染时给部件描边 / 标记） */
+  color?: string
 }
 
 export interface MechLink {
@@ -299,7 +375,7 @@ export interface MechLink {
   b: string
   /** 自然长度 m */
   rest: number
-  /** 弹簧劲度系数 N/m */
+  /** 弹簧 / 活塞的劲度系数 N/m */
   k?: number
   /** 阻尼 N·s/m */
   c?: number
@@ -312,6 +388,15 @@ export interface MechLink {
   /** 连接点相对部件中心的偏移（米，跟着部件一起转）——铰链在任意点铰接靠它 */
   offsetA?: { x: number; y: number }
   offsetB?: { x: number; y: number }
+  /** 传动比（从动 / 主动）；缺省按两个部件的尺寸反算 */
+  ratio?: number
+  /** 铰链 / 杆的角度限位（度，相对初始姿态） */
+  lo?: number
+  hi?: number
+  /** 活塞：目标长度 m */
+  target?: number
+  /** 活塞：最大推力 N */
+  maxForce?: number
 }
 
 export interface MechParams {
@@ -319,6 +404,45 @@ export interface MechParams {
   links: MechLink[]
   /** 重力加速度 m/s² */
   gravity: number
+  /** 时间倍率 0.1–2（慢动作看受力） */
+  timeScale?: number
+  /** 空气阻力（Matter 的 frictionAir） */
+  airDrag?: number
+  /** 部件之间是否碰撞 */
+  collisions?: boolean
+}
+
+/** 单个部件的实时读数（引擎 → 检查器，不走 React 状态，避免每帧重渲染） */
+export interface MechLivePart {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  speed: number
+  ax: number
+  ay: number
+  angle: number
+  /** 角速度 rad/s */
+  omega: number
+  /** 动能 J */
+  ke: number
+}
+
+/** 机构的实时汇总读数 */
+export interface MechLive {
+  /** 仿真时间 s */
+  t: number
+  running: boolean
+  /** 平动动能 J */
+  ke: number
+  /** 重力势能 J（相对地面） */
+  pe: number
+  /** 弹性势能 J */
+  elastic: number
+  /** 动量 kg·m/s（矢量模长） */
+  momentum: number
+  /** 部件实时读数，键是部件 id */
+  parts: Record<string, MechLivePart>
 }
 
 export type SceneSpec =

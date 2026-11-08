@@ -1,0 +1,1232 @@
+/* ─────────────────────────────────────────────────────────────
+   物理模式（机构装配）专属样式
+   由 mech-visual 重写：面板收窄成 390px 的「纸面模型工作台」，
+   部件盘是图标网格、连接是带图标的胶囊、预设横向铺开、世界面板可折叠，
+   检查器按「基本 / 材质 / 装置 / 状态」分组。
+   这些规则覆盖 app.css 里的旧 .mechbar 规则（本文件在 main.tsx 里后导入）。
+   ───────────────────────────────────────────────────────────── */
+
+/* ───────── 面板外壳 ───────── */
+
+.mechbar {
+  position: absolute;
+  left: 14px;
+  top: 10px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  width: min(390px, calc(100% - 28px));
+  max-height: calc(100% - 18px);
+  padding: 0 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #d8d2c9 transparent;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 14px 34px rgba(31, 31, 29, 0.13),
+    0 2px 6px rgba(31, 31, 29, 0.05);
+}
+
+.mechbar *,
+.mechbar *::before,
+.mechbar *::after {
+  box-sizing: border-box;
+}
+
+.mechbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.mechbar::-webkit-scrollbar-thumb {
+  background: #d8d2c9;
+  border: 2px solid #fff;
+  border-radius: 6px;
+}
+
+.mechbar::-webkit-scrollbar-thumb:hover {
+  background: #c9c3b9;
+}
+
+.mechbar button {
+  font-family: inherit;
+}
+
+.mechbar button:focus-visible,
+.mechbar input:focus-visible,
+.mechbar select:focus-visible {
+  outline: 2px solid rgba(61, 90, 102, 0.35);
+  outline-offset: 1px;
+}
+
+/* 分类切换 / 世界面板折叠：非当前内容必须真的隐藏 */
+.mechbar [hidden],
+.mechbar__part[hidden],
+.mechbar__worldbody[hidden] {
+  display: none !important;
+}
+
+.mechbar__icon {
+  display: block;
+  flex: none;
+}
+
+/* ───────── 1. 顶部：编辑 / 真实 + 播放 + 重置 ───────── */
+
+.mechbar__mode {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 -12px;
+  padding: 7px 12px 6px;
+  background: linear-gradient(#ffffff, #fbfaf7);
+  border-bottom: 1px solid #ece8e1;
+}
+
+.mechbar__seg {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: #f1eee8;
+  border: 1px solid #e8e3db;
+  border-radius: 8px;
+}
+
+.mechbar__seg button {
+  flex: 1 1 0;
+  height: 26px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color var(--t), background-color var(--t), box-shadow var(--t);
+}
+
+.mechbar__seg button:hover {
+  color: var(--text-primary);
+}
+
+.mechbar__seg button[data-active='true'],
+.mechbar__mode[data-editing='true'] .mechbar__seg button[data-active='true'],
+.mechbar__mode[data-editing='false'] .mechbar__seg button[data-active='true'] {
+  color: #fff;
+  background: #3d5a66;
+  box-shadow: 0 1px 3px rgba(31, 31, 29, 0.22);
+}
+
+.mechbar__play {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: #3d5a66;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(61, 90, 102, 0.28);
+  transition: background-color var(--t), box-shadow var(--t);
+}
+
+.mechbar__play:hover {
+  background: #4a6b78;
+}
+
+.mechbar__play[data-active='true'] {
+  background: #8a5a3a;
+  box-shadow: 0 1px 3px rgba(138, 90, 58, 0.32);
+}
+
+.mechbar__reset {
+  flex: none;
+  height: 28px;
+  padding: 0 9px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.mechbar__reset:hover {
+  background: #f1eee8;
+  border-color: transparent;
+}
+
+/* ───────── 操作提示 ───────── */
+
+.mechbar__hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: 0;
+  padding: 6px 2px 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.mechbar__hinticon {
+  flex: none;
+  margin-top: 1.5px;
+  color: #a9a49c;
+}
+
+/* ───────── 分区外壳 ───────── */
+
+.mechbar__section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 0 6px;
+  border-top: 1px solid #ece8e1;
+}
+
+.mechbar__section--palette {
+  padding-top: 5px;
+  border-top: none;
+}
+
+.mechbar__sectionhead {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  line-height: 1.05;
+}
+
+.mechbar__label {
+  flex: none;
+  width: auto;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #8a857c;
+}
+
+.mechbar__sectionhint {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10px;
+  color: #a9a49c;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ───────── 2. 部件盘：分类 pill + 搜索 + 图标网格 ───────── */
+
+.mechbar__cats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  padding: 2px;
+  background: #f1eee8;
+  border: 1px solid #e8e3db;
+  border-radius: 9px;
+}
+
+.mechbar__cat {
+  height: 24px;
+  padding: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color var(--t), background-color var(--t), box-shadow var(--t);
+}
+
+.mechbar__cat:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.mechbar__cat[data-active='true'] {
+  color: #fff;
+  background: #3d5a66;
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(31, 31, 29, 0.2);
+}
+
+.mechbar__searchbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 27px;
+  padding: 0 8px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color var(--t), box-shadow var(--t);
+}
+
+.mechbar__searchbox:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(61, 90, 102, 0.08);
+}
+
+.mechbar__searchicon {
+  flex: none;
+  color: #a9a49c;
+}
+
+.mechbar__search {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.mechbar__search::placeholder {
+  color: #a8a39b;
+}
+
+.mechbar__search::-webkit-search-cancel-button,
+.mechbar__search::-webkit-search-decoration {
+  display: none;
+}
+
+.mechbar__searchclear {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: #f1efea;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color var(--t), color var(--t);
+}
+
+.mechbar__searchclear:hover {
+  color: var(--text-primary);
+  background: #e8e4dd;
+}
+
+.mechbar__palette {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.mechbar__part,
+.mechbar__palette .mechbar__part {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  height: 48px;
+  padding: 0;
+  font-size: 10.5px;
+  line-height: 1;
+  color: #3f3d39;
+  background: linear-gradient(#fffdfa, #faf8f4);
+  border: 1px solid #e4dfd7;
+  border-radius: 9px;
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background-color var(--t), border-color var(--t), box-shadow var(--t), color var(--t);
+}
+
+.mechbar__part:hover {
+  color: var(--text-primary);
+  background: #fff;
+  border-color: #c9c3b9;
+  box-shadow: 0 2px 6px rgba(31, 31, 29, 0.07);
+}
+
+.mechbar__part:active {
+  cursor: grabbing;
+  background: #f6f3ee;
+  box-shadow: inset 0 1px 2px rgba(31, 31, 29, 0.06);
+}
+
+.mechbar__part .mechbar__icon {
+  color: #3d5a66;
+  opacity: 0.85;
+}
+
+.mechbar__part:hover .mechbar__icon {
+  opacity: 1;
+}
+
+.mechbar__partlabel {
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+/* ───────── 3. 连接行 ───────── */
+
+.mechbar__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mechbar__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 7px 0 5px;
+  font-size: 10.5px;
+  color: #4a4844;
+  background: #f7f5f1;
+  border: 1px solid #e6e1d9;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color var(--t), background-color var(--t), border-color var(--t), box-shadow var(--t);
+}
+
+.mechbar__link:hover {
+  color: var(--text-primary);
+  background: #fff;
+  border-color: #c9c3b9;
+  box-shadow: 0 1px 3px rgba(31, 31, 29, 0.06);
+}
+
+.mechbar__link .mechbar__icon {
+  color: #3d5a66;
+  opacity: 0.78;
+}
+
+.mechbar__link[data-active='true'] {
+  color: #fff;
+  background: #3d5a66;
+  border-color: #3d5a66;
+  box-shadow: 0 1px 3px rgba(61, 90, 102, 0.3);
+}
+
+.mechbar__link[data-active='true'] .mechbar__icon {
+  color: #fff;
+  opacity: 0.92;
+}
+
+/* ───────── 4. 工具栏（小号图标 chip） ───────── */
+
+.mechbar__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.mechbar__row--tools {
+  gap: 1px;
+  padding: 7px 0 8px;
+  border-top: 1px solid #ece8e1;
+}
+
+.mechbar__mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: #f7f5f1;
+  border: 1px solid #e6e1d9;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color var(--t), background-color var(--t), border-color var(--t), box-shadow var(--t);
+}
+
+.mechbar__mini:hover {
+  color: var(--text-primary);
+  background: #fff;
+  border-color: #c9c3b9;
+}
+
+.mechbar__mini:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.mechbar__mini:disabled:hover {
+  color: var(--text-secondary);
+  background: #f7f5f1;
+  border-color: #e6e1d9;
+}
+
+.mechbar__mini[data-active='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(61, 90, 102, 0.25);
+}
+
+.mechbar__tool {
+  height: 23px;
+  gap: 3px;
+  padding: 0 4px;
+  font-size: 10px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.mechbar__tool .mechbar__icon {
+  color: #8f8a81;
+}
+
+.mechbar__tool:hover {
+  background: #f1eee8;
+  border-color: transparent;
+}
+
+.mechbar__tool:hover .mechbar__icon {
+  color: #3d5a66;
+}
+
+.mechbar__tool[data-active='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.mechbar__tool[data-active='true'] .mechbar__icon {
+  color: var(--accent);
+}
+
+/* ───────── 5. 预设（小胶囊，全部可见） ───────── */
+
+.mechbar__presets {
+  display: grid;
+  grid-template-columns: repeat(9, max-content);
+  grid-template-rows: repeat(2, 20px);
+  gap: 3px 4px;
+  padding: 0 2px 3px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #d8d2c9 transparent;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 12px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 12px), transparent);
+}
+
+.mechbar__presets::-webkit-scrollbar {
+  height: 3px;
+}
+
+.mechbar__presets::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mechbar__presets::-webkit-scrollbar-thumb {
+  background: #cfc9c0;
+  border-radius: 2px;
+}
+
+.mechbar__presets::-webkit-scrollbar-thumb:hover {
+  background: #bdb6ab;
+}
+
+.mechbar__presets button {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  font-size: 10px;
+  color: #4a4844;
+  text-decoration: none;
+  white-space: nowrap;
+  background: #f7f5f1;
+  border: 1px solid #e6e1d9;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color var(--t), background-color var(--t), border-color var(--t);
+}
+
+.mechbar__presets button::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #b9b2a7;
+}
+
+.mechbar__presets button[data-group='传动']::before {
+  background: #5b7a6a;
+}
+
+.mechbar__presets button[data-group='装置']::before {
+  background: #8a5a3a;
+}
+
+.mechbar__presets button:hover {
+  color: var(--text-primary);
+  background: #fff;
+  border-color: #c9c3b9;
+}
+
+.mechbar__presets button:active {
+  background: #f1eee8;
+}
+
+/* ───────── 6. 世界面板（默认折叠成一行摘要） ───────── */
+
+.mechbar__world {
+  padding: 5px 0 6px;
+  border-top: 1px solid #ece8e1;
+}
+
+.mechbar__worldtoggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 22px;
+  padding: 0 2px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.mechbar__worldtoggle:hover {
+  color: var(--text-primary);
+}
+
+.mechbar__worldicon {
+  flex: none;
+  color: #8f8a81;
+}
+
+.mechbar__worldtitle {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #8a857c;
+}
+
+.mechbar__worldsum {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10.5px;
+  color: #8a857c;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mechbar__worldsum i {
+  margin: 0 5px;
+  font-style: normal;
+  color: #c3bdb2;
+}
+
+.mechbar__chev {
+  flex: none;
+  color: #a9a49c;
+  transition: transform var(--t);
+}
+
+.mechbar__world[data-open='true'] .mechbar__chev {
+  transform: rotate(180deg);
+}
+
+.mechbar__worldbody {
+  padding: 8px 2px 2px;
+}
+
+.mechbar__worldgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  align-items: end;
+}
+
+.mechbar__fieldrow.mechbar__worldgrid > label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.mechbar__worldchecks {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.mechbar__world .mechbar__check,
+.mechbar__fields .mechbar__check {
+  height: 24px;
+  padding: 0 8px;
+  background: #f7f5f1;
+  border: 1px solid #e6e1d9;
+  border-radius: 6px;
+  transition: color var(--t), background-color var(--t), border-color var(--t);
+}
+
+.mechbar__world .mechbar__check:hover,
+.mechbar__fields .mechbar__check:hover {
+  color: var(--text-primary);
+  background: #fff;
+  border-color: #c9c3b9;
+}
+
+.mechbar__world .mechbar__measure {
+  height: 24px;
+  border-color: #e6e1d9;
+}
+
+/* ───────── 7. 多选工具条 ───────── */
+
+.mechbar__multi {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 5px 0 0;
+  padding: 5px 7px;
+  background: #f4f1ec;
+  border: 1px solid #e4dfd7;
+  border-radius: 9px;
+}
+
+.mechbar__multihead {
+  flex: none;
+  padding: 0 4px 0 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.mechbar__multi .mechbar__mini {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 10px;
+  background: #fff;
+}
+
+/* ───────── 8. 检查器 ───────── */
+
+.mechbar__insp {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 0 10px;
+  border-top: 1px solid #e4dfd7;
+}
+
+.mechbar__insphead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+
+.mechbar__insphead .mechbar__icon {
+  color: #3d5a66;
+}
+
+.mechbar__insptitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mechbar__inspbadge {
+  padding: 1px 6px;
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: #7d786f;
+  background: #f1eee8;
+  border-radius: 999px;
+}
+
+.mechbar__del {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0 7px;
+  font-size: 10.5px;
+  color: #a4514a;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color var(--t), background-color var(--t), border-color var(--t);
+}
+
+.mechbar__del:hover {
+  background: rgba(164, 81, 74, 0.08);
+  border-color: rgba(164, 81, 74, 0.22);
+}
+
+.mechbar__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.mechbar__group {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 0;
+  border-top: 1px solid #eeebe4;
+}
+
+.mechbar__group:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.mechbar__heading {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #8f8a81;
+}
+
+.mechbar__heading::before {
+  content: '';
+  width: 3px;
+  height: 3px;
+  border-radius: 1px;
+  background: #b9b2a7;
+}
+
+.mechbar__fieldrow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  align-items: end;
+}
+
+.mechbar__fieldrow > label:not(.mechbar__check) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: #8f8a81;
+  white-space: nowrap;
+}
+
+.mechbar__fieldrow > label.mechbar__cell--wide {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mechbar__fieldrow > .mechbar__cell--wide {
+  grid-column: 1 / -1;
+}
+
+.mechbar__fieldrow > .mechbar__checks {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.mechbar__fieldrow .mechbar__meta {
+  grid-column: 1 / -1;
+}
+
+.mechbar__field {
+  display: inline-flex;
+  flex: none;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.mechbar__field i {
+  font-style: normal;
+  font-size: 9.5px;
+  color: #a09b92;
+  white-space: nowrap;
+}
+
+.mechbar__num {
+  height: 24px;
+  padding: 0 6px;
+  font-family: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color var(--t), box-shadow var(--t);
+}
+
+.mechbar__num:hover {
+  border-color: #c9c3b9;
+}
+
+.mechbar__num:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(61, 90, 102, 0.1);
+}
+
+.mechbar__num::-webkit-outer-spin-button,
+.mechbar__num::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.mechbar__select {
+  height: 24px;
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-primary);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--t), box-shadow var(--t);
+}
+
+.mechbar__select:hover {
+  border-color: #c9c3b9;
+}
+
+.mechbar__select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(61, 90, 102, 0.1);
+}
+
+.mechbar__fieldrow .mechbar__select {
+  flex: none;
+  width: 84px;
+}
+
+.mechbar__fieldrow > .mechbar__cell--wide .mechbar__select {
+  width: 108px;
+}
+
+.mechbar__text {
+  height: 24px;
+  padding: 0 7px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-primary);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color var(--t), box-shadow var(--t);
+}
+
+.mechbar__text:hover {
+  border-color: #c9c3b9;
+}
+
+.mechbar__text:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(61, 90, 102, 0.1);
+}
+
+.mechbar__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.mechbar__check input {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  accent-color: #3d5a66;
+  cursor: pointer;
+}
+
+.mechbar__meta {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #8f8a81;
+  font-variant-numeric: tabular-nums;
+}
+
+.mechbar__insp > .mechbar__meta {
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid #f0ede6;
+}
+
+.mechbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding-top: 2px;
+}
+
+/* ───────── 施加力 ───────── */
+
+.mechbar__force {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 0;
+  border-top: 1px solid #eeebe4;
+}
+
+.mechbar__forcerow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.mechbar__forceon {
+  height: 24px;
+  padding: 0 8px;
+  background: #f1eee8;
+  border: 1px solid #e6e1d9;
+  border-radius: 6px;
+}
+
+.mechbar__forcemode {
+  width: 78px;
+  margin-left: auto;
+}
+
+.mechbar__forcegrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px 10px;
+  align-items: end;
+}
+
+.mechbar__forcegrid > label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: #8f8a81;
+  white-space: nowrap;
+}
+
+.mechbar__forcegrid--expr {
+  grid-template-columns: 1fr auto;
+}
+
+.mechbar__expr {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color var(--t), box-shadow var(--t);
+}
+
+.mechbar__expr:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(61, 90, 102, 0.1);
+}
+
+.mechbar__dirs {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.mechbar__chip {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color var(--t), background-color var(--t), border-color var(--t);
+}
+
+.mechbar__chip:hover {
+  color: var(--text-primary);
+  border-color: #c9c3b9;
+}
+
+.mechbar__chip[data-on='true'] {
+  color: #fff;
+  background: #3d5a66;
+  border-color: #3d5a66;
+}
+
+.mechbar__route {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.mechbar__routehint {
+  flex: 1 1 100%;
+  color: #a09b92;
+}
+
+/* ───────── 9. 测距结果 ───────── */
+
+.mechbar__dim {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  font-size: 10.5px;
+  color: #2f5560;
+  background: #eef3f4;
+  border: 1px solid #dbe6e9;
+  border-radius: 8px;
+}
+
+.mechbar__dimtext {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.mechbar__dim .mechbar__mini {
+  flex: none;
+  height: 22px;
+  background: #fff;
+}
+
+/* ───────── 10. 实时读数（常驻底部） ───────── */
+
+.mechbar__live {
+  position: static;
+  bottom: auto;
+  z-index: auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px 10px;
+  margin: 6px -12px 0;
+  padding: 6px 12px 7px;
+  background: rgba(255, 255, 255, 0.97);
+  border-top: 1px solid #e4dfd7;
+}
+
+.mechbar__liveitem {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.mechbar__liveitem i {
+  flex: none;
+  font-style: normal;
+  font-size: 8.5px;
+  letter-spacing: 0.03em;
+  color: #a09b92;
+  white-space: nowrap;
+}
+
+.mechbar__liveitem b {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mechbar__liveitem em {
+  flex: none;
+  font-style: normal;
+  font-size: 8.5px;
+  color: #a09b92;
+}
+
+.mechbar__liveitem--sel {
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 3px 4px;
+  margin-top: 1px;
+  padding-top: 5px;
+  border-top: 1px dashed #eae6df;
+}
