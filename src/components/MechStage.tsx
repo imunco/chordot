@@ -1207,6 +1207,42 @@ export function MechStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, structKey])
 
+  /* ───────── 自动化钩子：确定性推进物理 ───────── */
+
+  // 窗口被遮挡 / 后台时 Chromium 会暂停 rAF，物理就不走了。验证脚本可以调 window.__mechStep(n)
+  // 直接推进 n 个 1/120 s 步，保证「受力 / 轨道 / 播放」这类断言不被窗口可见性干扰。
+  useEffect(() => {
+    const w = window as unknown as { __mechStep?: (steps?: number) => number }
+    const w2 = window as unknown as Record<string, unknown>
+    w.__mechStep = (steps = 1) => {
+      const n = Math.max(1, Math.min(2400, Math.round(steps)))
+      for (let i = 0; i < n; i += 1) stepRef.current(STEP)
+      bump()
+      return n
+    }
+    w2.__mechInfo = () => {
+      const rig = rigRef.current
+      const parts = partsRef.current.map((p) => {
+        const b = rig ? rig.bodies.get(p.id) : undefined
+        return {
+          id: p.id,
+          kind: p.kind,
+          onTrack: p.onTrack ?? null,
+          fixed: Boolean(p.fixed),
+          body: b
+            ? { x: Number(b.position.x.toFixed(3)), y: Number(b.position.y.toFixed(3)), isStatic: b.isStatic, mass: Number(b.mass.toFixed(2)) }
+            : null,
+        }
+      })
+      return { rig: Boolean(rig), bodies: rig ? rig.bodies.size : 0, time: Number(timeRef.current.toFixed(2)), playing: playingRef.current, parts }
+    }
+    return () => {
+      delete w.__mechStep
+      delete (window as unknown as Record<string, unknown>).__mechInfo
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   /* ───────── 交互：选中 / 拖动 / 施力 / 连线 / 测距 ───────── */
 
   /** 拖动时要一起搬的部件：已选集合 + group 同组；locked 不参与 */

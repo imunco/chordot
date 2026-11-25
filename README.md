@@ -4,6 +4,12 @@
 
 ## 能做什么
 
+**启动大厅（0.15.0）**
+每次进入程序先看到大厅：数学 / 物理 / 运动仿真 / 三维 / 机构装配 / 教材实验室 / 符号实验室 / 模板库 八个模式一键进入；
+「新建课件」会先让你设属性（名称、学科、初始画布、网格密度、坐标刻度、角度单位、触控大按钮），并带画布预览；
+「最近课件」「上次打开」「当前正在编辑」从大厅直接继续；标题栏与菜单随时可以「返回大厅」。
+可以在 设置 → 通用 → 启动页 关掉（直接进编辑器），也支持 `?lobby=0`。
+
 **作图**
 点、线段、圆、多边形、函数曲线；拖动顶点或整块图形移动；拖动时实时显示边长。
 
@@ -80,11 +86,12 @@ npm run preview    # 用构建产物启动
 
 ## 验证
 
-三十八套端到端脚本，全部基于真实 Electron 窗口驱动 UI 并断言结果（含机构装配 169 项断言）：
+三十九套端到端脚本，全部基于真实 Electron 窗口驱动 UI 并断言结果（含机构装配 169 项断言、启动大厅 24 项）：
 
 ```bash
 npm run verify:kernel && npm run verify:construct && npm run verify:file
 npm run verify:textbook && npm run verify:bigscreen && npm run verify:mech
+npm run verify:lobby
 # 或逐个跑，清单见 package.json 的 verify:* 脚本
 ```
 

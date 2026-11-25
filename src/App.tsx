@@ -54,6 +54,9 @@ import { UpdateDialog } from './components/UpdateDialog'
 import { useUpdater } from './updater'
 import { PX_PER_UNIT } from './model/scale'
 import { MechBar } from './components/MechBar'
+import { Lobby, type LobbyQuick } from './components/Lobby'
+import { NewDocDialog, type NewDocValues } from './components/NewDocDialog'
+import { cleanFileName, starterScene } from './model/starters'
 import { makeLink, makePart, MECH_GROUND_Y, presetById, type MechPresetId } from './model/mech'
 import {
   conflictScene,
@@ -76,6 +79,25 @@ interface Toast {
   text: string
 }
 
+/**
+ * 启动时是否先显示大厅。
+ * - 主窗口没有查询参数：按设置（默认显示大厅）。
+ * - ?lobby=1 强制显示（验证脚本 / 演示）。
+ * - ?lobby=0 不显示；带其它 query 的窗口（教材独立窗口、符号实验室、?notour=1 的验证脚本）一律直接进编辑器。
+ */
+function shouldShowLobby(): boolean {
+  try {
+    const query = new URLSearchParams(location.search)
+    const force = query.get('lobby')
+    if (force === '0') return false
+    if (force === '1') return true
+    if ([...query.keys()].length > 0) return false
+    return loadSettings().startInLobby !== false
+  } catch {
+    return true
+  }
+}
+
 export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState)
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -84,9 +106,18 @@ export default function App() {
   const [prefsOpen, setPrefsOpen] = useState(false)
   const [prefsTab, setPrefsTab] = useState<'general' | 'look' | 'update' | 'about'>('general')
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
-  // 验证脚本用 ?notour=1 跳过引导，免得遮住要点的按钮
+  /** 启动页：第一次渲染前决定一次，之后由大厅 / 编辑器切换 */
+  const bootLobbyRef = useRef<boolean | null>(null)
+  if (bootLobbyRef.current === null) bootLobbyRef.current = shouldShowLobby()
+  const [lobbyOpen, setLobbyOpen] = useState<boolean>(bootLobbyRef.current)
+  const [newDocOpen, setNewDocOpen] = useState(false)
+  /** 上次打开的课件（大厅「继续上次」） */
+  const [lastFile, setLastFile] = useState<string | null>(null)
+  /** 本次是否已经进过编辑器（大厅「回到编辑」） */
+  const [hasDoc, setHasDoc] = useState(false)
+  // 验证脚本用 ?notour=1 跳过引导，免得遮住要点的按钮；大厅里先不弹引导，进入编辑器再弹
   const [tourOpen, setTourOpen] = useState(
-    () => !location.search.includes('notour') && !loadSettings().onboarded,
+    () => !bootLobbyRef.current && !location.search.includes('notour') && !loadSettings().onboarded,
   )
   const [updateOpen, setUpdateOpen] = useState(false)
   /** 批注偏好恢复完成前不要回写，否则会用默认值盖掉上次的笔 */
@@ -584,13 +615,16 @@ export default function App() {
         if (typeof ui.leftWidth === 'number') dispatch({ type: 'left-width', width: ui.leftWidth })
         if (typeof ui.rightOpen === 'boolean') dispatch({ type: 'right', open: ui.rightOpen })
         if (Array.isArray(ui.recent)) setRecent(ui.recent)
-        // 恢复上次打开的课件
-        if (ui.lastFile) {
+        if (ui.lastFile) setLastFile(ui.lastFile)
+        // 大厅启动时只把「上次打开的课件」做成卡片，不自动打开；
+        // 关掉大厅（设置 / ?lobby=0）时保持原来的「恢复上次课件」行为。
+        if (ui.lastFile && !bootLobbyRef.current) {
           const res = await window.chordot!.openFile(ui.lastFile)
           if (res.path && res.content) {
             const parsed = parseDoc(res.content)
             if ('doc' in parsed) {
               dispatch({ type: 'opened', doc: parsed.doc, file: fileName(res.path), path: res.path })
+              setHasDoc(true)
             }
           }
         }
@@ -967,7 +1001,8 @@ export default function App() {
       toast('打开需要桌面端环境')
       return
     }
-    if (!target && !(await confirmDiscard())) return
+    // 大厅里返回时已经问过未保存修改；编辑器内打开任何文件都先确认
+    if (!lobbyOpen && !(await confirmDiscard())) return
     const res = await api.openFile(target ?? null)
     if (res.canceled) return
     if (res.error || !res.path) {
@@ -981,7 +1016,27 @@ export default function App() {
     }
     dispatch({ type: 'opened', doc: parsed.doc, file: fileName(res.path), path: res.path })
     toast(`已打开 ${fileName(res.path)}`)
-    window.chordot?.getUiState().then((ui) => setRecent(ui.recent ?? [])).catch(() => {})
+    refreshRecent()
+    enterEditor()
+  }
+
+  /** 重新读主进程里的最近列表 / 上次文件（保存、打开、返回大厅后调用） */
+  const refreshRecent = () => {
+    window.chordot
+      ?.getUiState()
+      .then((ui) => {
+        if (Array.isArray(ui.recent)) setRecent(ui.recent)
+        if (ui.lastFile) setLastFile(ui.lastFile)
+      })
+      .catch(() => {})
+  }
+
+  /** 进入编辑器（大厅的所有入口最后都走这里） */
+  const enterEditor = () => {
+    setLobbyOpen(false)
+    setHasDoc(true)
+    // 第一次使用：从大厅进入编辑器后再弹引导，引导里的按钮都真实存在
+    if (!loadSettings().onboarded && !location.search.includes('notour')) setTourOpen(true)
   }
 
   const loadTemplate = async (t: Template) => {
@@ -991,9 +1046,86 @@ export default function App() {
     toast(`已载入「${t.name}」`)
   }
 
+  /** Ctrl+N / 菜单「新建」：先弹属性对话框（大厅和编辑器里都适用） */
   const newDoc = async () => {
+    if (!lobbyOpen && !(await confirmDiscard())) return
+    setNewDocOpen(true)
+  }
+
+  /**
+   * 按新建对话框的属性创建课件：
+   * 名称 → 文件名；画布 → 场景；学科 → 数学 / 物理模式；网格 / 刻度 / 角度 / 触控 → 全局默认。
+   */
+  const startNewDoc = (values: NewDocValues) => {
+    const file = cleanFileName(values.name)
+    const scene = starterScene(values.canvas)
+    patchSettings({
+      grid: values.grid,
+      gridStep: values.gridStep,
+      showTicks: values.showTicks,
+      angleUnit: values.angleUnit,
+      touchDefault: values.touch,
+    })
+    setTouch(values.touch)
+    dispatch({ type: 'scene', scene, file })
+    // 物理场景（斜面 / 运动 / 机构）scene 动作已经自动切物理模式；
+    // 其它画布按用户选的学科补一刀，避免把运动仿真的子状态冲掉。
+    const autoPhysics = scene.kind === 'incline' || scene.kind === 'motion' || scene.kind === 'mech'
+    if (values.subject === 'physics' && !autoPhysics) dispatch({ type: 'mode', mode: 'physics' })
+    if (values.subject === 'math' && autoPhysics) dispatch({ type: 'mode', mode: 'math' })
+    if (state.grid !== values.grid) dispatch({ type: 'grid' })
+    setNewDocOpen(false)
+    enterEditor()
+    toast(`已新建「${file.replace(/\.chordot$/, '')}」`)
+  }
+
+  /** 菜单「清空画布」：保持旧语义 —— 立刻换成空白草图，不弹新建对话框 */
+  const clearCanvas = async () => {
+    if (lobbyOpen) return
     if (!(await confirmDiscard())) return
     newSketch()
+    toast('画布已清空')
+  }
+
+  /** 大厅模式卡：每个模式直接开一张合身的空白课件 */
+  const quickStart = (id: LobbyQuick) => {
+    if (id === 'gallery') {
+      enterEditor()
+      dispatch({ type: 'gallery', open: true })
+      return
+    }
+    if (id === 'lab') {
+      enterEditor()
+      dispatch({ type: 'textbook', open: true })
+      return
+    }
+    if (id === 'symbols') {
+      void window.chordot?.openSymbolWindow?.()
+      toast('符号公式实验室已在独立窗口打开')
+      return
+    }
+    const base = {
+      grid: settings.grid,
+      gridStep: settings.gridStep as 0.5 | 1 | 2,
+      showTicks: settings.showTicks,
+      angleUnit: settings.angleUnit,
+      touch: settings.touchDefault,
+    }
+    const presets: Record<Exclude<LobbyQuick, 'gallery' | 'lab' | 'symbols'>, NewDocValues> = {
+      math: { ...base, name: '未命名课件', subject: 'math', canvas: 'grid' },
+      physics: { ...base, name: '斜面受力', subject: 'physics', canvas: 'incline' },
+      motion: { ...base, name: '运动仿真', subject: 'physics', canvas: 'motion' },
+      solid: { ...base, name: '立体几何', subject: 'math', canvas: 'solid' },
+      mech: { ...base, name: '机构装配', subject: 'physics', canvas: 'mech' },
+    }
+    startNewDoc(presets[id])
+  }
+
+  /** 编辑器标题栏 / 菜单 / 命令面板：回大厅（有未保存修改先问） */
+  const returnToLobby = async () => {
+    if (!(await confirmDiscard())) return
+    refreshRecent()
+    setLobbyOpen(true)
   }
 
   /* ───────── 运动仿真控制 ───────── */
@@ -1714,7 +1846,8 @@ export default function App() {
 
   const paletteItems: PaletteItem[] = useMemo(
     () => [
-      { id: 'new', label: '新建课件', hint: 'Ctrl+N', run: () => void newDoc() },
+      { id: 'new', label: '新建课件（可设属性）', hint: 'Ctrl+N', run: () => void newDoc() },
+      { id: 'home', label: '返回大厅（新建 / 打开 / 换模式）…', run: () => void returnToLobby() },
       { id: 'gallery', label: '模板库…', run: () => dispatch({ type: 'gallery', open: true }) },
       { id: 'textbook', label: '教材实验室：高中物理实验…', run: () => dispatch({ type: 'textbook', open: true }) },
       { id: 'textbook-window', label: '教材实验室：独立窗口（投影 / 双屏）…', run: () => void window.chordot?.openLabWindow() },
@@ -1770,7 +1903,7 @@ export default function App() {
       { id: 'prefs', label: '首选项', run: () => setPrefsOpen(true) },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state.grid, state.mode, state.rightOpen, fit, toast, recent],
+    [state.grid, state.mode, state.rightOpen, fit, toast, recent, returnToLobby],
   )
 
   /* 应用菜单（Alt 唤出菜单栏）：用 ref 拿最新的处理函数，effect 只挂一次 */
@@ -1785,6 +1918,9 @@ export default function App() {
         break
       case 'open-recent':
         if (arg) void openDoc(arg)
+        break
+      case 'home':
+        void returnToLobby()
         break
       case 'clear-recent':
         setRecent([])
@@ -1865,7 +2001,46 @@ export default function App() {
 
   return (
     <div className="app">
-      <TitleBar file={state.file} dirty={state.dirty} />
+      {lobbyOpen ? (
+        <Lobby
+          version={__APP_VERSION__}
+          recent={recent}
+          lastFile={lastFile}
+          currentFile={hasDoc ? state.file : null}
+          onNew={() => setNewDocOpen(true)}
+          onOpen={() => void openDoc()}
+          onOpenRecent={(path) => void openDoc(path)}
+          onResumeLast={() => {
+            if (lastFile) void openDoc(lastFile)
+          }}
+          onResumeCurrent={() => setLobbyOpen(false)}
+          onQuick={quickStart}
+          onPrefs={() => {
+            setPrefsTab('general')
+            setPrefsOpen(true)
+          }}
+          onShortcuts={() => setShortcutsOpen(true)}
+          onTour={() => setTourOpen(true)}
+          onUpdate={() => {
+            void (async () => {
+              const res = await updater.check(false)
+              if (!res) return
+              if (!res.ok) {
+                toast(res.error ?? '检查更新失败，稍后再试')
+                return
+              }
+              if (!res.hasUpdate) {
+                toast('已是最新版本 ' + res.current)
+                return
+              }
+              setUpdateOpen(true)
+            })()
+          }}
+          onDataDir={() => void window.chordot?.store?.open()}
+        />
+      ) : (
+        <>
+      <TitleBar file={state.file} dirty={state.dirty} onHome={() => void returnToLobby()} />
 
       <div className="workspace">
         {state.doc.scene.kind !== 'mech' && (
@@ -2222,7 +2397,7 @@ export default function App() {
               if (cmd === 'open') void openDoc()
               else if (cmd === 'save') void save()
               else if (cmd === 'saveAs') void save(true)
-              else if (cmd === 'clear') void newDoc()
+              else if (cmd === 'clear') void clearCanvas()
               else if (cmd === 'samples') loadIncline()
               else if (cmd === 'triangle') loadTriangle()
               else if (cmd === 'slide') loadSlide()
@@ -2267,6 +2442,25 @@ export default function App() {
         rightOpen={state.rightOpen}
         onToggleMode={toggleMode}
       />
+        </>
+      )}
+
+      {newDocOpen && (
+        <NewDocDialog
+          initial={{
+            name: '',
+            subject: state.mode === 'physics' ? 'physics' : 'math',
+            canvas: 'blank',
+            grid: settings.grid,
+            gridStep: settings.gridStep as 0.5 | 1 | 2,
+            showTicks: settings.showTicks,
+            angleUnit: settings.angleUnit,
+            touch: settings.touchDefault,
+          }}
+          onCancel={() => setNewDocOpen(false)}
+          onCreate={startNewDoc}
+        />
+      )}
 
       {prefsOpen && (
         <Preferences

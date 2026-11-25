@@ -1,5 +1,10 @@
 /** 首次引导 + 设置分页 + 关于页 + 更新页 验证 */
 const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
+// 无显示环境公共设置：关 GPU / 关后台节流 / capturePage 走 CDP 兜底
+require('./verify-setup.cjs')
+
+// 远程桌面 / 无显示环境下截图需要关掉 GPU 合成（capturePage 否则报 UnknownVizError）
+app.disableHardwareAcceleration()
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
@@ -61,7 +66,7 @@ async function main() {
     await js(`localStorage.setItem('chordot.settings', JSON.stringify({ updateAuto: false }))`)
 
     /* —— 1. 首次启动应该出现引导 —— */
-    await win.loadURL('app://chordot/index.html')
+    await win.loadURL('app://chordot/index.html?lobby=0')
     await wait(1600)
     report.tourShown = await js(`!!document.querySelector('.ob')`)
     report.firstStep = await js(`(() => {
@@ -94,7 +99,7 @@ async function main() {
     )
 
     /* —— 3. 重开不再出现 —— */
-    await win.loadURL('app://chordot/index.html')
+    await win.loadURL('app://chordot/index.html?lobby=0')
     await wait(1500)
     report.noTourOnSecondRun = await js(`!document.querySelector('.ob')`)
 

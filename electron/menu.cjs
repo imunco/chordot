@@ -29,6 +29,7 @@ function buildAppMenu({ sendMenu, recent }) {
       submenu: [
         // 这几个快捷键由渲染层统一处理（输入框里也要能用），菜单只做提示，不挂加速键，
         // 免得一次按键走两条路
+        { label: '返回大厅', click: () => sendMenu('home') },
         { label: '新建  Ctrl+N', click: () => sendMenu('new') },
         { label: '打开…  Ctrl+O', click: () => sendMenu('open') },
         { label: '保存  Ctrl+S', click: () => sendMenu('save') },

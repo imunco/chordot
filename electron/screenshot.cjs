@@ -4,6 +4,8 @@ const path = require('node:path')
 const fs = require('node:fs')
 const { pathToFileURL } = require('node:url')
 
+app.disableHardwareAcceleration()
+
 const root = path.join(__dirname, '..')
 const DIST = path.join(root, 'dist')
 const outDir = path.join(root, '.tmp')
@@ -33,7 +35,7 @@ async function main() {
     },
   })
 
-  await win.loadURL('app://chordot/index.html')
+  await win.loadURL('app://chordot/index.html?lobby=0')
   await new Promise((r) => setTimeout(r, 1200))
 
   const shot = async (name) => {

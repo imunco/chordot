@@ -2,6 +2,11 @@
  * 边界与容错巡检：损坏文件、超长表达式、符号键盘、快捷键、极小窗口、空画布导出。
  */
 const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
+// 无显示环境公共设置：关 GPU / 关后台节流 / capturePage 走 CDP 兜底
+require('./verify-setup.cjs')
+
+// 远程桌面 / 无显示环境下截图需要关掉 GPU 合成（capturePage 否则报 UnknownVizError）
+app.disableHardwareAcceleration()
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
@@ -189,6 +194,9 @@ async function main() {
   /* ───── 6. 空画布导出 ───── */
   win.webContents.send('app:menu', 'new')
   await wait(600)
+  // 0.15.0：新建先弹属性对话框，默认空白画布直接创建
+  await js(`document.querySelector('.newdoc__create')?.click()`)
+  await wait(500)
   process.env.CHORDOT_TEST_EXPORT = path.join(work, 'empty.svg')
   win.webContents.send('app:menu', 'export-svg')
   await wait(900)

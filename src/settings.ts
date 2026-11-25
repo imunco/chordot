@@ -21,6 +21,8 @@ export interface Settings {
   touchDefault: boolean
   /** 首次引导是否已完成 */
   onboarded: boolean
+  /** 启动时先显示大厅（选择模式 / 新建 / 打开最近） */
+  startInLobby: boolean
   /** 批注：上次用的颜色 / 粗细 / 笔型 */
   penColor: string
   penWidth: number
@@ -52,6 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reduceMotion: false,
   touchDefault: false,
   onboarded: false,
+  startInLobby: true,
   penColor: '#9a5b4a',
   penWidth: 2.5,
   penMode: 'pen',
@@ -83,6 +86,7 @@ export function loadSettings(): Settings {
       reduceMotion: typeof p.reduceMotion === 'boolean' ? p.reduceMotion : false,
       touchDefault: typeof p.touchDefault === 'boolean' ? p.touchDefault : false,
       onboarded: typeof p.onboarded === 'boolean' ? p.onboarded : false,
+      startInLobby: typeof p.startInLobby === 'boolean' ? p.startInLobby : true,
       penColor: typeof p.penColor === 'string' && /^#[0-9a-f]{6}$/i.test(p.penColor) ? p.penColor : DEFAULT_SETTINGS.penColor,
       penWidth: num(p.penWidth, 1, 8, DEFAULT_SETTINGS.penWidth),
       penMode:

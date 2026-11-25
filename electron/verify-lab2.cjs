@@ -1,5 +1,10 @@
 /** 教材实验室 0.10.2：双指捏合、批注重映射 / 选择 / 淡出 / 持久化、画面导出、双窗口同步 */
 const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
+// 无显示环境公共设置：关 GPU / 关后台节流 / capturePage 走 CDP 兜底
+require('./verify-setup.cjs')
+
+// 远程桌面 / 无显示环境下截图需要关掉 GPU 合成（capturePage 否则报 UnknownVizError）
+app.disableHardwareAcceleration()
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')

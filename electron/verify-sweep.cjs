@@ -3,6 +3,11 @@
  * 只做「发现问题」和「截图」，不写断言的地方也会打印异常。
  */
 const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
+// 无显示环境公共设置：关 GPU / 关后台节流 / capturePage 走 CDP 兜底
+require('./verify-setup.cjs')
+
+// 远程桌面 / 无显示环境下截图需要关掉 GPU 合成（capturePage 否则报 UnknownVizError）
+app.disableHardwareAcceleration()
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
@@ -139,7 +144,7 @@ async function main() {
     })()`)
 
   /* ───────── 1. 首次启动：引导 ───────── */
-  await win.loadURL('app://chordot/index.html')
+  await win.loadURL('app://chordot/index.html?lobby=0')
   await wait(1600)
   const tour = await js(`document.querySelectorAll('.ob').length`)
   if (!tour) note('tour', '首次启动没有出现引导')
@@ -336,6 +341,9 @@ async function main() {
   await key('Escape')
   await wait(200)
   win.webContents.send('app:menu', 'new')
+  await wait(600)
+  // 0.15.0：新建先弹属性对话框，默认空白画布直接创建
+  await js(`document.querySelector('.newdoc__create')?.click()`)
   await wait(600)
   snap = await snapshot()
   if (snap.objects !== 0) note('file', `菜单「新建」后还剩 ${snap.objects} 个对象`)

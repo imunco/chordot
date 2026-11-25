@@ -3,6 +3,11 @@
  * 每个流程都断言结果，失败打 VERIFY FAILED。
  */
 const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
+// 无显示环境公共设置：关 GPU / 关后台节流 / capturePage 走 CDP 兜底
+require('./verify-setup.cjs')
+
+// 远程桌面 / 无显示环境下截图需要关掉 GPU 合成（capturePage 否则报 UnknownVizError）
+app.disableHardwareAcceleration()
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
@@ -255,6 +260,9 @@ async function main() {
   /* ───── 7. 测量：选两个点 ───── */
   // 测量需要草图里的两个点：先新建一张干净的草图
   win.webContents.send('app:menu', 'new')
+  await wait(700)
+  // 0.15.0：菜单「新建」先弹新建属性对话框，默认空白画布直接创建
+  await js(`document.querySelector('.newdoc__create')?.click()`)
   await wait(700)
   await tool('点')
   await worldClick(-2, 3)

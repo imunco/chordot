@@ -3,6 +3,11 @@
  * 用 CHORDOT_FAKE_VERSION 冒充旧版本，让线上 release 看起来是新版本。
  */
 const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
+// 无显示环境公共设置：关 GPU / 关后台节流 / capturePage 走 CDP 兜底
+require('./verify-setup.cjs')
+
+// 远程桌面 / 无显示环境下截图需要关掉 GPU 合成（capturePage 否则报 UnknownVizError）
+app.disableHardwareAcceleration()
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
@@ -71,7 +76,7 @@ async function main() {
     await js(`localStorage.setItem('chordot.settings', JSON.stringify({ updateAuto: true, updateFreq: 'startup', updateCheckedAt: 0, updateSkip: '', updateMuted: false, onboarded: true }))`)
 
     /* —— 1. 启动后自动检查并弹窗 —— */
-    await win.loadURL('app://chordot/index.html')
+    await win.loadURL('app://chordot/index.html?lobby=0')
     let shown = false
     for (let i = 0; i < 40; i++) {
       await wait(500)
@@ -99,13 +104,13 @@ async function main() {
     }
 
     /* —— 3. 忽略后重启不再弹 —— */
-    await win.loadURL('app://chordot/index.html')
+    await win.loadURL('app://chordot/index.html?lobby=0')
     await wait(7000)
     report.noDialogAfterSkip = await js(`!document.querySelector('.update__card')`)
 
     /* —— 4. 不再提醒 —— */
     await setSettings({ updateSkip: '' })
-    await win.loadURL('app://chordot/index.html')
+    await win.loadURL('app://chordot/index.html?lobby=0')
     let again = false
     for (let i = 0; i < 30; i++) {
       await wait(500)
@@ -121,14 +126,14 @@ async function main() {
         return { muted: s.updateMuted === true, autoOff: s.updateAuto === false };
       })()`)
     }
-    await win.loadURL('app://chordot/index.html')
+    await win.loadURL('app://chordot/index.html?lobby=0')
     await wait(6000)
     report.noDialogAfterMute = await js(`!document.querySelector('.update__card')`)
 
     /* —— 5. 设置页手动检查 —— */
     // 关掉自动检查，免得弹窗盖住设置面板
     await setSettings({ updateMuted: false, updateAuto: false, updateSkip: '' })
-    await win.loadURL('app://chordot/index.html')
+    await win.loadURL('app://chordot/index.html?lobby=0')
     await wait(1200)
     await js(`document.querySelector('.toolbar__menu-anchor .tbtn').click()`)
     await wait(200)

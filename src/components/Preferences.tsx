@@ -216,6 +216,15 @@ export function Preferences({
                   offText="关闭"
                 />
               </Row>
+
+              <Row label="启动页" hint="进入程序时先显示大厅（选模式 / 新建 / 打开最近）">
+                <Toggle
+                  on={settings.startInLobby}
+                  onChange={(v) => onChange({ startInLobby: v })}
+                  onText="显示大厅"
+                  offText="直接进编辑器"
+                />
+              </Row>
             </>
           )}
 

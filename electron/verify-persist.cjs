@@ -1,5 +1,10 @@
 /** 本地持久化验证：设置写盘 → 清掉 localStorage → 重启后从磁盘恢复 */
 const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
+// 无显示环境公共设置：关 GPU / 关后台节流 / capturePage 走 CDP 兜底
+require('./verify-setup.cjs')
+
+// 远程桌面 / 无显示环境下截图需要关掉 GPU 合成（capturePage 否则报 UnknownVizError）
+app.disableHardwareAcceleration()
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
@@ -80,7 +85,7 @@ async function main() {
 
   try {
     /* 1. 首次启动：走完引导（Esc = 完成） */
-    await win.loadURL('app://chordot/index.html')
+    await win.loadURL('app://chordot/index.html?lobby=0')
     await wait(1500)
     report.tourShown = await js(`!!document.querySelector('.ob')`)
     await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
@@ -101,7 +106,7 @@ async function main() {
 
     /* 3. 清掉 localStorage，模拟 leveldb 损坏 */
     await js(`localStorage.clear()`)
-    await win.loadURL('app://chordot/index.html')
+    await win.loadURL('app://chordot/index.html?lobby=0')
     await wait(1800)
 
     report.tourAfterWipe = await js(`!!document.querySelector('.ob')`)

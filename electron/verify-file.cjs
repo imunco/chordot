@@ -1,5 +1,10 @@
 /** 保存 / 打开 端到端验证：真实写盘、真实读回 */
 const { app, BrowserWindow, dialog, ipcMain, net, protocol } = require('electron')
+// 无显示环境公共设置：关 GPU / 关后台节流 / capturePage 走 CDP 兜底
+require('./verify-setup.cjs')
+
+// 远程桌面 / 无显示环境下截图需要关掉 GPU 合成（capturePage 否则报 UnknownVizError）
+app.disableHardwareAcceleration()
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
@@ -109,9 +114,13 @@ async function main() {
   report.titleAfterSave = await js(`document.querySelector('.titlebar__file').textContent`)
   report.dirtyAfterSave = await js(`!!document.querySelector('.titlebar__dirty')`)
 
-  /* Ctrl+N 新建：保存后 dirty=false，不应弹确认 */
+  /* Ctrl+N 新建：0.15.0 起先弹新建属性对话框，默认空白画布直接创建；
+     保存后 dirty=false，不应弹未保存确认 */
   await js(`window.__key('n', { ctrlKey: true })`)
-  await wait(400)
+  await wait(500)
+  report.newDialog = await js(`!!document.querySelector('.newdoc')`)
+  await js(`document.querySelector('.newdoc__create')?.click()`)
+  await wait(600)
   report.afterNew = await rows()
 
   /* Ctrl+O 打开刚才的文件 */

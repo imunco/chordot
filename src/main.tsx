@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { flushSync } from 'react-dom'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { LabWindow } from './components/LabWindow'
@@ -9,6 +10,8 @@ import './styles/tokens.css'
 import './styles/app.css'
 // 机构装配（物理模式）的专属样式：面板 / 图标网格 / 世界面板，覆盖 app.css 里的旧 .mechbar 规则
 import './styles/mech.css'
+// 启动大厅与新建课件对话框
+import './styles/lobby.css'
 
 /**
  * 先把磁盘上的用户数据同步回 localStorage 再渲染，
@@ -22,17 +25,20 @@ async function boot() {
 
   // 本地数据最多等 1.2s，等太久不如先出界面
   await Promise.race([hydrate(), new Promise((r) => setTimeout(r, 1200))])
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <ErrorBoundary>
-        {symbols ? <SymbolLab /> : lab ? <LabWindow initialId={labId} /> : <App />}
-      </ErrorBoundary>
-    </StrictMode>,
-  )
-  // 首帧画完再撤启动占位，避免闪一下白屏
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => document.getElementById('boot')?.remove())
+  const root = createRoot(document.getElementById('root')!)
+  // 同步提交首帧：撤启动占位不能只靠两帧 rAF —— 窗口在后台 / 远程桌面时 rAF 会被节流，
+  // #boot 会一直盖在画布上挡住鼠标事件（验证脚本踩过：elementFromPoint 返回 #boot）。
+  flushSync(() => {
+    root.render(
+      <StrictMode>
+        <ErrorBoundary>
+          {symbols ? <SymbolLab /> : lab ? <LabWindow initialId={labId} /> : <App />}
+        </ErrorBoundary>
+      </StrictMode>,
+    )
   })
+  document.getElementById('boot')?.remove()
+  requestAnimationFrame(() => document.getElementById('boot')?.remove())
 }
 
 void boot()

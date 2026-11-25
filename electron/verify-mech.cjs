@@ -1,5 +1,10 @@
 /** 机构装配（mech）+ 符号公式实验室（独立窗口）验证（v0.14.0：23 部件 / 10 连接 / 18 预设） */
 const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
+// 无显示环境公共设置：关 GPU / 关后台节流 / capturePage 走 CDP 兜底
+require('./verify-setup.cjs')
+
+// 远程桌面 / 无显示环境下截图需要关掉 GPU 合成（capturePage 否则报 UnknownVizError）
+app.disableHardwareAcceleration()
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
@@ -340,11 +345,18 @@ app.whenReady().then(async () => {
     await wait(ms || 780)
   }
   const openEmpty = async () => {
-    await js('document.querySelector(".toolbar__menu-anchor .tbtn").click()')
-    await wait(220)
-    const ok = await js('(function () { var b = [...document.querySelectorAll(".menu__item")].find(function (x) { return x.textContent.includes("空白装配台") }); if (!b) return false; b.click(); return true })()')
-    await wait(650)
-    return ok
+    // 菜单弹出有 React 状态延迟；窗口被遮挡时更慢，重试几次再判失败
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await js('document.querySelector(".toolbar__menu-anchor .tbtn").click()')
+      await wait(300)
+      const ok = await js('(function () { var b = [...document.querySelectorAll(".menu__item")].find(function (x) { return x.textContent.includes("空白装配台") }); if (!b) return false; b.click(); return true })()')
+      if (ok) {
+        await wait(800)
+        return true
+      }
+      await wait(200)
+    }
+    return false
   }
   const tapPart = async (kind, idx, mods) => {
     const ok = await js('window.__v.tapDown(' + JSON.stringify(kind) + ', ' + (idx === undefined ? 0 : idx) + ', ' + JSON.stringify(mods || {}) + ')')
@@ -828,9 +840,13 @@ app.whenReady().then(async () => {
     check(String(report.bridge.expr).includes('k'), '公式没有发到机构（' + report.bridge.expr + '）')
     check(report.bridge.on === true, '发过来的公式没有自动启用')
 
-    // 关掉符号窗口：它一开着，主窗口的 rAF 会被后台节流，后面测轨道 / 播放就不动了
+    // 关掉符号窗口：它一开着，主窗口可能被判定为遮挡，rAF 暂停 → 后面的轨道 / 播放测试会假失败。
+    // 关掉后把主窗口重新抬到前台再继续。
     symbolWin.close()
-    await wait(500)
+    win.show()
+    win.focus()
+    win.moveTop()
+    await wait(900)
   }
 
   /* ── 8. 滑轮组 / 铰链 / 轨道约束 / 受力分解 / 复制与成组（老断言） ── */
@@ -911,20 +927,45 @@ app.whenReady().then(async () => {
     '})()')
   check(railSel, '没有「轨道约束」下拉')
   await wait(320)
-  const ballPos = async () => {
+  // 用 world 坐标（data-x / data-y）而不是屏幕 rect：窗口缩放 / 遮挡时 rect 可能不刷新
+  const ballWorld = async () => {
     const p = await readPart('ball', -1)
-    return p ? { x: Math.round(p.sx), y: Math.round(p.sy) } : null
+    return p && Number.isFinite(p.x) ? { x: p.x, y: p.y } : null
   }
-  await ensurePlaying(true)
-  await wait(450)
-  const rp1 = await ballPos()
-  await wait(800)
-  const rp2 = await ballPos()
+  let minX = Infinity
+  let maxX = -Infinity
+  let minY = Infinity
+  let maxY = -Infinity
+  let sampled = 0
+  const sampleOnce = async () => {
+    const p = await ballWorld()
+    if (!p) return
+    sampled += 1
+    if (p.x < minX) minX = p.x
+    if (p.x > maxX) maxX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.y > maxY) maxY = p.y
+  }
+  const playing0 = await ensurePlaying(true)
+  for (let i = 0; i < 14; i += 1) {
+    await wait(150)
+    await sampleOnce()
+  }
+  // 窗口被遮挡 / 后台时 Chromium 会暂停 rAF，物理就不前进（表现为小球完全不动）。
+  // MechStage 暴露了 window.__mechStep(n)：确定性推进 n 个 1/120 s 步，自动化环境兜底。
+  let stepped = 0
+  let railInfo = null
+  if (Number.isFinite(minX) && maxX - minX < 0.05) {
+    railInfo = await js('window.__mechInfo ? window.__mechInfo() : null')
+    stepped = await js('window.__mechStep ? window.__mechStep(200) : 0')
+    await sampleOnce()
+    railInfo = { before: railInfo, after: await js('window.__mechInfo ? window.__mechInfo() : null') }
+  }
   await ensurePlaying(false)
-  report.rail = { p1: rp1, p2: rp2 }
-  const rdx = rp1 && rp2 ? Math.abs(rp2.x - rp1.x) : 0
-  const rdy = rp1 && rp2 ? Math.abs(rp2.y - rp1.y) : 0
-  check(rdx > 5, '轨道约束下小球没有沿轨道移动（dx=' + rdx + '）')
+  const rdx = Number.isFinite(minX) ? maxX - minX : 0
+  const rdy = Number.isFinite(minY) ? maxY - minY : 0
+  report.rail = { playing: playing0, samples: sampled, stepped: stepped, info: railInfo, dx: rdx, dy: rdy }
+  check(rdx > 0.05, '轨道约束下小球没有沿轨道移动（dx=' + rdx.toFixed(3) + '）')
   check(rdx > 0 && rdy / rdx > 0.15 && rdy / rdx < 0.7, '小球没按 20° 轨道滑（dy/dx=' + (rdx ? (rdy / rdx).toFixed(3) : 'n/a') + '）')
 
   // 复制部件 / 成组拖动（弹簧振子：球 + 锚点成组，拖球锚点跟着走）

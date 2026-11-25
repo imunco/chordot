@@ -1,5 +1,10 @@
 /** 内核端到端验证：真实窗口里切换示例、模拟拖动、读回几何与受力数值 */
 const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
+// 无显示环境公共设置：关 GPU / 关后台节流 / capturePage 走 CDP 兜底
+require('./verify-setup.cjs')
+
+// 远程桌面 / 无显示环境下截图需要关掉 GPU 合成（capturePage 否则报 UnknownVizError）
+app.disableHardwareAcceleration()
 const path = require('node:path')
 const fs = require('node:fs')
 const os = require('node:os')
