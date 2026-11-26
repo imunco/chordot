@@ -11,7 +11,7 @@ export function LabWindow({ initialId }: { initialId?: string }) {
   const [id, setId] = useState<string | undefined>(initialId)
 
   useEffect(() => {
-    document.title = '教材实验室 · 弦点'
+    document.title = '教材实验室与模型 · 弦点'
     document.documentElement.dataset.lab = '1'
     const off = window.chordot?.onLabSwitch?.((next) => {
       if (next) setId(next)

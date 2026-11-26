@@ -6903,3 +6903,99 @@ html[data-capturing='1'][data-sheet='1'] .lab__notes {
   display: inline-flex;
   align-items: center;
 }
+
+/* ───────── 0.17：全局演示工具（聚光灯 / 放大镜） ───────── */
+.presenttools-spot {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+  background: radial-gradient(
+    circle var(--pr) at var(--px) var(--py),
+    rgba(20, 20, 18, 0) 0,
+    rgba(20, 20, 18, 0.18) calc(var(--pr) * 0.86),
+    rgba(20, 20, 18, 0.66) var(--pr)
+  );
+  transition: background 60ms linear;
+}
+
+.presenttools-lens {
+  position: fixed;
+  z-index: 71;
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
+  background: #fafaf8;
+  border: 2px solid rgba(61, 90, 102, 0.55);
+  box-shadow:
+    0 0 0 6px rgba(255, 255, 255, 0.55),
+    0 14px 36px rgba(31, 31, 29, 0.28);
+}
+
+.presenttools-lens__inner {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.presenttools-lens__badge {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: #fff;
+  background: rgba(31, 31, 29, 0.55);
+  border-radius: 999px;
+}
+
+.presenttools-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 92px;
+  z-index: 72;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  transform: translateX(-50%);
+  font-size: 12px;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(31, 31, 29, 0.16);
+}
+
+.presenttools-bar__name {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.presenttools-bar__range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.presenttools-bar__range input {
+  width: 120px;
+  accent-color: var(--accent);
+}
+
+.presenttools-bar__close {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.presenttools-bar__close:hover {
+  color: var(--text-primary);
+  background: var(--hover);
+}

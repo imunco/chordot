@@ -1,6 +1,10 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { EXPERIMENTS } from '../data/textbook'
+import { LAB_MODELS } from '../data/labModels'
+
+/** 教材实验 + 模型专题：列表、搜索、上一个 / 下一个都走这一份 */
+const ALL_LAB = [...EXPERIMENTS, ...LAB_MODELS]
 import { labModel } from '../lab/models'
 import {
   BOOK_ORDER,
@@ -141,13 +145,13 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
     () => standalone || window.innerWidth >= 1500,
   )
   const [id, setId] = useState<string>(() => {
-    const first = initialId && EXPERIMENTS.some((e) => e.id === initialId) ? initialId : null
+    const first = initialId && ALL_LAB.some((e) => e.id === initialId) ? initialId : null
     const last = readList(RECENT_KEY)[0]
-    const validLast = last && EXPERIMENTS.some((e) => e.id === last) ? last : null
-    return first ?? validLast ?? EXPERIMENTS[0].id
+    const validLast = last && ALL_LAB.some((e) => e.id === last) ? last : null
+    return first ?? validLast ?? ALL_LAB[0].id
   })
 
-  const exp = EXPERIMENTS.find((e) => e.id === id) ?? EXPERIMENTS[0]
+  const exp = ALL_LAB.find((e) => e.id === id) ?? ALL_LAB[0]
 
   const toggleFav = (target: string) => {
     const next = fav.includes(target) ? fav.filter((x) => x !== target) : [...fav, target]
@@ -167,7 +171,7 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
   /** 另一个窗口切了实验：跟着切，但不要再广播回去（否则两边互相打断） */
   useEffect(() => {
     const off = window.chordot?.onLabSync?.((next) => {
-      if (!next || next === id || !EXPERIMENTS.some((e) => e.id === next)) return
+      if (!next || next === id || !ALL_LAB.some((e) => e.id === next)) return
       setId(next)
       const list = [next, ...readList(RECENT_KEY).filter((x) => x !== next)].slice(0, 6)
       setRecent(list)
@@ -189,8 +193,8 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
   }
 
   const step = (dir: 1 | -1) => {
-    const i = EXPERIMENTS.findIndex((q) => q.id === id)
-    pick(EXPERIMENTS[(i + dir + EXPERIMENTS.length) % EXPERIMENTS.length].id)
+    const i = ALL_LAB.findIndex((q) => q.id === id)
+    pick(ALL_LAB[(i + dir + ALL_LAB.length) % ALL_LAB.length].id)
   }
 
   const openWindow = () => {
@@ -208,7 +212,7 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return EXPERIMENTS.filter((e) => {
+    return ALL_LAB.filter((e) => {
       if (favOnly && !fav.includes(e.id)) return false
       if (book === '最近' && !recent.includes(e.id)) return false
       if (book !== '全部' && book !== '最近' && e.book !== book) return false
@@ -232,12 +236,12 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
       if (document.querySelector('.screenink[data-active="true"]')) return
       if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
         e.preventDefault()
-        const i = EXPERIMENTS.findIndex((q) => q.id === id)
-        pick(EXPERIMENTS[(i + 1) % EXPERIMENTS.length].id)
+        const i = ALL_LAB.findIndex((q) => q.id === id)
+        pick(ALL_LAB[(i + 1) % ALL_LAB.length].id)
       } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
         e.preventDefault()
-        const i = EXPERIMENTS.findIndex((q) => q.id === id)
-        pick(EXPERIMENTS[(i - 1 + EXPERIMENTS.length) % EXPERIMENTS.length].id)
+        const i = ALL_LAB.findIndex((q) => q.id === id)
+        pick(ALL_LAB[(i - 1 + ALL_LAB.length) % ALL_LAB.length].id)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -257,7 +261,7 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
           <div className="lab__brand">
             <span className="lab__mark">教材</span>
             <div>
-              <div className="lab__brandline">高中物理教材实验</div>
+              <div className="lab__brandline">高中物理教材实验与模型</div>
               <div className="lab__sub">人教版（2019）· 课标 2017 年版 2020 年修订</div>
             </div>
           </div>
@@ -273,7 +277,7 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
                 onChange={(e) => pick(e.target.value)}
                 aria-label="选择实验"
               >
-                {EXPERIMENTS.map((e, i) => (
+                {ALL_LAB.map((e, i) => (
                   <option key={e.id} value={e.id}>
                     {String(i + 1).padStart(2, '0')} · {e.name}
                   </option>
@@ -295,7 +299,7 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
                     onChange={(e) => pick(e.target.value)}
                     aria-label="选择实验"
                   >
-                    {EXPERIMENTS.map((e, i) => (
+                    {ALL_LAB.map((e, i) => (
                       <option key={e.id} value={e.id}>
                         {String(i + 1).padStart(2, '0')} · {e.name}
                       </option>
@@ -311,11 +315,11 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
                   />
                 )}
                 <span className="lab__total">
-                  {focus ? EXPERIMENTS.length : list.length} / {EXPERIMENTS.length} 个实验
+                  {focus ? ALL_LAB.length : list.length} / {ALL_LAB.length} 个实验 / 模型
                 </span>
               </>
             )}
-            {standalone && <span className="lab__total">{EXPERIMENTS.length} 个实验</span>}
+            {standalone && <span className="lab__total">{ALL_LAB.length} 个实验 / 模型</span>}
             {!standalone && (
               <button
                 className="lab__mode"
@@ -355,10 +359,10 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
                   {b}
                   <span className="lab__bookn">
                     {b === '全部'
-                      ? EXPERIMENTS.length
+                      ? ALL_LAB.length
                       : b === '最近'
                         ? recent.length
-                        : EXPERIMENTS.filter((e) => e.book === b).length}
+                        : ALL_LAB.filter((e) => e.book === b).length}
                   </span>
                 </button>
               ))}
@@ -401,7 +405,7 @@ export function Textbook({ onClose, initialId, standalone = false }: Props) {
                     if (ev.key === 'Enter' || ev.key === ' ') pick(e.id)
                   }}
                 >
-                  <span className="lab__itemno">{String(EXPERIMENTS.indexOf(e) + 1).padStart(2, '0')}</span>
+                  <span className="lab__itemno">{String(ALL_LAB.indexOf(e) + 1).padStart(2, '0')}</span>
                   <span className="lab__itemmain">
                     <span className="lab__itemname">{e.short}</span>
                     <span className="lab__itemmeta">

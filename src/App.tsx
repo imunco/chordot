@@ -55,6 +55,7 @@ import { UpdateDialog } from './components/UpdateDialog'
 import { useUpdater } from './updater'
 import { PX_PER_UNIT } from './model/scale'
 import { MechBar } from './components/MechBar'
+import { PresentTools } from './components/PresentTools'
 import {
   Lobby,
   type LobbyQuick,
@@ -158,6 +159,7 @@ export default function App() {
   })
   const [presenterTick, setPresenterTick] = useState(0)
   const [slideIndex, setSlideIndex] = useState(0)
+  const [presentTool, setPresentTool] = useState<'spot' | 'lens' | null>(null)
   const [dropActive, setDropActive] = useState(false)
   const [slowStart, setSlowStart] = useState(0)
   const slides = state.doc.meta?.slides ?? []
@@ -1377,6 +1379,7 @@ export default function App() {
     if (!(await confirmDiscard())) return
     refreshRecent()
     void refreshLibrary()
+    setPresentTool(null)
     setLobbyOpen(true)
   }
 
@@ -2433,6 +2436,16 @@ export default function App() {
       { id: 'gallery', label: '模板库（独立窗口）…', run: () => openGalleryEntry() },
       { id: 'textbook', label: '教材实验室（独立窗口）…', run: () => openLabEntry() },
       { id: 'presenter', label: '演示者模式（全屏 / 计时 / 镜头翻页）', run: () => startPresenter() },
+      {
+        id: 'spotlight',
+        label: '聚光灯（全局：压暗四周看局部）',
+        run: () => setPresentTool((v) => (v === 'spot' ? null : 'spot')),
+      },
+      {
+        id: 'magnifier',
+        label: '放大镜（全局：跟随指针放大画布）',
+        run: () => setPresentTool((v) => (v === 'lens' ? null : 'lens')),
+      },
       { id: 'export-pdf', label: '导出 PDF 讲义…', run: () => void exportPDFSheet() },
       { id: 'history', label: '版本历史…', run: () => void openHistory() },
       { id: 'library-add', label: '保存到课件库', run: () => void saveToLibrary() },
@@ -2576,6 +2589,12 @@ export default function App() {
         break
       case 'presenter':
         startPresenter()
+        break
+      case 'spotlight':
+        setPresentTool((v) => (v === 'spot' ? null : 'spot'))
+        break
+      case 'magnifier':
+        setPresentTool((v) => (v === 'lens' ? null : 'lens'))
         break
       case 'tour':
         setTourOpen(true)
@@ -3073,6 +3092,10 @@ export default function App() {
               else if (cmd === 'export-pdf') void exportPDFSheet()
               else if (cmd === 'history') void openHistory()
               else if (cmd === 'library-add') void saveToLibrary()
+              else if (cmd === 'spotlight')
+                setPresentTool((v) => (v === 'spot' ? null : 'spot'))
+              else if (cmd === 'magnifier')
+                setPresentTool((v) => (v === 'lens' ? null : 'lens'))
               else if (cmd === 'palette') dispatch({ type: 'palette', open: true })
               else if (cmd === 'shortcuts') setShortcutsOpen(true)
               else setPrefsOpen(true)
@@ -3221,6 +3244,9 @@ export default function App() {
           </button>
         </div>
       )}
+
+      {/* 全局演示工具：聚光灯 / 放大镜（任何模式都能用） */}
+      {!lobbyOpen && <PresentTools tool={presentTool} onClose={() => setPresentTool(null)} />}
 
       {/* 版本历史 */}
       {historyOpen && (

@@ -49,6 +49,8 @@ interface Props {
       | 'history'
       | 'library-add'
       | 'presenter'
+      | 'spotlight'
+      | 'magnifier'
       | 'prefs'
       | 'shortcuts'
       | 'samples'
@@ -168,6 +170,8 @@ export function Toolbar(props: Props) {
       | 'history'
       | 'library-add'
       | 'presenter'
+      | 'spotlight'
+      | 'magnifier'
       | 'prefs'
       | 'shortcuts'
       | 'samples'
@@ -416,6 +420,12 @@ export function Toolbar(props: Props) {
               <div className="menu__sep" />
               <button className="menu__item" onClick={() => runCommand('presenter')}>
                 演示者模式（全屏）
+              </button>
+              <button className="menu__item" onClick={() => runCommand('spotlight')}>
+                聚光灯（全局）
+              </button>
+              <button className="menu__item" onClick={() => runCommand('magnifier')}>
+                放大镜（全局）
               </button>
               <button className="menu__item" onClick={() => runCommand('history')}>
                 版本历史…

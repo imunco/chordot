@@ -6,7 +6,7 @@
  * 不做逐帧积分，所以拖时间、暂停、换参数都能得到同一套数值。
  */
 
-export type LabBook = '必修一' | '必修二' | '必修三' | '选必一' | '选必二' | '选必三'
+export type LabBook = '必修一' | '必修二' | '必修三' | '选必一' | '选必二' | '选必三' | '模型'
 
 export type LabField = '力学' | '电磁学' | '光学' | '热学' | '实验技能'
 
@@ -33,6 +33,7 @@ export type StageKind =
   | 'sensor'
   | 'oilfilm'
   | 'gas'
+  | 'model'
 
 export interface LabControl {
   id: string
@@ -53,6 +54,21 @@ export interface LabSelect {
   options: { value: string; label: string }[]
 }
 
+/** 模型专题的演示类型（stage = 'model' 时使用） */
+export type LabModelType =
+  | 'boat'
+  | 'board'
+  | 'belt'
+  | 'pursuit'
+  | 'connected'
+  | 'orbit'
+  | 'charge'
+  | 'twinRod'
+  | 'slope'
+  | 'wave'
+  | 'levels'
+  | 'cyclotron'
+
 export interface LabExperiment {
   id: string
   name: string
@@ -62,8 +78,10 @@ export interface LabExperiment {
   chapter: string
   section: string
   field: LabField
-  kind: '分组实验' | '探究实验' | '验证实验' | '演示实验'
+  kind: '分组实验' | '探究实验' | '验证实验' | '演示实验' | '模型'
   stage: StageKind
+  /** stage = 'model' 时的场景类型 */
+  modelType?: LabModelType
   /** 一句话通俗解释，列表与标题下都显示 */
   tagline: string
   principle: string
@@ -139,6 +157,6 @@ export const FIELD_COLOR: Record<LabField, string> = {
   实验技能: '#4a6b55',
 }
 
-export const BOOK_ORDER: LabBook[] = ['必修一', '必修二', '必修三', '选必一', '选必二', '选必三']
+export const BOOK_ORDER: LabBook[] = ['必修一', '必修二', '必修三', '选必一', '选必二', '选必三', '模型']
 
 export const FIELD_ORDER: LabField[] = ['力学', '电磁学', '光学', '热学', '实验技能']

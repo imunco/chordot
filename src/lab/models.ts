@@ -1,4 +1,5 @@
 import type { LabExperiment, LabModel, LabParams, Reading } from './types'
+import { modelModel } from './modelModels'
 
 /**
  * 每个演示台的「物理模型」。
@@ -1003,6 +1004,9 @@ export function labModel(exp: LabExperiment, p: LabParams, t: number): LabModel 
         g: { V, P, pV, T, Vmax },
       }
     }
+
+    case 'model':
+      return modelModel(exp, p, t)
 
     default:
       return { readings: [], g: {} }

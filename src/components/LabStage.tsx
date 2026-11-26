@@ -1,6 +1,7 @@
 import type { LabExperiment, LabModel } from '../lab/types'
 import { fmtSci } from '../lab/models'
 import { Arrow, Bench, Box, Dial, Flow, Grid, INK, LINE, LabTextScale, PAPER, Shadow, SOFT, Tag, Txt, WARN } from './labkit'
+import { ModelStage } from './ModelStage'
 
 interface Props {
   exp: LabExperiment
@@ -95,6 +96,8 @@ function renderStage(exp: LabExperiment, m: LabModel, t: number) {
       return <OilFilmStage m={m} t={t} />
     case 'gas':
       return <GasStage m={m} t={t} />
+    case 'model':
+      return <ModelStage exp={exp} m={m} />
     default:
       return null
   }
