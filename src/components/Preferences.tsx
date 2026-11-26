@@ -76,6 +76,11 @@ export function Preferences({
   initialTab = 'general',
 }: Props) {
   const [tab, setTab] = useState<Tab>(initialTab)
+  const [jellyKey, setJellyKey] = useState(0)
+  const chooseTheme = (theme: Settings['theme']) => {
+    onChange({ theme })
+    setJellyKey((n) => n + 1)
+  }
   useEscape(true, onClose)
   const [mirrors, setMirrors] = useState<{ id: string; name: string }[]>(MIRROR_FALLBACK)
   const [probe, setProbe] = useState<{ id: string; name: string; ms: number }[] | null>(null)
@@ -287,6 +292,30 @@ export function Preferences({
                   <span>界面主题</span>
                   <i>切换后立即生效，所有窗口同步</i>
                 </div>
+                <div className="theme-seg" data-value={settings.theme} role="tablist" aria-label="界面主题">
+                  <span className="theme-seg__thumb" aria-hidden="true">
+                    <i key={jellyKey} className="theme-seg__thumb-inner" />
+                  </span>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={settings.theme === 'paper'}
+                    data-active={settings.theme === 'paper'}
+                    onClick={() => chooseTheme('paper')}
+                  >
+                    纸面
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={settings.theme === 'glass'}
+                    data-active={settings.theme === 'glass'}
+                    onClick={() => chooseTheme('glass')}
+                  >
+                    液态玻璃
+                  </button>
+                </div>
+
                 <div className="theme-picker__grid">
                   <button
                     className="theme-card"

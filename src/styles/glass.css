@@ -1657,3 +1657,291 @@ html[data-theme='glass'] .right {
 }
 @media (prefers-reduced-motion: reduce) { html[data-theme='glass'] .lobby__mark { animation: none !important; } }
 html[data-theme='glass'][data-reduce-motion='on'] .lobby__mark { animation: none !important; }
+
+/* ══════════════════════════════════════════════════════════════
+   v7：果冻感按钮 / 主题分段开关；只动 transform，不触发布局
+   ══════════════════════════════════════════════════════════════ */
+
+:root {
+  --ease-jelly: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 主题分段开关：底槽 + 会滑动、会压扁的玻璃药丸 */
+.theme-seg {
+  --seg-index: 0;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 36px;
+  margin: 0 0 10px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ece9e3;
+  box-shadow: inset 0 1px 2px rgba(31, 31, 29, 0.05);
+  isolation: isolate;
+}
+
+.theme-seg[data-value='paper'] {
+  --seg-index: 0;
+}
+
+.theme-seg[data-value='glass'] {
+  --seg-index: 1;
+}
+
+.theme-seg__thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  z-index: 0;
+  width: calc(50% - 3px);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  background: linear-gradient(158deg, #ffffff 0%, #f7f6f3 52%, #ecebe7 100%);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -1px 0 rgba(31, 31, 29, 0.06),
+    0 3px 8px rgba(31, 31, 29, 0.14);
+  transform: translateX(calc(var(--seg-index) * 100%));
+  transform-origin: 50% 50%;
+  transition:
+    transform 480ms var(--ease-jelly),
+    box-shadow 220ms ease,
+    background 220ms ease;
+  pointer-events: none;
+}
+
+.theme-seg__thumb::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  background: linear-gradient(118deg, rgba(255, 255, 255, 0.95), transparent 42%, rgba(255, 255, 255, 0.35));
+  pointer-events: none;
+}
+
+.theme-seg button {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: color 200ms ease, transform 180ms var(--ease-jelly);
+}
+
+.theme-seg button[data-active='true'] {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.theme-seg button:active {
+  transform: scale(0.94);
+}
+
+/* 按下去的时候拇指变矮变宽，松开弹回；像果冻被压了一下 */
+.theme-seg:has(button:active) .theme-seg__thumb {
+  transform: translateX(calc(var(--seg-index) * 100%)) scale(0.94, 0.86);
+  transition-duration: 90ms;
+}
+
+/* 玻璃主题：底槽和拇指也变成玻璃 */
+html[data-theme='glass'] .theme-seg {
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  backdrop-filter: blur(12px) saturate(1.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(30, 60, 90, 0.1),
+    0 6px 16px rgba(25, 50, 78, 0.08);
+}
+
+html[data-theme='glass'] .theme-seg__thumb {
+  border-color: rgba(255, 255, 255, 0.92);
+  background: linear-gradient(158deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.66) 55%, rgba(240, 247, 255, 0.78));
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -1px 0 rgba(30, 60, 90, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 4px 12px rgba(25, 50, 78, 0.16);
+}
+
+html[data-theme='glass'] .theme-seg button {
+  color: rgba(30, 50, 68, 0.62);
+}
+
+html[data-theme='glass'] .theme-seg button[data-active='true'] {
+  color: #14202a;
+}
+
+/* 按钮的果冻回弹：按下快速压扁，松开用弹簧曲线回来 */
+html[data-theme='glass'] .lobby__primary,
+html[data-theme='glass'] .lobby__ghost,
+html[data-theme='glass'] .lobby__iconbtn,
+html[data-theme='glass'] .theme-card,
+html[data-theme='glass'] .theme-seg button {
+  transition-timing-function: var(--ease-jelly);
+}
+
+html[data-theme='glass'] .lobby__primary:active,
+html[data-theme='glass'] .lobby__ghost:active,
+html[data-theme='glass'] .lobby__iconbtn:active,
+html[data-theme='glass'] .theme-card:active {
+  transform: scale(0.96);
+  transition-duration: 90ms;
+}
+
+html[data-theme='glass'] .lobby__mode:active {
+  transform: translate3d(0, -1px, 0) scale(0.975);
+  transition-duration: 90ms;
+}
+
+/* 模式卡只对 transform 做过渡；阴影瞬间到位，少一轮大面积重绘 */
+html[data-theme='glass'] .lobby__mode {
+  transition:
+    transform 240ms var(--ease-jelly),
+    background 220ms var(--ease-out-quart),
+    border-color 220ms var(--ease-out-quart);
+}
+
+html[data-theme='glass'] .lobby__mode:hover {
+  will-change: transform;
+}
+
+/* 主题按钮图标切换时弹一下 */
+html[data-theme='glass'] [data-theme-toggle] svg {
+  animation: icon-jelly 460ms var(--ease-jelly) both;
+  transform-origin: 50% 50%;
+}
+
+@keyframes icon-jelly {
+  0% {
+    transform: scale(0.72) rotate(-10deg);
+    opacity: 0.55;
+  }
+  55% {
+    transform: scale(1.14) rotate(4deg);
+    opacity: 1;
+  }
+  78% {
+    transform: scale(0.97) rotate(-1.5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+/* 手指 / 鼠标抬起后的回弹也保持弹簧感 */
+html[data-theme='glass'] .lobby__iconbtn,
+html[data-theme='glass'] .lobby__primary,
+html[data-theme='glass'] .lobby__ghost,
+html[data-theme='glass'] .theme-card {
+  transition:
+    transform 300ms var(--ease-jelly),
+    background 200ms ease,
+    box-shadow 220ms ease,
+    border-color 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-seg__thumb,
+  .theme-seg button,
+  html[data-theme='glass'] .lobby__mode,
+  html[data-theme='glass'] .lobby__primary,
+  html[data-theme='glass'] .lobby__ghost,
+  html[data-theme='glass'] .lobby__iconbtn,
+  html[data-theme='glass'] .theme-card,
+  html[data-theme='glass'] [data-theme-toggle] svg {
+    animation: none !important;
+    transition-duration: 0ms !important;
+  }
+}
+
+/* ── 拇指内层：滑动由外层负责，内层单独做一次挤压 / 回弹，叠起来就是果冻 ── */
+.theme-seg__thumb {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.theme-seg__thumb-inner {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  background: linear-gradient(158deg, #ffffff 0%, #f7f6f3 52%, #ecebe7 100%);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -1px 0 rgba(31, 31, 29, 0.06),
+    0 3px 8px rgba(31, 31, 29, 0.14);
+  transform-origin: 50% 50%;
+  animation: thumb-jelly 520ms var(--ease-jelly);
+  will-change: transform;
+}
+
+.theme-seg__thumb-inner::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  background: linear-gradient(118deg, rgba(255, 255, 255, 0.95), transparent 42%, rgba(255, 255, 255, 0.35));
+  pointer-events: none;
+}
+
+html[data-theme='glass'] .theme-seg__thumb-inner {
+  border-color: rgba(255, 255, 255, 0.92);
+  background: linear-gradient(158deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.66) 55%, rgba(240, 247, 255, 0.78));
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -1px 0 rgba(30, 60, 90, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 4px 12px rgba(25, 50, 78, 0.16);
+}
+
+@keyframes thumb-jelly {
+  0% {
+    transform: scale(1, 1);
+  }
+  26% {
+    transform: scale(1.045, 0.9);
+  }
+  52% {
+    transform: scale(0.972, 1.025);
+  }
+  74% {
+    transform: scale(1.014, 0.988);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+/* 底槽再深一点，白色药丸才立得起来 */
+html[data-theme='glass'] .theme-seg {
+  background: rgba(38, 68, 96, 0.16);
+  border-color: rgba(255, 255, 255, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 rgba(24, 52, 80, 0.16),
+    0 6px 16px rgba(25, 50, 78, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-seg__thumb-inner {
+    animation: none !important;
+  }
+}
+[data-theme-toggle] svg { animation: icon-jelly 460ms var(--ease-jelly) both; transform-origin: 50% 50%; }
+@media (prefers-reduced-motion: reduce) { [data-theme-toggle] svg { animation: none !important; } }

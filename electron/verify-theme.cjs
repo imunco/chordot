@@ -134,10 +134,17 @@ app.whenReady().then(async () => {
       const t = [...document.querySelectorAll('.prefs__tab')].find((x) => x.textContent.includes('个性化'))
       if (t) t.click()
     })
-    await wait(250)
+    await wait(500)
   }
   const picker = await evalPage(() => ({
     tabs: [...document.querySelectorAll('.prefs__tab')].map((x) => x.textContent.trim()),
+    seg: (() => {
+      const s = document.querySelector('.theme-seg')
+      if (!s) return null
+      const t = getComputedStyle(s.querySelector('.theme-seg__thumb'))
+      const inner = s.querySelector('.theme-seg__thumb-inner')
+      return { value: s.getAttribute('data-value'), buttons: s.querySelectorAll('button').length, transform: t.transform, duration: t.transitionDuration, innerAnim: inner ? getComputedStyle(inner).animationName : '' }
+    })(),
     cards: [...document.querySelectorAll('.theme-card')].map((x) => ({
       choice: x.getAttribute('data-theme-choice'),
       active: x.getAttribute('data-active'),
@@ -146,6 +153,16 @@ app.whenReady().then(async () => {
   }))
   check(picker.cards.length === 2, '设置里没有两张主题卡：' + JSON.stringify(picker.cards))
   check(picker.cards.some((c) => c.choice === 'glass' && c.active === 'true'), '玻璃主题卡没有选中态')
+  check(picker.seg && picker.seg.buttons === 2 && picker.seg.value === 'glass', '主题分段开关没有同步：' + JSON.stringify(picker.seg))
+  check(picker.seg && picker.seg.duration.includes('0.48s'), '主题分段拇指没有弹簧过渡：' + (picker.seg ? picker.seg.duration : 'missing'))
+  check(picker.seg && picker.seg.innerAnim === 'thumb-jelly', '主题分段拇指没有果冻挤压：' + (picker.seg ? picker.seg.innerAnim : 'missing'))
+
+  await evalPage(() => document.querySelector('.theme-seg button:nth-of-type(1)').click())
+  await wait(300)
+  check(await evalPage(() => document.documentElement.dataset.theme === 'paper'), '点击分段开关没有切到纸面')
+  await evalPage(() => document.querySelector('.theme-seg button:nth-of-type(2)').click())
+  await wait(300)
+  check(await evalPage(() => document.documentElement.dataset.theme === 'glass'), '点击分段开关没有切回玻璃')
   try { fs.writeFileSync(path.join(outDir, 'theme-prefs.png'), (await win.webContents.capturePage()).toPNG()) } catch { /* ignore */ }
 
   await evalPage(() => document.querySelector('.theme-card[data-theme-choice=paper]').click())

@@ -322,6 +322,7 @@ export function Lobby({
             onClick={onToggleTheme}
             title={theme === 'glass' ? '切换到纸面主题' : '切换到液态玻璃主题'}
             data-theme-toggle="1"
+            data-theme-current={theme}
           >
             {theme === 'glass' ? (
               <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
@@ -456,9 +457,16 @@ export function Lobby({
                 data-mode={m.id}
                 onClick={() => onQuick(m.id)}
                 onPointerMove={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect()
-                  e.currentTarget.style.setProperty('--gx', (((e.clientX - r.left) / r.width) * 100).toFixed(1) + '%')
-                  e.currentTarget.style.setProperty('--gy', (((e.clientY - r.top) / r.height) * 100).toFixed(1) + '%')
+                  const el = e.currentTarget as HTMLElement & { __glowRaf?: number }
+                  const r = el.getBoundingClientRect()
+                  const gx = (((e.clientX - r.left) / r.width) * 100).toFixed(1) + '%'
+                  const gy = (((e.clientY - r.top) / r.height) * 100).toFixed(1) + '%'
+                  if (el.__glowRaf) cancelAnimationFrame(el.__glowRaf)
+                  el.__glowRaf = requestAnimationFrame(() => {
+                    el.style.setProperty('--gx', gx)
+                    el.style.setProperty('--gy', gy)
+                    el.__glowRaf = 0
+                  })
                 }}
                 onPointerLeave={(e) => {
                   e.currentTarget.style.setProperty('--gx', '28%')
