@@ -1945,3 +1945,281 @@ html[data-theme='glass'] .theme-seg {
 }
 [data-theme-toggle] svg { animation: icon-jelly 460ms var(--ease-jelly) both; transform-origin: 50% 50%; }
 @media (prefers-reduced-motion: reduce) { [data-theme-toggle] svg { animation: none !important; } }
+
+/* ══════════════════════════════════════════════════════════════
+   v9：全局控件统一（分段 / 开关 / 滑杆 / 文本框 / 按钮）
+   仅在液态玻璃主题生效，纸面主题保持原样。
+   ══════════════════════════════════════════════════════════════ */
+
+/* 所有分段控件：滑动玻璃拇指 */
+html[data-theme='glass'] .segmented[data-jelly] {
+  position: relative;
+  isolation: isolate;
+  background: rgba(38, 68, 96, 0.14) !important;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.46),
+    inset 0 -1px 0 rgba(24, 52, 80, 0.12);
+}
+
+html[data-theme='glass'] .jelly-seg__thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  z-index: 0;
+  width: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  background: linear-gradient(158deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.7) 55%, rgba(240, 247, 255, 0.82));
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -1px 0 rgba(30, 60, 90, 0.1),
+    0 3px 9px rgba(25, 50, 78, 0.14);
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform 460ms var(--ease-jelly),
+    width 300ms var(--ease-out-quart),
+    opacity 160ms ease,
+    scale 90ms ease;
+  pointer-events: none;
+}
+
+html[data-theme='glass'] .segmented[data-jelly]:has(.segmented__btn:active) .jelly-seg__thumb {
+  scale: 0.96 0.84;
+  transition-duration: 90ms;
+}
+
+html[data-theme='glass'] .segmented[data-jelly] .segmented__btn {
+  position: relative;
+  z-index: 1;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 6px;
+  color: rgba(30, 50, 68, 0.66);
+  transition: color 180ms ease, transform 180ms var(--ease-jelly);
+}
+
+html[data-theme='glass'] .segmented[data-jelly] .segmented__btn[data-active='true'] {
+  color: #14202a;
+  font-weight: 600;
+}
+
+html[data-theme='glass'] .segmented[data-jelly] .segmented__btn:active {
+  transform: scale(0.94);
+}
+
+/* 开关：药丸 + 会滑动的玻璃圆钮 */
+html[data-theme='glass'] .props__toggle {
+  position: relative;
+  width: 46px;
+  min-width: 46px;
+  height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.62) !important;
+  background: rgba(38, 68, 96, 0.16) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 rgba(24, 52, 80, 0.14);
+  color: transparent !important;
+  font-size: 0 !important;
+  overflow: hidden;
+  transition: background 220ms ease, border-color 220ms ease;
+}
+
+html[data-theme='glass'] .props__toggle::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(158deg, #ffffff, #e8f1f7);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 5px rgba(25, 50, 78, 0.22);
+  transition: transform 460ms var(--ease-jelly), box-shadow 180ms ease;
+  z-index: 2;
+}
+
+html[data-theme='glass'] .props__toggle::after {
+  content: '关';
+  position: absolute;
+  top: 0;
+  right: 7px;
+  height: 24px;
+  line-height: 23px;
+  font-size: 9px;
+  color: rgba(40, 66, 88, 0.62);
+  z-index: 1;
+}
+
+html[data-theme='glass'] .props__toggle[data-on='true'] {
+  background: rgba(10, 132, 255, 0.28) !important;
+  border-color: rgba(255, 255, 255, 0.78) !important;
+}
+
+html[data-theme='glass'] .props__toggle[data-on='true']::before {
+  transform: translate3d(22px, 0, 0);
+  box-shadow: 0 2px 6px rgba(10, 90, 170, 0.28);
+}
+
+html[data-theme='glass'] .props__toggle[data-on='true']::after {
+  content: '开';
+  right: auto;
+  left: 7px;
+  color: #ffffff;
+}
+
+html[data-theme='glass'] .props__toggle:active::before {
+  scale: 1.15 0.86;
+}
+
+/* 滑杆：玻璃轨道 + 会压扁的玻璃球 */
+html[data-theme='glass'] input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+}
+
+html[data-theme='glass'] input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgba(10, 132, 255, 0.55), rgba(94, 198, 255, 0.5) 58%, rgba(255, 255, 255, 0.32));
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 1px 2px rgba(20, 48, 74, 0.18),
+    0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+html[data-theme='glass'] input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 17px;
+  height: 17px;
+  margin-top: -6.5px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  background: radial-gradient(circle at 32% 28%, #ffffff 0%, #d9ecfa 44%, #8fc6ec 100%);
+  box-shadow:
+    0 2px 5px rgba(18, 46, 72, 0.24),
+    inset 0 1px 0 #fff;
+  transition: scale 220ms var(--ease-jelly), box-shadow 180ms ease;
+}
+
+html[data-theme='glass'] input[type='range']:active::-webkit-slider-thumb {
+  scale: 1.2 0.86;
+  box-shadow:
+    0 3px 8px rgba(18, 46, 72, 0.28),
+    0 0 0 4px rgba(94, 198, 255, 0.16);
+}
+
+html[data-theme='glass'] input[type='range']:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2);
+  border-radius: 999px;
+}
+
+/* 文本输入 / 下拉框 / 文本域 */
+html[data-theme='glass'] input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file']),
+html[data-theme='glass'] textarea,
+html[data-theme='glass'] select {
+  color: #14202a;
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.36)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.62) !important;
+  border-radius: 9px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 1px 2px rgba(20, 48, 74, 0.04);
+  -webkit-backdrop-filter: blur(8px) saturate(1.3);
+  backdrop-filter: blur(8px) saturate(1.3);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+html[data-theme='glass'] input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file']):focus,
+html[data-theme='glass'] textarea:focus,
+html[data-theme='glass'] select:focus {
+  outline: none;
+  border-color: rgba(10, 132, 255, 0.7) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 0 0 3px rgba(10, 132, 255, 0.16);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.5)) !important;
+}
+
+html[data-theme='glass'] input::placeholder,
+html[data-theme='glass'] textarea::placeholder {
+  color: rgba(55, 80, 100, 0.48);
+}
+
+html[data-theme='glass'] select option {
+  background: #f7fbfe;
+  color: #14202a;
+}
+
+html[data-theme='glass'] input[type='color'] {
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: inset 0 1px 0 #fff;
+}
+
+/* 按钮统一果冻回弹；只动 transform，不改变布局 */
+html[data-theme='glass'] .btn,
+html[data-theme='glass'] .tbtn,
+html[data-theme='glass'] .iconbtn,
+html[data-theme='glass'] .props__toggle,
+html[data-theme='glass'] .segmented__btn,
+html[data-theme='glass'] .prefs__tab,
+html[data-theme='glass'] .lab__tab,
+html[data-theme='glass'] .lab__book,
+html[data-theme='glass'] .lab__viewbtn,
+html[data-theme='glass'] .gallery__tab,
+html[data-theme='glass'] .gallery__card,
+html[data-theme='glass'] .lobby__iconbtn,
+html[data-theme='glass'] .lobby__primary,
+html[data-theme='glass'] .lobby__ghost,
+html[data-theme='glass'] .theme-card,
+html[data-theme='glass'] .menu__item,
+html[data-theme='glass'] .palette__item {
+  transition-timing-function: var(--ease-jelly);
+  transform-origin: 50% 50%;
+}
+
+html[data-theme='glass'] .btn:active,
+html[data-theme='glass'] .tbtn:active,
+html[data-theme='glass'] .iconbtn:active,
+html[data-theme='glass'] .segmented__btn:active,
+html[data-theme='glass'] .prefs__tab:active,
+html[data-theme='glass'] .lab__tab:active,
+html[data-theme='glass'] .lab__book:active,
+html[data-theme='glass'] .lab__viewbtn:active,
+html[data-theme='glass'] .gallery__tab:active,
+html[data-theme='glass'] .gallery__card:active,
+html[data-theme='glass'] .theme-card:active,
+html[data-theme='glass'] .menu__item:active,
+html[data-theme='glass'] .palette__item:active {
+  transform: scale(0.965);
+  transition-duration: 90ms;
+}
+
+/* 减少动效时关掉所有新加的果冻 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme='glass'] .jelly-seg__thumb,
+  html[data-theme='glass'] .segmented[data-jelly] .segmented__btn,
+  html[data-theme='glass'] input[type='range']::-webkit-slider-thumb,
+  html[data-theme='glass'] .props__toggle::before,
+  html[data-theme='glass'] .btn,
+  html[data-theme='glass'] .tbtn,
+  html[data-theme='glass'] .iconbtn {
+    transition-duration: 0ms !important;
+    animation: none !important;
+  }
+}
+
+html[data-theme='glass'] ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.62); border: 3px solid transparent; background-clip: content-box; border-radius: 8px; }
+html[data-theme='glass'] ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.82); background-clip: content-box; }
+html[data-theme='glass'] :focus-visible { box-shadow: 0 0 0 1px rgba(255,255,255,0.9), 0 0 0 3px rgba(10,132,255,0.7); }

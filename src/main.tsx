@@ -9,6 +9,7 @@ import { PrintSheet } from './components/PrintSheet'
 import { GalleryWindow } from './components/GalleryWindow'
 import { hydrate } from './persist'
 import { loadSettings } from './settings'
+import { installJellySegments } from './ui/jellySegments'
 import './styles/tokens.css'
 import './styles/app.css'
 // 机构装配（物理模式）的专属样式：面板 / 图标网格 / 世界面板，覆盖 app.css 里的旧 .mechbar 规则
@@ -29,6 +30,7 @@ const applyTheme = () => {
   document.documentElement.dataset.theme = bootIsPrint ? 'paper' : loadSettings().theme
 }
 applyTheme()
+installJellySegments()
 window.addEventListener('storage', (e) => {
   if (e.key === 'chordot.settings') applyTheme()
 })

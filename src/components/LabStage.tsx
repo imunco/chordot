@@ -97,7 +97,7 @@ function renderStage(exp: LabExperiment, m: LabModel, t: number) {
     case 'gas':
       return <GasStage m={m} t={t} />
     case 'model':
-      return <ModelStage exp={exp} m={m} />
+      return <ModelStage exp={exp} m={m} t={t} />
     default:
       return null
   }

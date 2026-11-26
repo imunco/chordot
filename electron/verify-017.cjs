@@ -77,7 +77,7 @@ app.whenReady().then(async () => {
   await js('document.querySelector(".lobby__mode[data-mode=lab]").click()')
   const lab = await makeLab()
   const labRun = (c) => lab.webContents.executeJavaScript(c, true)
-  await wait(900)
+  await wait(2200)
   check(await labRun('!!document.querySelector(".lab")'), '教材实验室独立窗口没有渲染')
   const books = await labRun('[...document.querySelectorAll(".lab__book")].map(function(x){return x.textContent.trim()})')
   report.books = books

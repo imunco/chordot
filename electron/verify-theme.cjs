@@ -129,6 +129,15 @@ app.whenReady().then(async () => {
   await evalPage(() => document.querySelector('.lobby__iconbtn[title=设置]').click())
   await waitFor(() => !!document.querySelector('.prefs'))
   await wait(500)
+  const controls = await evalPage(() => ({
+    segs: document.querySelectorAll('.segmented[data-jelly]').length,
+    thumbs: document.querySelectorAll('.jelly-seg__thumb').length,
+    toggles: document.querySelectorAll('.props__toggle').length,
+    ranges: document.querySelectorAll('.prefs input[type=range]').length,
+  }))
+  check(controls.segs > 0 && controls.thumbs > 0, '全局分段开关没有注入玻璃拇指：' + JSON.stringify(controls))
+  check(controls.toggles > 0, '设置里没有找到开关按钮')
+  check(controls.ranges > 0, '设置里没有找到滑杆')
   if (!(await evalPage(() => !!document.querySelector('.theme-picker')))) {
     await evalPage(() => {
       const t = [...document.querySelectorAll('.prefs__tab')].find((x) => x.textContent.includes('个性化'))

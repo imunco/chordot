@@ -57,7 +57,7 @@ const Row = (p: {
 )
 
 const Toggle = (p: { on: boolean; onChange: (v: boolean) => void; onText?: string; offText?: string }) => (
-  <button className="props__toggle" data-on={p.on} onClick={() => p.onChange(!p.on)}>
+  <button className="props__toggle" data-on={p.on} role="switch" aria-checked={p.on} onClick={() => p.onChange(!p.on)}>
     {p.on ? (p.onText ?? '开') : (p.offText ?? '关')}
   </button>
 )

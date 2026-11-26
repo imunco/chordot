@@ -541,7 +541,8 @@ export const LAB_MODELS: LabExperiment[] = [
     name: '子弹打木块模型',
     short: '子弹打木块',
     field: '力学',
-    stage: 'collision',
+    stage: 'model',
+    modelType: 'collision',
     tagline: '子弹射入木块，动量守恒；机械能损失变成热，可能射穿也可能留在块内。',
     principle:
       '子弹以速度 v₀ 水平射入静止木块。水平方向不受外力，动量守恒；若子弹留在木块内，属于完全非弹性碰撞，共同速度 v = m弹v₀/(m弹+m块)，损失的动能转化为内能。若子弹射穿，则要分别知道子弹和木块的速度，用动量守恒和能量关系分析。',
@@ -583,7 +584,8 @@ export const LAB_MODELS: LabExperiment[] = [
     name: '爆炸模型',
     short: '爆炸模型',
     field: '力学',
-    stage: 'collision',
+    stage: 'model',
+    modelType: 'collision',
     tagline: '爆炸瞬间内力远大于外力，动量守恒，动能增加。',
     principle:
       '爆炸过程中内力远大于外力，系统动量近似守恒。爆炸前系统静止或具有初动量，爆炸后各碎片按动量守恒分配速度；化学能转化为碎片的动能，所以总动能增加。',
@@ -625,7 +627,8 @@ export const LAB_MODELS: LabExperiment[] = [
     name: '弹性碰撞模型',
     short: '弹性碰撞',
     field: '力学',
-    stage: 'collision',
+    stage: 'model',
+    modelType: 'collision',
     tagline: '动量守恒、动能也守恒；质量相等时交换速度。',
     principle:
       '两物体发生弹性正碰，碰撞前后总动量守恒，总动能也守恒。联立解得 v₁′ = ((m₁−m₂)v₁)/(m₁+m₂)，v₂′ = (2m₁v₁)/(m₁+m₂)。若 m₁ = m₂，则 v₁′ = 0、v₂′ = v₁，即交换速度。',
@@ -667,7 +670,8 @@ export const LAB_MODELS: LabExperiment[] = [
     name: '完全非弹性碰撞模型',
     short: '完全非弹性碰撞',
     field: '力学',
-    stage: 'collision',
+    stage: 'model',
+    modelType: 'collision',
     tagline: '碰后粘在一起，动量守恒，动能损失最大。',
     principle:
       '两物体碰撞后粘在一起以共同速度运动，称为完全非弹性碰撞。此过程动量守恒，但动能损失最大：v = (m₁v₁ + m₂v₂)/(m₁+m₂)，ΔEk = ½m₁v₁² + ½m₂v₂² − ½(m₁+m₂)v²。',
@@ -709,7 +713,8 @@ export const LAB_MODELS: LabExperiment[] = [
     name: '单摆模型',
     short: '单摆模型',
     field: '力学',
-    stage: 'pendulum',
+    stage: 'model',
+    modelType: 'pendulum',
     tagline: '小角度单摆做简谐运动，周期 T = 2π√(L/g)，与摆球质量无关。',
     principle:
       '细线悬挂小球，摆角小于 5° 时，回复力 F = −(mg/L)x，近似简谐运动。周期 T = 2π√(L/g)，与摆球质量、振幅（小角度）无关。利用单摆可测重力加速度 g = 4π²L/T²。',
@@ -735,7 +740,8 @@ export const LAB_MODELS: LabExperiment[] = [
     name: '弹簧振子模型',
     short: '弹簧振子',
     field: '力学',
-    stage: 'shm',
+    stage: 'model',
+    modelType: 'springOsc',
     tagline: '回复力 F = −kx，周期 T = 2π√(m/k)，与振幅无关。',
     principle:
       '水平弹簧振子以平衡位置为中心振动，回复力 F = −kx，加速度 a = −(k/m)x，所以做简谐运动。周期 T = 2π√(m/k)，只由振子质量和弹簧劲度系数决定，与振幅无关。',
@@ -763,7 +769,8 @@ export const LAB_MODELS: LabExperiment[] = [
     name: '平抛 / 类平抛模型',
     short: '平抛模型',
     field: '力学',
-    stage: 'projectile',
+    stage: 'model',
+    modelType: 'projectile',
     tagline: '水平方向匀速，竖直方向匀加速；轨迹是抛物线。',
     principle:
       '平抛运动可分解为水平匀速直线运动和竖直自由落体运动：x = v₀t，y = ½gt²。飞行时间只由高度决定 t = √(2h/g)，水平射程 x = v₀√(2h/g)。类平抛（如带电粒子在平行板电场中的偏转）只是把 g 换成等效加速度。',
@@ -789,7 +796,8 @@ export const LAB_MODELS: LabExperiment[] = [
     name: '竖直圆周运动临界模型',
     short: '竖直圆周临界',
     field: '力学',
-    stage: 'circular',
+    stage: 'model',
+    modelType: 'vCircle',
     tagline: '绳模型最高点最小速度 √(gR)；杆模型最高点速度可以为零。',
     principle:
       '小球在竖直平面内做圆周运动。绳（或内轨道）模型在最高点的临界条件是重力恰好提供向心力：mg = mv²/R，所以 vmin = √(gR)。杆（或双轨道）模型可以提供支持力，最高点速度可以为零，临界条件不同。',
@@ -816,7 +824,8 @@ export const LAB_MODELS: LabExperiment[] = [
     name: '电磁感应单杆模型',
     short: '单杆电磁感应',
     field: '电磁学',
-    stage: 'induction',
+    stage: 'model',
+    modelType: 'singleRod',
     tagline: '杆切割磁感线产生电动势，安培力阻碍相对运动（楞次定律）。',
     principle:
       '导体棒在磁场中切割磁感线，产生感应电动势 E = BLv；回路闭合时产生感应电流，安培力 F = BIL 阻碍导体棒的运动。这就是楞次定律「来拒去留、增反减同」的力学表现。',
@@ -840,8 +849,13 @@ export const LAB_MODELS: LabExperiment[] = [
         ],
       },
     ],
-    controls: [],
-    params: { pole: 'N' },
+    controls: [
+      { id: 'B', label: '磁感应强度 B', min: 0.2, max: 2, step: 0.1, unit: 'T' },
+      { id: 'L', label: '导轨间距 L', min: 0.2, max: 1, step: 0.1, unit: 'm' },
+      { id: 'R', label: '回路电阻 R', min: 0.1, max: 2, step: 0.1, unit: 'Ω' },
+      { id: 'v', label: '杆的速度 v', min: 0.5, max: 6, step: 0.5, unit: 'm/s' },
+    ],
+    params: { pole: 'N', B: 0.8, L: 0.5, R: 0.5, v: 2 },
   }),
 
   M({
@@ -849,7 +863,8 @@ export const LAB_MODELS: LabExperiment[] = [
     name: '变压器与远距离输电模型',
     short: '变压器 / 输电',
     field: '电磁学',
-    stage: 'transformer',
+    stage: 'model',
+    modelType: 'transformer',
     tagline: '电压比等于匝数比；高压输电减小电流，从而减少线路损耗。',
     principle:
       '理想变压器 U₁/U₂ = n₁/n₂，I₁/I₂ = n₂/n₁，P₁ = P₂。远距离输电时，输送功率 P 一定，电压越高电流 I = P/U 越小，线路损耗 P损 = I²R线 越小，所以要用升压变压器后再输送。',
@@ -864,11 +879,13 @@ export const LAB_MODELS: LabExperiment[] = [
     cautions: ['变压器不能接直流电。', '实际变压器有漏磁和损耗。'],
     conclusion: '变压器：电压比等于匝数比；高压输电可减小线路损耗。',
     controls: [
-      { id: 'n1', label: '原线圈匝数 n₁', min: 200, max: 800, step: 20 },
-      { id: 'n2', label: '副线圈匝数 n₂', min: 50, max: 400, step: 10 },
+      { id: 'n1', label: '原线圈匝数 n₁', min: 100, max: 400, step: 20 },
+      { id: 'n2', label: '副线圈匝数 n₂', min: 200, max: 800, step: 20 },
       { id: 'U1', label: '原线圈电压 U₁', min: 6, max: 24, step: 1, unit: 'V' },
+      { id: 'P', label: '输送功率 P', min: 50, max: 400, step: 25, unit: 'W' },
+      { id: 'Rline', label: '线路电阻 R线', min: 0.2, max: 2, step: 0.1, unit: 'Ω' },
     ],
-    params: { n1: 400, n2: 200, U1: 12 },
+    params: { n1: 200, n2: 400, U1: 12, P: 200, Rline: 0.2 },
   }),
 
   M({
@@ -876,7 +893,8 @@ export const LAB_MODELS: LabExperiment[] = [
     name: '电路动态分析 / 限流分压模型',
     short: '电路动态分析',
     field: '电磁学',
-    stage: 'emf',
+    stage: 'model',
+    modelType: 'circuit',
     tagline: '滑动变阻器一变，总电阻、总电流、路端电压连锁变化。',
     principle:
       '闭合电路中，外电阻变化会引起总电流、路端电压和各支路电压 / 电流的连锁变化。分析顺序通常是「局部 → 整体 → 局部」：先看变阻器怎么变，再判断总电阻、总电流，最后由 U = E − Ir 判断路端电压，再回到各支路。',
@@ -893,8 +911,9 @@ export const LAB_MODELS: LabExperiment[] = [
     controls: [
       { id: 'E', label: '电动势 E', min: 1.2, max: 6, step: 0.1, unit: 'V' },
       { id: 'r', label: '内阻 r', min: 0.2, max: 3, step: 0.1, unit: 'Ω' },
+      { id: 'R', label: '外电阻 R', min: 1, max: 20, step: 1, unit: 'Ω' },
     ],
-    params: { E: 3, r: 0.5 },
+    params: { E: 3, r: 0.5, R: 5 },
   }),
 
   M({
@@ -902,7 +921,8 @@ export const LAB_MODELS: LabExperiment[] = [
     name: '机械能守恒 / 功能关系模型',
     short: '机械能守恒',
     field: '力学',
-    stage: 'fall',
+    stage: 'model',
+    modelType: 'energy',
     tagline: '只有重力 / 弹力做功时机械能守恒；有其他力做功要看功能关系。',
     principle:
       '物体只受重力（或弹簧弹力）做功时，动能和势能相互转化，机械能总量保持不变：½mv² + mgh = 常量。若还有摩擦力等做功，机械能不守恒，但可以用动能定理 W合 = ΔEk 或功能关系 W其他 = ΔE机械。',
@@ -916,7 +936,10 @@ export const LAB_MODELS: LabExperiment[] = [
     errors: ['有摩擦力时仍用机械能守恒。', '忘记选零势能面。'],
     cautions: ['动能定理对任何过程都成立。', '摩擦生热 Q = f·s相对，不是 f·s对地。'],
     conclusion: '机械能守恒看做功条件；不守恒时用动能定理或功能关系。',
-    controls: [{ id: 'h', label: '下落高度 h', min: 0.2, max: 2, step: 0.1, unit: 'm' }],
-    params: { h: 0.8 },
+    controls: [
+      { id: 'h', label: '下落高度 h', min: 0.2, max: 2, step: 0.1, unit: 'm' },
+      { id: 'm', label: '物体质量 m', min: 0.5, max: 5, step: 0.5, unit: 'kg' },
+    ],
+    params: { h: 0.8, m: 2 },
   }),
 ]

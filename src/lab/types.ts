@@ -68,6 +68,15 @@ export type LabModelType =
   | 'wave'
   | 'levels'
   | 'cyclotron'
+  | 'collision'
+  | 'pendulum'
+  | 'springOsc'
+  | 'projectile'
+  | 'vCircle'
+  | 'singleRod'
+  | 'transformer'
+  | 'circuit'
+  | 'energy'
 
 export interface LabExperiment {
   id: string
