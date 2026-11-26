@@ -180,6 +180,25 @@ export default function App() {
     document.documentElement.dataset.reduceMotion = settings.reduceMotion ? 'on' : 'off'
   }, [settings.reduceMotion])
 
+  /* 主题：同时写到 html[data-theme]，其他窗口通过 storage 事件跟随 */
+  const prevTheme = useRef(settings.theme)
+  useEffect(() => {
+    document.documentElement.dataset.theme = settings.theme
+    if (prevTheme.current !== settings.theme) {
+      prevTheme.current = settings.theme
+      const root = document.documentElement
+      root.classList.remove('theme-switch')
+      // 强制回流，让同一个 class 连续切换时动画能重新开始
+      void root.offsetWidth
+      root.classList.add('theme-switch')
+      const timer = window.setTimeout(() => root.classList.remove('theme-switch'), 460)
+      return () => {
+        window.clearTimeout(timer)
+        root.classList.remove('theme-switch')
+      }
+    }
+  }, [settings.theme])
+
   /* 启动时按提醒频率静默检查一次更新 */
   useEffect(() => {
     if (!dueForCheck(loadSettings())) return
@@ -2437,6 +2456,11 @@ export default function App() {
       { id: 'textbook', label: '教材实验室（独立窗口）…', run: () => openLabEntry() },
       { id: 'presenter', label: '演示者模式（全屏 / 计时 / 镜头翻页）', run: () => startPresenter() },
       {
+        id: 'theme',
+        label: settings.theme === 'glass' ? '切换主题：纸面' : '切换主题：液态玻璃',
+        run: () => patchSettings({ theme: settings.theme === 'glass' ? 'paper' : 'glass' }),
+      },
+      {
         id: 'spotlight',
         label: '聚光灯（全局：压暗四周看局部）',
         run: () => setPresentTool((v) => (v === 'spot' ? null : 'spot')),
@@ -2663,6 +2687,10 @@ export default function App() {
       {lobbyOpen ? (
         <Lobby
           version={__APP_VERSION__}
+          theme={settings.theme}
+          onToggleTheme={() =>
+            patchSettings({ theme: settings.theme === 'glass' ? 'paper' : 'glass' })
+          }
           recentFiles={recentFiles}
           recovery={recovery}
           quote={quote}

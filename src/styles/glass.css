@@ -1,0 +1,1659 @@
+/* ─────────────────────────────────────────────
+   液态玻璃主题（Liquid Glass）
+   参考：Apple WWDC25 Liquid Glass；SVG 位移折射实现移植自
+   xiaojiaenen/liquid-glass（MIT）与博客园蓦然JL 的 HTML+CSS 方案。
+   只在 html[data-theme='glass'] 下生效，纸面主题零影响。
+   ───────────────────────────────────────────── */
+
+html[data-theme='glass'] {
+  --canvas-bg: #f7fbfe;
+  --panel-bg: rgba(255, 255, 255, 0.34);
+  --surface: rgba(255, 255, 255, 0.58);
+  --border: rgba(255, 255, 255, 0.52);
+  --border-strong: rgba(255, 255, 255, 0.72);
+  --text-primary: #14202a;
+  --text-secondary: #4c6070;
+  --text-disabled: #8fa3b2;
+  --accent: #0a84ff;
+  --accent-soft: rgba(10, 132, 255, 0.12);
+  --hover: rgba(255, 255, 255, 0.38);
+  --gravity: #2d3a44;
+  --normal: #2f6fa8;
+  --friction: #9a6b3e;
+  --tension: #2f7a5d;
+  --net-force: #b07c1e;
+  --warning: #b07c1e;
+  --grid: #e4eef6;
+  --axis: #607688;
+  --shadow-float: 0 18px 44px rgba(31, 60, 85, 0.16);
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-max: 20px;
+}
+
+html[data-theme='glass'] body {
+  --glass-wallpaper:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Ccircle cx='2' cy='2' r='1' fill='%23ffffff' fill-opacity='.55'/%3E%3Ccircle cx='15' cy='15' r='.8' fill='%230b3550' fill-opacity='.10'/%3E%3C/svg%3E"),
+    linear-gradient(to right, rgba(255, 255, 255, 0.32) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.32) 1px, transparent 1px),
+    radial-gradient(900px 640px at 6% 4%, rgba(132, 190, 255, 0.7), transparent 62%),
+    radial-gradient(760px 620px at 96% 10%, rgba(206, 166, 255, 0.52), transparent 64%),
+    radial-gradient(900px 760px at 74% 94%, rgba(126, 235, 206, 0.48), transparent 62%),
+    radial-gradient(700px 520px at 22% 96%, rgba(255, 214, 166, 0.46), transparent 66%),
+    linear-gradient(138deg, #eef6ff 0%, #f6f0fb 42%, #edf9f5 100%);
+  --glass-wallpaper-size: 28px 28px, 64px 64px, 64px 64px, auto, auto, auto, auto, auto;
+  color: var(--text-primary);
+  background-color: #eaf2fb;
+  background-image: var(--glass-wallpaper);
+  background-size: var(--glass-wallpaper-size);
+  background-attachment: fixed;
+}
+
+html[data-theme='glass'] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.045;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+html[data-theme='glass'] .app,
+html[data-theme='glass'] .lobby,
+html[data-theme='glass'] .symlab {
+  background: transparent;
+}
+
+html[data-theme='glass'] .app {
+  position: relative;
+  z-index: 1;
+}
+
+/* ───────── 共用玻璃表面 ───────── */
+html[data-theme='glass'] .titlebar,
+html[data-theme='glass'] .left,
+html[data-theme='glass'] .right,
+html[data-theme='glass'] .dock,
+html[data-theme='glass'] .statusbar,
+html[data-theme='glass'] .lobby__iconbtn,
+html[data-theme='glass'] .lobby__mode,
+html[data-theme='glass'] .lobby__resumecard,
+html[data-theme='glass'] .lobby__quote,
+html[data-theme='glass'] .lobby__recovery,
+html[data-theme='glass'] .lobby__file,
+html[data-theme='glass'] .lobby__empty,
+html[data-theme='glass'] .lobby__ghost,
+html[data-theme='glass'] .gallery__panel,
+html[data-theme='glass'] .gallery__card,
+html[data-theme='glass'] .prefs,
+html[data-theme='glass'] .newdoc__panel,
+html[data-theme='glass'] .histdlg__panel,
+html[data-theme='glass'] .palette,
+html[data-theme='glass'] .menu,
+html[data-theme='glass'] .lab__panel,
+html[data-theme='glass'] .lab__stage,
+html[data-theme='glass'] .lab__data,
+html[data-theme='glass'] .symlab__palette,
+html[data-theme='glass'] .symlab__main,
+html[data-theme='glass'] .symlab__stage,
+html[data-theme='glass'] .presenter,
+html[data-theme='glass'] .presenttools-bar {
+  background: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.62) 0%,
+    rgba(255, 255, 255, 0.34) 46%,
+    rgba(255, 255, 255, 0.44) 100%
+  );
+  border-color: rgba(255, 255, 255, 0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.28),
+    0 18px 44px rgba(31, 60, 85, 0.12);
+  -webkit-backdrop-filter: blur(22px) saturate(1.55);
+  backdrop-filter: blur(22px) saturate(1.55);
+}
+
+/* 标题栏 / 状态栏更轻，不压画布 */
+html[data-theme='glass'] .titlebar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.34));
+  border-bottom-color: rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 8px 26px rgba(31, 60, 85, 0.08);
+}
+
+html[data-theme='glass'] .statusbar {
+  background: linear-gradient(0deg, rgba(255, 255, 255, 0.66), rgba(255, 255, 255, 0.28));
+  border-top-color: rgba(255, 255, 255, 0.5);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.9), 0 -6px 22px rgba(31, 60, 85, 0.06);
+}
+
+html[data-theme='glass'] .left {
+  border-right-color: rgba(255, 255, 255, 0.5);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.35), 12px 0 32px rgba(31, 60, 85, 0.06);
+}
+
+html[data-theme='glass'] .right {
+  border-left-color: rgba(255, 255, 255, 0.5);
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.35), -12px 0 32px rgba(31, 60, 85, 0.06);
+}
+
+html[data-theme='glass'] .dock {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.64));
+  border-top-color: rgba(255, 255, 255, 0.62);
+  border-radius: 24px 24px 0 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 -14px 38px rgba(31, 60, 85, 0.12);
+  -webkit-backdrop-filter: blur(26px) saturate(1.6);
+  backdrop-filter: blur(26px) saturate(1.6);
+}
+
+/* 画布：留一张干净的纸，玻璃只在四周 */
+html[data-theme='glass'] .canvas {
+  background: rgba(252, 253, 255, 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.8),
+    inset 0 18px 48px rgba(31, 60, 85, 0.035),
+    inset 0 -18px 48px rgba(31, 60, 85, 0.035);
+}
+
+html[data-theme='glass'] .canvas__svg {
+  border-radius: 0;
+}
+
+/* 面板内部：去掉纸面分割线，改成玻璃高光 */
+html[data-theme='glass'] .left__bulk,
+html[data-theme='glass'] .left__footer,
+html[data-theme='glass'] .right__header,
+html[data-theme='glass'] .prefs__tabs,
+html[data-theme='glass'] .gallery__head,
+html[data-theme='glass'] .newdoc__head,
+html[data-theme='glass'] .lab__head,
+html[data-theme='glass'] .lab__datahead {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.42);
+}
+
+html[data-theme='glass'] .left__bulk,
+html[data-theme='glass'] .right__header {
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+html[data-theme='glass'] .left__row,
+html[data-theme='glass'] .right__body,
+html[data-theme='glass'] .prefs__body,
+html[data-theme='glass'] .lab__data,
+html[data-theme='glass'] .symlab__palette {
+  background: transparent;
+}
+
+html[data-theme='glass'] .left__row:hover,
+html[data-theme='glass'] .menu__item:hover,
+html[data-theme='glass'] .palette__item:hover,
+html[data-theme='glass'] .palette__item[data-active='true'],
+html[data-theme='glass'] .gallery__card:hover,
+html[data-theme='glass'] .lobby__mode:hover {
+  background: rgba(255, 255, 255, 0.48);
+}
+
+html[data-theme='glass'] .left__row[data-selected='true'] {
+  background: rgba(10, 132, 255, 0.12);
+}
+
+html[data-theme='glass'] .left__row[data-selected='true']::before {
+  background: #0a84ff;
+  box-shadow: 0 0 12px rgba(10, 132, 255, 0.55);
+}
+
+/* 按钮 / 输入：胶囊玻璃 */
+html[data-theme='glass'] .tbtn,
+html[data-theme='glass'] .toolbar__view,
+html[data-theme='glass'] .lobby__ghost,
+html[data-theme='glass'] .btn,
+html[data-theme='glass'] .iconbtn,
+html[data-theme='glass'] .props__action,
+html[data-theme='glass'] .prefs__tab,
+html[data-theme='glass'] .lab__viewbtn,
+html[data-theme='glass'] .lab__zoomval {
+  border-radius: 12px;
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+html[data-theme='glass'] .tbtn:hover,
+html[data-theme='glass'] .btn:hover,
+html[data-theme='glass'] .iconbtn:hover,
+html[data-theme='glass'] .lobby__ghost:hover {
+  background: rgba(255, 255, 255, 0.5);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+html[data-theme='glass'] .tbtn[data-active='true'],
+html[data-theme='glass'] .toolbar__view[data-active='true'],
+html[data-theme='glass'] .prefs__tab[data-active='true'] {
+  color: #fff;
+  background: linear-gradient(160deg, #2b9dff, #0a84ff);
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 8px 20px rgba(10, 132, 255, 0.28);
+}
+
+html[data-theme='glass'] input,
+html[data-theme='glass'] textarea,
+html[data-theme='glass'] select,
+html[data-theme='glass'] .props__input,
+html[data-theme='glass'] .forceedit__input,
+html[data-theme='glass'] .left__input,
+html[data-theme='glass'] .numfield__input,
+html[data-theme='glass'] .newdoc__text,
+html[data-theme='glass'] .newdoc__note {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.5);
+  border-color: rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 1px 2px rgba(31, 60, 85, 0.04);
+}
+
+html[data-theme='glass'] input::placeholder,
+html[data-theme='glass'] textarea::placeholder {
+  color: rgba(60, 82, 98, 0.52);
+}
+
+/* 大厅 */
+html[data-theme='glass'] .lobby {
+  background-image: none;
+  background-color: transparent;
+}
+
+/* 卡片玻璃的斜向高光；内容抬到高光上面 */
+html[data-theme='glass'] .lobby__mode,
+html[data-theme='glass'] .lobby__resumecard,
+html[data-theme='glass'] .lobby__quote,
+html[data-theme='glass'] .lobby__file,
+html[data-theme='glass'] .gallery__card {
+  position: relative;
+  isolation: isolate;
+}
+
+html[data-theme='glass'] .lobby__mode::after,
+html[data-theme='glass'] .lobby__resumecard::after,
+html[data-theme='glass'] .lobby__quote::after,
+html[data-theme='glass'] .lobby__file::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    118deg,
+    rgba(255, 255, 255, 0.58) 0%,
+    rgba(255, 255, 255, 0.12) 28%,
+    rgba(255, 255, 255, 0) 52%,
+    rgba(255, 255, 255, 0.22) 100%
+  );
+}
+
+html[data-theme='glass'] .lobby__mode > *,
+html[data-theme='glass'] .lobby__resumecard > *,
+html[data-theme='glass'] .lobby__quote > *,
+html[data-theme='glass'] .lobby__file > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme='glass'] .lobby__paper {
+  display: none;
+}
+
+html[data-theme='glass'] .lobby__top {
+  padding-top: 20px;
+}
+
+html[data-theme='glass'] .lobby__brand .lobby__mark svg {
+  filter: drop-shadow(0 6px 14px rgba(31, 60, 85, 0.16));
+}
+
+html[data-theme='glass'] .lobby__version {
+  color: #3f6074;
+  background: rgba(255, 255, 255, 0.45);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+html[data-theme='glass'] .lobby__title {
+  color: #101c26;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+html[data-theme='glass'] .lobby__sub,
+html[data-theme='glass'] .lobby__eyebrow {
+  color: #405a6b;
+}
+
+html[data-theme='glass'] .lobby__primary {
+  color: #fff;
+  background: linear-gradient(158deg, #47b4ff 0%, #0a84ff 58%, #0673dd 100%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 14px 30px rgba(10, 132, 255, 0.34);
+}
+
+html[data-theme='glass'] .lobby__primary:hover {
+  background: linear-gradient(158deg, #5cbfff, #1a8cff);
+  transform: translateY(-1px);
+}
+
+html[data-theme='glass'] .lobby__ghost {
+  color: #1f3442;
+  background: rgba(255, 255, 255, 0.34);
+}
+
+html[data-theme='glass'] .lobby__mode {
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 22px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 16px 36px rgba(31, 60, 85, 0.1);
+}
+
+html[data-theme='glass'] .lobby__mode:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 22px 46px rgba(31, 60, 85, 0.16);
+}
+
+html[data-theme='glass'] .lobby__modeicon {
+  color: #0a6fbf;
+  background: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+}
+
+html[data-theme='glass'] .lobby__badge {
+  color: #0667bb;
+  background: rgba(10, 132, 255, 0.14);
+}
+
+html[data-theme='glass'] .lobby__resumecard,
+html[data-theme='glass'] .lobby__quote,
+html[data-theme='glass'] .lobby__file,
+html[data-theme='glass'] .lobby__empty {
+  border-radius: 20px;
+}
+
+html[data-theme='glass'] .lobby__recovery {
+  border-radius: 18px;
+  background: rgba(255, 240, 214, 0.55);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+html[data-theme='glass'] .lobby__recenthead h2,
+html[data-theme='glass'] .lobby__library h2 {
+  color: #162734;
+}
+
+html[data-theme='glass'] .lobby__foot {
+  border-top-color: rgba(255, 255, 255, 0.4);
+  color: #486273;
+}
+
+/* 复制 / 下拉菜单 / 弹窗 */
+html[data-theme='glass'] .menu,
+html[data-theme='glass'] .palette,
+html[data-theme='glass'] .prefs,
+html[data-theme='glass'] .newdoc__panel,
+html[data-theme='glass'] .histdlg__panel,
+html[data-theme='glass'] .gallery__panel {
+  border-radius: 22px;
+  overflow: hidden;
+}
+
+html[data-theme='glass'] .menu {
+  padding: 6px;
+}
+
+html[data-theme='glass'] .menu__item {
+  border-radius: 10px;
+}
+
+html[data-theme='glass'] .gallery {
+  background: rgba(20, 40, 60, 0.24);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-theme='glass'] .gallery__panel,
+html[data-theme='glass'] .prefs,
+html[data-theme='glass'] .newdoc__panel,
+html[data-theme='glass'] .histdlg__panel {
+  -webkit-backdrop-filter: blur(30px) saturate(1.6);
+  backdrop-filter: blur(30px) saturate(1.6);
+}
+
+html[data-theme='glass'] .gallery__card {
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+html[data-theme='glass'] .gallery__tab[data-active='true'],
+html[data-theme='glass'] .lab__book[data-active='true'] {
+  color: #fff;
+  background: #0a84ff;
+}
+
+/* 教材实验室 */
+html[data-theme='glass'] .lab {
+  background: rgba(24, 42, 56, 0.22);
+  -webkit-backdrop-filter: blur(15px) saturate(1.3);
+  backdrop-filter: blur(15px) saturate(1.3);
+}
+
+html[data-theme='glass'] .lab__panel {
+  border-radius: 26px;
+}
+
+html[data-theme='glass'] .lab__stage,
+html[data-theme='glass'] .lab__stagebox {
+  background: rgba(250, 253, 255, 0.74);
+}
+
+html[data-theme='glass'] .lab__data {
+  border-left-color: rgba(255, 255, 255, 0.44);
+}
+
+html[data-theme='glass'] .lab__item[data-active='true'] {
+  background: rgba(10, 132, 255, 0.12);
+}
+
+html[data-theme='glass'] .lab__read {
+  background: rgba(255, 255, 255, 0.42);
+  border-color: rgba(255, 255, 255, 0.55);
+  border-radius: 14px;
+}
+
+/* 符号实验室 */
+html[data-theme='glass'] .symlab {
+  background-color: #eef6ff;
+  background-image:
+    radial-gradient(900px 600px at 8% 5%, rgba(132, 190, 255, 0.55), transparent 62%),
+    radial-gradient(800px 600px at 96% 12%, rgba(206, 166, 255, 0.46), transparent 64%),
+    radial-gradient(800px 700px at 50% 100%, rgba(126, 235, 206, 0.4), transparent 62%),
+    linear-gradient(138deg, #eef6ff, #f6f0fb 42%, #edf9f5);
+}
+
+html[data-theme='glass'] .symlab__head {
+  background: rgba(255, 255, 255, 0.34);
+  border-bottom-color: rgba(255, 255, 255, 0.5);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+html[data-theme='glass'] .symlab__palette,
+html[data-theme='glass'] .symlab__main,
+html[data-theme='glass'] .symlab__stage {
+  border-radius: 22px;
+  margin: 8px;
+}
+
+/* 演示者 / 浮层 */
+html[data-theme='glass'] .presenter {
+  border-radius: 999px;
+}
+
+/* 主题选择卡（两种主题下都显示） */
+.theme-picker {
+  padding: 4px 18px 14px;
+}
+
+.theme-picker__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.theme-picker__head i {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.theme-picker__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: border-color var(--t), box-shadow var(--t), transform var(--t);
+}
+
+.theme-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.theme-card[data-active='true'] {
+  border-color: #0a84ff;
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.16);
+}
+
+html[data-theme='glass'] .theme-card {
+  background: rgba(255, 255, 255, 0.32);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+html[data-theme='glass'] .theme-card[data-active='true'] {
+  border-color: #0a84ff;
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.28), 0 10px 24px rgba(31, 60, 85, 0.12);
+}
+
+.theme-card b {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.theme-card > i {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.theme-card__preview {
+  position: relative;
+  display: block;
+  height: 54px;
+  overflow: hidden;
+  border-radius: 9px;
+}
+
+.theme-card__preview--paper {
+  background-color: #f7f5f1;
+  background-image:
+    linear-gradient(to right, rgba(31, 31, 29, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(31, 31, 29, 0.05) 1px, transparent 1px);
+  background-size: 12px 12px;
+}
+
+.theme-card__preview--glass {
+  background:
+    radial-gradient(80px 60px at 18% 12%, #9bcaff, transparent 70%),
+    radial-gradient(90px 70px at 86% 18%, #d8b6ff, transparent 70%),
+    radial-gradient(100px 80px at 70% 94%, #95eed2, transparent 72%),
+    linear-gradient(135deg, #eef6ff, #f8f2ff 48%, #e9faf4);
+}
+
+.theme-card__preview--paper .theme-card__bar,
+.theme-card__preview--glass .theme-card__bar {
+  position: absolute;
+  left: 8px;
+  top: 9px;
+  width: 46%;
+  height: 9px;
+  border-radius: 4px;
+  background: rgba(31, 31, 29, 0.34);
+}
+
+.theme-card__preview--glass .theme-card__bar {
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+}
+
+.theme-card__line {
+  position: absolute;
+  left: 8px;
+  top: 25px;
+  width: 68%;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(31, 31, 29, 0.16);
+}
+
+.theme-card__line--short {
+  top: 35px;
+  width: 46%;
+}
+
+.theme-card__preview--glass .theme-card__line {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.theme-card__orb {
+  position: absolute;
+  right: 10px;
+  top: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+/* 减少动效 / 低性能：减少模糊半径 */
+html[data-theme='glass'][data-reduce-motion='on'] * {
+  transition-duration: 0ms !important;
+  animation-duration: 0ms !important;
+}
+
+/* 与折射贴图的圆角保持一致 */
+html[data-theme='glass'] .left,
+html[data-theme='glass'] .right {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+html[data-theme='glass'] .lobby__mode,
+html[data-theme='glass'] .lobby__resumecard,
+html[data-theme='glass'] .lobby__quote,
+html[data-theme='glass'] .lobby__file,
+html[data-theme='glass'] .gallery__panel,
+html[data-theme='glass'] .prefs,
+html[data-theme='glass'] .newdoc__panel,
+html[data-theme='glass'] .histdlg__panel,
+html[data-theme='glass'] .palette,
+html[data-theme='glass'] .lab__panel,
+html[data-theme='glass'] .symlab__palette,
+html[data-theme='glass'] .symlab__main {
+  overflow: hidden;
+}
+
+/* 更透的玻璃：让壁纸的网格 / 光斑透进来，折射边缘才看得出来 */
+html[data-theme='glass'] .lobby__mode,
+html[data-theme='glass'] .lobby__resumecard,
+html[data-theme='glass'] .lobby__quote,
+html[data-theme='glass'] .lobby__file {
+  background: linear-gradient(
+    152deg,
+    rgba(255, 255, 255, 0.46) 0%,
+    rgba(255, 255, 255, 0.24) 52%,
+    rgba(255, 255, 255, 0.34) 100%
+  ) !important;
+}
+
+html[data-theme='glass'] .left,
+html[data-theme='glass'] .right {
+  background: linear-gradient(
+    170deg,
+    rgba(255, 255, 255, 0.42) 0%,
+    rgba(255, 255, 255, 0.2) 48%,
+    rgba(255, 255, 255, 0.34) 100%
+  ) !important;
+}
+
+html[data-theme='glass'] .dock {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.56)) !important;
+}
+
+html[data-theme='glass'] .titlebar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.26)) !important;
+}
+
+html[data-theme='glass'] .lobby__mode,
+html[data-theme='glass'] .lobby__resumecard,
+html[data-theme='glass'] .lobby__quote,
+html[data-theme='glass'] .lobby__file {
+  border: 1px solid rgba(255, 255, 255, 0.74) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 20px 46px rgba(31, 60, 85, 0.13) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Liquid Glass 视觉强化 v2
+   更透的材质、更亮的边缘、更明显的浮起；动效只走 transform/opacity/filter。
+   ══════════════════════════════════════════════════════════════ */
+
+html[data-theme='glass'] {
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --glass-edge: rgba(255, 255, 255, 0.72);
+  --glass-rim: rgba(255, 255, 255, 0.95);
+}
+
+/* ── 背景：饱和的极光 + 纸面点阵，玻璃才有东西可以折射 ── */
+html[data-theme='glass'] body {
+  background-color: #dfeafe;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Ccircle cx='2' cy='2' r='1' fill='%23ffffff' fill-opacity='.5'/%3E%3Ccircle cx='15' cy='15' r='.8' fill='%230b3550' fill-opacity='.08'/%3E%3C/svg%3E"),
+    linear-gradient(to right, rgba(255, 255, 255, 0.2) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.2) 1px, transparent 1px),
+    radial-gradient(950px 680px at 4% 0%, rgba(86, 155, 255, 0.58), transparent 64%),
+    radial-gradient(820px 640px at 98% 4%, rgba(182, 118, 255, 0.46), transparent 64%),
+    radial-gradient(980px 760px at 88% 100%, rgba(50, 214, 177, 0.42), transparent 64%),
+    radial-gradient(680px 540px at 10% 98%, rgba(255, 183, 96, 0.4), transparent 66%),
+    linear-gradient(137deg, #eaf4ff 0%, #f8edff 44%, #e9fcf5 100%);
+  background-size: 28px 28px, 64px 64px, 64px 64px, auto, auto, auto, auto, auto;
+}
+
+html[data-theme='glass'] body::before {
+  content: '';
+  position: fixed;
+  inset: -22%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 34% at 22% 30%, rgba(63, 139, 255, 0.5), transparent 70%),
+    radial-gradient(34% 30% at 78% 22%, rgba(184, 112, 255, 0.44), transparent 72%),
+    radial-gradient(40% 36% at 74% 80%, rgba(38, 218, 178, 0.38), transparent 70%),
+    radial-gradient(30% 28% at 24% 84%, rgba(255, 176, 82, 0.34), transparent 72%);
+  animation: glass-aurora 26s ease-in-out infinite alternate;
+}
+
+@keyframes glass-aurora {
+  0% {
+    transform: translate3d(-2.2%, -1.4%, 0) scale(1.04) rotate(-1.2deg);
+  }
+  50% {
+    transform: translate3d(1.6%, 2%, 0) scale(1.08) rotate(0.8deg);
+  }
+  100% {
+    transform: translate3d(2.4%, -0.6%, 0) scale(1.03) rotate(1.6deg);
+  }
+}
+
+/* 右侧的玻璃光环，缓慢呼吸，给卡片边缘提供可辨认的明暗 */
+html[data-theme='glass'] .lobby__paper {
+  display: block;
+  height: 560px;
+  opacity: 0.92;
+  background:
+    radial-gradient(circle at 82% 18%, transparent 0 128px, rgba(255, 255, 255, 0.5) 129px 131px, transparent 132px),
+    radial-gradient(circle at 82% 18%, transparent 0 196px, rgba(255, 255, 255, 0.3) 197px 199px, transparent 200px),
+    radial-gradient(circle at 82% 18%, transparent 0 288px, rgba(112, 178, 255, 0.26) 289px 291px, transparent 292px),
+    conic-gradient(
+      from 38deg at 82% 18%,
+      rgba(96, 167, 255, 0.24),
+      transparent 18%,
+      rgba(255, 164, 224, 0.18) 38%,
+      transparent 58%,
+      rgba(84, 226, 196, 0.2) 78%,
+      transparent 92%
+    );
+  filter: blur(9px) saturate(1.2);
+  animation: glass-orbit 22s ease-in-out infinite alternate;
+}
+
+@keyframes glass-orbit {
+  0% {
+    transform: translate3d(-1.4%, 0, 0) rotate(-1.5deg) scale(1);
+  }
+  100% {
+    transform: translate3d(1.2%, 1.4%, 0) rotate(2.5deg) scale(1.035);
+  }
+}
+
+html[data-theme='glass'] .lobby {
+  animation: glass-fade-in 420ms var(--ease-out-quart) both;
+}
+
+@keyframes glass-fade-in {
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ── 大厅：把卡片做成真正有厚度的玻璃 ── */
+html[data-theme='glass'] .lobby__mode {
+  border: 1px solid rgba(255, 255, 255, 0.64) !important;
+  border-radius: 22px;
+  background:
+    linear-gradient(152deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.26) 46%, rgba(255, 255, 255, 0.34) 100%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.85) brightness(1.03);
+  backdrop-filter: blur(24px) saturate(1.85) brightness(1.03);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 0 24px rgba(255, 255, 255, 0.12),
+    0 18px 40px rgba(23, 48, 76, 0.14),
+    0 2px 6px rgba(23, 48, 76, 0.06) !important;
+  animation: glass-card-in 560ms var(--ease-out-expo) both;
+  transition:
+    transform 190ms var(--ease-out-quart),
+    box-shadow 220ms var(--ease-out-quart),
+    background 220ms var(--ease-out-quart),
+    border-color 220ms var(--ease-out-quart);
+}
+
+html[data-theme='glass'] .lobby__mode:nth-child(1) { animation-delay: 0ms; }
+html[data-theme='glass'] .lobby__mode:nth-child(2) { animation-delay: 38ms; }
+html[data-theme='glass'] .lobby__mode:nth-child(3) { animation-delay: 76ms; }
+html[data-theme='glass'] .lobby__mode:nth-child(4) { animation-delay: 114ms; }
+html[data-theme='glass'] .lobby__mode:nth-child(5) { animation-delay: 152ms; }
+html[data-theme='glass'] .lobby__mode:nth-child(6) { animation-delay: 190ms; }
+html[data-theme='glass'] .lobby__mode:nth-child(7) { animation-delay: 228ms; }
+html[data-theme='glass'] .lobby__mode:nth-child(8) { animation-delay: 266ms; }
+
+@keyframes glass-card-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 13px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+html[data-theme='glass'] .lobby__mode:hover {
+  transform: translate3d(0, -3px, 0) scale(1.008);
+  border-color: rgba(255, 255, 255, 0.9) !important;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 0 28px rgba(255, 255, 255, 0.16),
+    0 26px 52px rgba(20, 44, 70, 0.2),
+    0 4px 10px rgba(20, 44, 70, 0.08) !important;
+}
+
+html[data-theme='glass'] .lobby__mode:active {
+  transform: translate3d(0, -1px, 0) scale(0.997);
+  transition-duration: 80ms;
+}
+
+html[data-theme='glass'] .lobby__mode > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* 渐变玻璃边框（只在边缘 1px，不挡内容） */
+html[data-theme='glass'] .lobby__mode::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    142deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0.46) 18%,
+    rgba(255, 255, 255, 0.06) 38%,
+    rgba(255, 255, 255, 0.22) 62%,
+    rgba(255, 255, 255, 0.9) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* 跟随指针的镜面高光 */
+html[data-theme='glass'] .lobby__mode::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.72;
+  background:
+    radial-gradient(
+      260px circle at var(--gx, 28%) var(--gy, 12%),
+      rgba(255, 255, 255, 0.82) 0%,
+      rgba(255, 255, 255, 0.22) 36%,
+      transparent 68%
+    ),
+    linear-gradient(118deg, rgba(255, 255, 255, 0.34) 0%, transparent 34%, rgba(255, 255, 255, 0.12) 100%);
+  transition: opacity 200ms var(--ease-out-quart);
+}
+
+html[data-theme='glass'] .lobby__mode:hover::after {
+  opacity: 1;
+}
+
+html[data-theme='glass'] .lobby__modeicon {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.32)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.72) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -4px 9px rgba(70, 120, 170, 0.06),
+    0 5px 12px rgba(30, 60, 90, 0.1);
+  transition: transform 200ms var(--ease-out-quart), box-shadow 200ms var(--ease-out-quart);
+}
+
+html[data-theme='glass'] .lobby__mode:hover .lobby__modeicon {
+  transform: translate3d(0, -1px, 0) scale(1.04);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 8px 18px rgba(30, 60, 90, 0.14);
+}
+
+html[data-theme='glass'] .lobby__modetext i {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html[data-theme='glass'] .lobby__modego {
+  z-index: 2;
+  opacity: 0.55;
+  transition: transform 200ms var(--ease-out-quart), opacity 200ms var(--ease-out-quart);
+}
+
+html[data-theme='glass'] .lobby__mode:hover .lobby__modego {
+  opacity: 1;
+  transform: translate3d(2px, 0, 0);
+}
+
+/* ── 顶栏胶囊按钮 ── */
+html[data-theme='glass'] .lobby__iconbtn {
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.62) !important;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.3)) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.7);
+  backdrop-filter: blur(18px) saturate(1.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 8px 20px rgba(28, 54, 82, 0.1) !important;
+  transition: transform 180ms var(--ease-out-quart), background 180ms var(--ease-out-quart), box-shadow 180ms var(--ease-out-quart);
+}
+
+html[data-theme='glass'] .lobby__iconbtn:hover {
+  transform: translate3d(0, -1px, 0);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.44)) !important;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 12px 26px rgba(28, 54, 82, 0.14) !important;
+}
+
+html[data-theme='glass'] .lobby__iconbtn:active {
+  transform: translate3d(0, 0, 0) scale(0.98);
+}
+
+/* ── 主按钮 + 次按钮 ── */
+html[data-theme='glass'] .lobby__primary,
+html[data-theme='glass'] .lobby__ghost {
+  position: relative;
+  overflow: hidden;
+  border-radius: 15px;
+  transition: transform 180ms var(--ease-out-quart), box-shadow 200ms var(--ease-out-quart), background 200ms var(--ease-out-quart);
+}
+
+html[data-theme='glass'] .lobby__primary {
+  background:
+    linear-gradient(160deg, #65c2ff 0%, #0a84ff 48%, #046bda 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.56) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 -1px 0 rgba(0, 48, 110, 0.2),
+    0 16px 32px rgba(10, 108, 220, 0.3) !important;
+}
+
+html[data-theme='glass'] .lobby__primary:hover {
+  transform: translate3d(0, -2px, 0);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 22px 40px rgba(10, 108, 220, 0.36) !important;
+}
+
+html[data-theme='glass'] .lobby__primary:active {
+  transform: translate3d(0, 0, 0) scale(0.99);
+}
+
+html[data-theme='glass'] .lobby__primary::after {
+  content: '';
+  position: absolute;
+  top: -40%;
+  bottom: -40%;
+  width: 42%;
+  left: -55%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.42), transparent);
+  transform: skewX(-18deg);
+  pointer-events: none;
+  transition: left 520ms var(--ease-out-quart);
+}
+
+html[data-theme='glass'] .lobby__primary:hover::after {
+  left: 120%;
+}
+
+html[data-theme='glass'] .lobby__ghost {
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.26)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.6) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 10px 24px rgba(28, 54, 82, 0.08);
+}
+
+html[data-theme='glass'] .lobby__ghost:hover {
+  transform: translate3d(0, -1px, 0);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0.4)) !important;
+}
+
+/* ── 最近文件 / 引言 / 恢复条：更薄的一层玻璃 ── */
+html[data-theme='glass'] .lobby__resumecard,
+html[data-theme='glass'] .lobby__quote,
+html[data-theme='glass'] .lobby__file,
+html[data-theme='glass'] .lobby__empty {
+  border: 1px solid rgba(255, 255, 255, 0.6) !important;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.24) 60%, rgba(255, 255, 255, 0.32)) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.7);
+  backdrop-filter: blur(20px) saturate(1.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 14px 34px rgba(25, 50, 78, 0.1);
+  transition: transform 180ms var(--ease-out-quart), box-shadow 200ms var(--ease-out-quart), background 200ms var(--ease-out-quart);
+}
+
+html[data-theme='glass'] .lobby__file:hover,
+html[data-theme='glass'] .lobby__resumecard:hover {
+  transform: translate3d(0, -2px, 0);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 20px 40px rgba(25, 50, 78, 0.14);
+}
+
+html[data-theme='glass'] .lobby__recenthead h2,
+html[data-theme='glass'] .lobby__library h2 {
+  letter-spacing: 0.01em;
+}
+
+/* ── 编辑器：悬浮的玻璃侧栏与画布 ── */
+html[data-theme='glass'] .workspace {
+  padding: 8px;
+  gap: 8px;
+}
+
+html[data-theme='glass'] .left,
+html[data-theme='glass'] .right {
+  border: 1px solid rgba(255, 255, 255, 0.56) !important;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 18px 42px rgba(23, 48, 76, 0.14) !important;
+  -webkit-backdrop-filter: blur(26px) saturate(1.75);
+  backdrop-filter: blur(26px) saturate(1.75);
+}
+
+html[data-theme='glass'] .left__bulk {
+  background: rgba(255, 255, 255, 0.16) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.34) !important;
+}
+
+html[data-theme='glass'] .canvas-col {
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 22px 50px rgba(23, 48, 76, 0.16);
+  background: rgba(255, 255, 255, 0.24);
+}
+
+html[data-theme='glass'] .canvas {
+  border-radius: 21px;
+  background: rgba(253, 254, 255, 0.94);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.8),
+    inset 0 24px 58px rgba(31, 60, 85, 0.03);
+}
+
+html[data-theme='glass'] .dock {
+  margin: 0 8px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.44), rgba(255, 255, 255, 0.62)) !important;
+  -webkit-backdrop-filter: blur(30px) saturate(1.8);
+  backdrop-filter: blur(30px) saturate(1.8);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    0 18px 40px rgba(23, 48, 76, 0.16) !important;
+}
+
+html[data-theme='glass'] .statusbar {
+  border-top: none;
+  background: transparent !important;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-theme='glass'] .statusbar__mode,
+html[data-theme='glass'] .statusbar .modebtn[data-active='true'] {
+  background: rgba(255, 255, 255, 0.34);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+html[data-theme='glass'] .tbtn {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  transition: transform 150ms var(--ease-out-quart), background 150ms var(--ease-out-quart), color 150ms;
+}
+
+html[data-theme='glass'] .tbtn:hover {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: translate3d(0, -1px, 0);
+}
+
+html[data-theme='glass'] .tbtn[data-active='true'] {
+  color: #fff;
+  background: linear-gradient(160deg, #2b9dff, #0a84ff);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.44),
+    0 7px 16px rgba(10, 132, 255, 0.26);
+}
+
+/* ── 弹层：进入时轻轻浮起，玻璃更厚 ── */
+html[data-theme='glass'] .gallery__panel,
+html[data-theme='glass'] .prefs,
+html[data-theme='glass'] .newdoc__panel,
+html[data-theme='glass'] .histdlg__panel,
+html[data-theme='glass'] .palette,
+html[data-theme='glass'] .menu {
+  border: 1px solid rgba(255, 255, 255, 0.66) !important;
+  -webkit-backdrop-filter: blur(34px) saturate(1.8) brightness(1.03);
+  backdrop-filter: blur(34px) saturate(1.8) brightness(1.03);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    0 32px 80px rgba(18, 38, 60, 0.26),
+    0 6px 16px rgba(18, 38, 60, 0.1) !important;
+  animation: glass-pop 220ms var(--ease-out-expo);
+}
+
+@keyframes glass-pop {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+html[data-theme='glass'] .menu {
+  animation-name: glass-pop-menu;
+  transform-origin: 100% 100%;
+}
+
+@keyframes glass-pop-menu {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+html[data-theme='glass'] .gallery__card {
+  border: 1px solid rgba(255, 255, 255, 0.54);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.26));
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  backdrop-filter: blur(14px) saturate(1.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 8px 20px rgba(25, 50, 78, 0.08);
+  transition: transform 160ms var(--ease-out-quart), box-shadow 180ms var(--ease-out-quart);
+}
+
+html[data-theme='glass'] .gallery__card:hover {
+  transform: translate3d(0, -2px, 0);
+  box-shadow: inset 0 1px 0 #fff, 0 16px 30px rgba(25, 50, 78, 0.14);
+}
+
+/* ── 设置里的主题卡：选中有一次很轻的液态回弹（不弹跳） ── */
+html[data-theme='glass'] .theme-card {
+  transition: transform 180ms var(--ease-out-quart), border-color 180ms, box-shadow 180ms, background 180ms;
+}
+
+html[data-theme='glass'] .theme-card[data-active='true'] {
+  transform: translate3d(0, -1px, 0);
+}
+
+/* ── 减少动效 ── */
+html[data-theme='glass'][data-reduce-motion='on'] *,
+html[data-theme='glass'][data-reduce-motion='on'] *::before,
+html[data-theme='glass'][data-reduce-motion='on'] *::after {
+  animation: none !important;
+  transition-duration: 0ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme='glass'] *,
+  html[data-theme='glass'] *::before,
+  html[data-theme='glass'] *::after {
+    animation: none !important;
+    transition-duration: 0ms !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Liquid Glass v3：更明确的高光、阴影、液面光带与主题切换动效
+   ══════════════════════════════════════════════════════════════ */
+
+/* 右侧一团慢慢转动的液体光，把玻璃背面的颜色托起来 */
+html[data-theme='glass'] .lobby::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 36px;
+  right: -160px;
+  width: 680px;
+  height: 680px;
+  pointer-events: none;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 44% 40%, rgba(255, 255, 255, 0.34), transparent 46%),
+    conic-gradient(
+      from 210deg,
+      rgba(58, 142, 255, 0.48),
+      rgba(185, 110, 255, 0.3) 22%,
+      rgba(47, 224, 184, 0.32) 46%,
+      rgba(255, 183, 96, 0.24) 66%,
+      rgba(58, 142, 255, 0.4) 100%
+    );
+  filter: blur(54px) saturate(1.4);
+  opacity: 0.58;
+  animation: glass-bloom 19s ease-in-out infinite alternate;
+}
+
+@keyframes glass-bloom {
+  0% {
+    transform: translate3d(-2%, 0, 0) rotate(-6deg) scale(1);
+  }
+  100% {
+    transform: translate3d(2%, 4%, 0) rotate(10deg) scale(1.09);
+  }
+}
+
+/* 卡片：两层阴影 + 内圈暗线，白玻璃才不会糊在浅色背景上 */
+html[data-theme='glass'] .lobby__mode {
+  background:
+    linear-gradient(158deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0.22) 54%, rgba(212, 232, 250, 0.3) 100%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    inset 0 -14px 26px rgba(40, 78, 112, 0.035),
+    0 0 0 0.5px rgba(40, 70, 100, 0.12),
+    0 2px 4px rgba(22, 44, 66, 0.08),
+    0 24px 54px rgba(22, 44, 66, 0.18) !important;
+}
+
+html[data-theme='glass'] .lobby__mode:hover {
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.26),
+    inset 0 -14px 26px rgba(40, 78, 112, 0.04),
+    0 0 0 0.5px rgba(40, 70, 100, 0.16),
+    0 4px 8px rgba(22, 44, 66, 0.1),
+    0 32px 64px rgba(22, 44, 66, 0.24) !important;
+}
+
+html[data-theme='glass'] .lobby__modetext i {
+  font-size: 10.5px;
+  letter-spacing: 0.005em;
+}
+
+/* 悬停时一条很慢的液面光沿着边框绕行 */
+html[data-theme='glass'] .lobby__mode::before {
+  transition: opacity 200ms var(--ease-out-quart);
+}
+
+html[data-theme='glass'] .lobby__mode:hover::before {
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(120, 194, 255, 0.78) 14%,
+    rgba(255, 255, 255, 0.24) 31%,
+    rgba(194, 148, 255, 0.56) 52%,
+    rgba(255, 255, 255, 0.22) 70%,
+    rgba(120, 240, 214, 0.66) 86%,
+    rgba(255, 255, 255, 0.98) 100%
+  );
+}
+
+/* 主按钮：更厚的蓝色玻璃 */
+html[data-theme='glass'] .lobby__primary {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    inset 0 -2px 0 rgba(0, 50, 118, 0.28),
+    0 0 0 0.5px rgba(0, 78, 168, 0.3),
+    0 12px 24px rgba(10, 108, 220, 0.26),
+    0 24px 44px rgba(10, 108, 220, 0.2) !important;
+}
+
+/* 侧栏：回到更中性的磨砂白，不让整块蓝糊住对象列表 */
+html[data-theme='glass'] .left,
+html[data-theme='glass'] .right {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.34) 44%, rgba(255, 255, 255, 0.5) 100%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 0 0 0.5px rgba(40, 70, 100, 0.12),
+    0 22px 48px rgba(22, 44, 66, 0.16) !important;
+}
+
+/* 画布纸张更白，和玻璃框拉开层次 */
+html[data-theme='glass'] .canvas {
+  background: #fdfefe;
+}
+
+/* 顶部和底部区域留出玻璃厚度 */
+html[data-theme='glass'] .titlebar {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 1px 0 rgba(255, 255, 255, 0.4),
+    0 10px 30px rgba(22, 44, 66, 0.1) !important;
+}
+
+html[data-theme='glass'] .dock {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 0 0.5px rgba(40, 70, 100, 0.1),
+    0 22px 46px rgba(22, 44, 66, 0.18) !important;
+}
+
+/* 页面切换主题时，整块界面轻轻呼吸一次 */
+html.theme-switch .app {
+  animation: theme-breathe 420ms var(--ease-out-quart) both;
+}
+
+@keyframes theme-breathe {
+  0% {
+    opacity: 0.55;
+  }
+  60% {
+    opacity: 0.92;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme='glass'] .lobby::after,
+  html[data-theme='glass'] .lobby__paper {
+    animation: none !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Liquid Glass v4：玻璃厚度（内高光 + 内阴影）与流动边框
+   ══════════════════════════════════════════════════════════════ */
+
+@property --glass-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* 卡片边缘的高光 / 暗边，不依赖伪元素，缩略图里也看得出厚度 */
+html[data-theme='glass'] .lobby__mode {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 12px 16px -12px rgba(255, 255, 255, 0.95),
+    inset 0 -14px 20px -14px rgba(36, 82, 122, 0.32),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.36),
+    0 0 0 1px rgba(30, 64, 96, 0.1),
+    0 3px 5px rgba(22, 44, 66, 0.08),
+    0 26px 56px rgba(22, 44, 66, 0.18) !important;
+}
+
+html[data-theme='glass'] .lobby__mode:hover {
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 14px 18px -12px rgba(255, 255, 255, 1),
+    inset 0 -14px 20px -14px rgba(36, 82, 122, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.44),
+    0 0 0 1px rgba(30, 64, 96, 0.14),
+    0 5px 9px rgba(22, 44, 66, 0.12),
+    0 34px 66px rgba(22, 44, 66, 0.24) !important;
+}
+
+/* 悬停时边框的高光缓慢绕行，只有 1px，不抢内容 */
+html[data-theme='glass'] .lobby__mode:hover::before {
+  background: conic-gradient(
+    from var(--glass-angle, 0deg),
+    rgba(255, 255, 255, 1),
+    rgba(132, 201, 255, 0.9) 12%,
+    rgba(255, 255, 255, 0.28) 28%,
+    rgba(201, 157, 255, 0.7) 48%,
+    rgba(255, 255, 255, 0.3) 66%,
+    rgba(129, 244, 218, 0.8) 84%,
+    rgba(255, 255, 255, 1) 100%
+  );
+  animation: glass-angle 4.8s linear infinite;
+}
+
+@keyframes glass-angle {
+  to {
+    --glass-angle: 360deg;
+  }
+}
+
+/* 侧栏同样做出厚度，但保持中性 */
+html[data-theme='glass'] .left,
+html[data-theme='glass'] .right {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 16px 22px -18px rgba(255, 255, 255, 0.9),
+    inset 0 -18px 24px -20px rgba(36, 82, 122, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.24),
+    0 0 0 1px rgba(30, 64, 96, 0.1),
+    0 24px 52px rgba(22, 44, 66, 0.16) !important;
+}
+
+/* 画布框的顶部反光 */
+html[data-theme='glass'] .canvas-col {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    0 0 0 1px rgba(30, 64, 96, 0.08),
+    0 26px 58px rgba(22, 44, 66, 0.18);
+}
+
+/* 让画面四角有一点点暗，白玻璃才像浮在光里 */
+html[data-theme='glass'] body {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Ccircle cx='2' cy='2' r='1' fill='%23ffffff' fill-opacity='.5'/%3E%3Ccircle cx='15' cy='15' r='.8' fill='%230b3550' fill-opacity='.08'/%3E%3C/svg%3E"),
+    linear-gradient(to right, rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+    radial-gradient(950px 680px at 4% 0%, rgba(74, 148, 255, 0.62), transparent 64%),
+    radial-gradient(820px 640px at 98% 4%, rgba(174, 108, 255, 0.5), transparent 64%),
+    radial-gradient(980px 760px at 88% 100%, rgba(38, 210, 174, 0.46), transparent 64%),
+    radial-gradient(680px 540px at 10% 98%, rgba(255, 172, 82, 0.44), transparent 66%),
+    radial-gradient(120% 100% at 50% 50%, transparent 56%, rgba(24, 54, 84, 0.14) 100%),
+    linear-gradient(137deg, #e7f2ff 0%, #f7ebff 44%, #e6fcf4 100%);
+  background-size: 28px 28px, 64px 64px, 64px 64px, auto, auto, auto, auto, auto, auto;
+}
+
+/* 动画：主页卡片入场后不再重播；减少动效时全部停下 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme='glass'] .lobby__mode,
+  html[data-theme='glass'] .lobby__mode::before,
+  html[data-theme='glass'] .gallery__panel,
+  html[data-theme='glass'] .prefs,
+  html[data-theme='glass'] .newdoc__panel,
+  html[data-theme='glass'] .histdlg__panel,
+  html[data-theme='glass'] .palette,
+  html[data-theme='glass'] .menu {
+    animation: none !important;
+  }
+}
+
+html[data-theme='glass'] .prefs,
+html[data-theme='glass'] .gallery__panel,
+html[data-theme='glass'] .newdoc__panel,
+html[data-theme='glass'] .histdlg__panel,
+html[data-theme='glass'] .palette {
+  background:
+    linear-gradient(158deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.8) 52%, rgba(255, 255, 255, 0.86) 100%) !important;
+}
+
+html[data-theme='glass'] .prefs__tabs {
+  background: rgba(255, 255, 255, 0.34) !important;
+}
+
+html[data-theme='glass'] .menu {
+  background: rgba(255, 255, 255, 0.86) !important;
+}
+
+/* 打开设置时不要让动画从全透明开始，慢机器上会像闪一下 */
+@keyframes glass-pop {
+  from {
+    opacity: 0.72;
+    transform: translate3d(0, 8px, 0) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* ── 最终性能策略 ──
+   1) 背景颜色和柔光完全保留，但不再整页动画：极光本身是小尺寸渐变层，
+      直接静态绘制，省掉 8 张卡片 / 2 个侧栏 / 工具坞每帧重采样。
+   2) 大厅卡片保留半透明、内高光、渐变边框，只叠一层 8px 轻量模糊。
+   3) 编辑器侧栏不再 backdrop-filter；工具坞保留一层小的实时模糊。
+   动效保留在：卡片入场、鼠标高光、边框流光、主按钮扫光、主题切换、弹层入场。 */
+html[data-theme='glass'] body::before {
+  animation: none !important;
+}
+
+html[data-theme='glass'] .lobby::after {
+  filter: none !important;
+  animation: none !important;
+  opacity: 0.62;
+  background:
+    radial-gradient(42% 38% at 38% 34%, rgba(72, 143, 255, 0.5), transparent 70%),
+    radial-gradient(34% 32% at 64% 42%, rgba(184, 112, 255, 0.42), transparent 72%),
+    radial-gradient(38% 36% at 55% 72%, rgba(35, 218, 178, 0.4), transparent 72%),
+    radial-gradient(30% 28% at 42% 82%, rgba(255, 176, 82, 0.28), transparent 72%);
+}
+
+html[data-theme='glass'] .lobby__paper {
+  display: none !important;
+}
+
+/* 两块大面积侧栏不再实时模糊，背景是静态的，渐变 / 内高光 / 阴影负责玻璃感 */
+html[data-theme='glass'] .left,
+html[data-theme='glass'] .right {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* 工具坞小，保留一层模糊；它不需要再算整页大面积 */
+html[data-theme='glass'] .dock {
+  -webkit-backdrop-filter: blur(18px) saturate(1.6) !important;
+  backdrop-filter: blur(18px) saturate(1.6) !important;
+}
+
+/* 背景静态后，弹层没必要暂停什么；保留声明便于以后加回 */
+html[data-theme='glass'] body::before,
+html[data-theme='glass'] .lobby::after {
+  will-change: auto;
+}
+
+/* 保留一个很小的品牌呼吸，不落在任何玻璃后面，成本可以忽略 */
+html[data-theme='glass'] .lobby__mark {
+  animation: mark-breathe 7s ease-in-out infinite alternate;
+}
+
+@keyframes mark-breathe {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(0, -2px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme='glass'] .lobby__mark {
+    animation: none !important;
+  }
+}
+
+/* 边框流光改用静态高光：遮罩 + 逐帧重绘的 conic 渐变在软件渲染下太贵 */
+html[data-theme='glass'] .lobby__mode:hover::before {
+  animation: none !important;
+}
+
+html[data-theme='glass'] .mark-breathe {
+  animation: none !important;
+}
+html[data-theme='glass'] .lobby__mark { animation: none !important; }
+
+/* 唯一常驻动效：品牌标记的 2px 呼吸；不落在玻璃卡片的采样区域里 */
+html[data-theme='glass'] .lobby__mark {
+  animation: mark-breathe 7s ease-in-out infinite alternate !important;
+}
+
+/* ── 在静态背景上恢复一层很轻的实时模糊：观感更接近参考图，成本可控 ── */
+html[data-theme='glass'] .lobby__mode {
+  -webkit-backdrop-filter: blur(8px) saturate(1.35) !important;
+  backdrop-filter: blur(8px) saturate(1.35) !important;
+  background:
+    linear-gradient(158deg, rgba(255, 255, 255, 0.66) 0%, rgba(255, 255, 255, 0.3) 52%, rgba(207, 228, 250, 0.36) 100%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 12px 18px -14px rgba(255, 255, 255, 0.96),
+    inset 0 -16px 22px -16px rgba(32, 78, 118, 0.36),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.34),
+    0 0 0 1px rgba(26, 60, 92, 0.14),
+    0 3px 6px rgba(20, 42, 64, 0.12),
+    0 28px 58px rgba(20, 42, 64, 0.22) !important;
+}
+
+html[data-theme='glass'] .lobby__mode:hover {
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 14px 18px -14px rgba(255, 255, 255, 1),
+    inset 0 -16px 22px -16px rgba(32, 78, 118, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.42),
+    0 0 0 1px rgba(26, 60, 92, 0.18),
+    0 6px 10px rgba(20, 42, 64, 0.14),
+    0 36px 68px rgba(20, 42, 64, 0.28) !important;
+}
+
+/* 侧栏轻模糊；背景已经静态，不再每帧重采样大面积动画 */
+html[data-theme='glass'] .left,
+html[data-theme='glass'] .right {
+  -webkit-backdrop-filter: blur(14px) saturate(1.55) !important;
+  backdrop-filter: blur(14px) saturate(1.55) !important;
+}
+@media (prefers-reduced-motion: reduce) { html[data-theme='glass'] .lobby__mark { animation: none !important; } }
+html[data-theme='glass'][data-reduce-motion='on'] .lobby__mark { animation: none !important; }

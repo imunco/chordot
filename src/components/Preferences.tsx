@@ -282,6 +282,43 @@ export function Preferences({
 
           {tab === 'look' && (
             <>
+              <div className="theme-picker">
+                <div className="theme-picker__head">
+                  <span>界面主题</span>
+                  <i>切换后立即生效，所有窗口同步</i>
+                </div>
+                <div className="theme-picker__grid">
+                  <button
+                    className="theme-card"
+                    data-active={settings.theme !== 'glass'}
+                    data-theme-choice="paper"
+                    onClick={() => onChange({ theme: 'paper' })}
+                  >
+                    <span className="theme-card__preview theme-card__preview--paper">
+                      <i className="theme-card__bar" />
+                      <i className="theme-card__line" />
+                      <i className="theme-card__line theme-card__line--short" />
+                    </span>
+                    <b>纸面</b>
+                    <i>原来的纸面插画风，浅色、低饱和</i>
+                  </button>
+                  <button
+                    className="theme-card"
+                    data-active={settings.theme === 'glass'}
+                    data-theme-choice="glass"
+                    onClick={() => onChange({ theme: 'glass' })}
+                  >
+                    <span className="theme-card__preview theme-card__preview--glass">
+                      <i className="theme-card__orb" />
+                      <i className="theme-card__bar" />
+                      <i className="theme-card__line" />
+                    </span>
+                    <b>液态玻璃</b>
+                    <i>折射 + 模糊 + 边缘高光，苹果 Liquid Glass 风</i>
+                  </button>
+                </div>
+              </div>
+
               <Row label="曲线线宽" hint="函数图像的笔画粗细">
                 <input
                   className="prefs__range"

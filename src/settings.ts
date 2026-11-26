@@ -2,6 +2,8 @@ import { mirror } from './persist'
 
 const KEY = 'chordot.settings'
 
+export type ThemeId = 'paper' | 'glass'
+
 export interface Settings {
   /** 力箭头标尺：每牛顿多少像素 */
   forceScale: number
@@ -35,6 +37,8 @@ export interface Settings {
   errorLog: boolean
   /** 教材 / 模板库默认开独立窗口（关掉则回落到内嵌面板） */
   independentWindows: boolean
+  /** 界面主题：纸面（默认）/ 液态玻璃 */
+  theme: ThemeId
   /** 批注：上次用的颜色 / 粗细 / 笔型 */
   penColor: string
   penWidth: number
@@ -73,6 +77,7 @@ export const DEFAULT_SETTINGS: Settings = {
   quoteCategory: 'k',
   errorLog: true,
   independentWindows: true,
+  theme: 'paper',
   penColor: '#9a5b4a',
   penWidth: 2.5,
   penMode: 'pen',
@@ -112,6 +117,7 @@ export function loadSettings(): Settings {
         typeof p.quoteCategory === 'string' && /^[a-l]$/.test(p.quoteCategory) ? p.quoteCategory : 'k',
       errorLog: typeof p.errorLog === 'boolean' ? p.errorLog : true,
       independentWindows: typeof p.independentWindows === 'boolean' ? p.independentWindows : true,
+      theme: p.theme === 'glass' ? 'glass' : 'paper',
       penColor: typeof p.penColor === 'string' && /^#[0-9a-f]{6}$/i.test(p.penColor) ? p.penColor : DEFAULT_SETTINGS.penColor,
       penWidth: num(p.penWidth, 1, 8, DEFAULT_SETTINGS.penWidth),
       penMode:

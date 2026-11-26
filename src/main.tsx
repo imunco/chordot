@@ -8,6 +8,7 @@ import { SymbolLab } from './components/SymbolLab'
 import { PrintSheet } from './components/PrintSheet'
 import { GalleryWindow } from './components/GalleryWindow'
 import { hydrate } from './persist'
+import { loadSettings } from './settings'
 import './styles/tokens.css'
 import './styles/app.css'
 // 机构装配（物理模式）的专属样式：面板 / 图标网格 / 世界面板，覆盖 app.css 里的旧 .mechbar 规则
@@ -15,11 +16,23 @@ import './styles/mech.css'
 // 启动大厅与新建课件对话框
 import './styles/lobby.css'
 import './styles/print.css'
+import './styles/glass.css'
 
 /**
  * 先把磁盘上的用户数据同步回 localStorage 再渲染，
  * 这样组件里所有读取都还是同步的。
  */
+// 主题必须在首帧前写入：避免白底闪一下；打印窗口永远用纸面
+const bootQuery = new URLSearchParams(location.search)
+const bootIsPrint = Boolean(bootQuery.get('print'))
+const applyTheme = () => {
+  document.documentElement.dataset.theme = bootIsPrint ? 'paper' : loadSettings().theme
+}
+applyTheme()
+window.addEventListener('storage', (e) => {
+  if (e.key === 'chordot.settings') applyTheme()
+})
+
 async function boot() {
   const query = new URLSearchParams(location.search)
   const lab = query.get('lab')

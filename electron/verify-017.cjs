@@ -1,4 +1,4 @@
-/** 0.17.0：全局聚光灯 / 放大镜 + 教材实验室模型专题（26 个） */
+/** 0.18.0：全局聚光灯 / 放大镜 + 教材实验室模型专题（26 个） */
 const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
 require('./verify-setup.cjs')
 const path = require('node:path')
@@ -39,8 +39,8 @@ app.whenReady().then(async () => {
   registerFileIpc({ addRecent: () => {} })
   ipcMain.handle('ui:get-state', () => ({ recent: [], lastFile: null, autosave: null, slowStart: 0 }))
   ipcMain.on('ui:set-state', () => {})
-  ipcMain.handle('update:check', () => ({ ok: true, current: '0.17.0', hasUpdate: false }))
-  ipcMain.handle('update:info', () => ({ version: '0.17.0', mirrors: [] }))
+  ipcMain.handle('update:check', () => ({ ok: true, current: '0.18.0', hasUpdate: false }))
+  ipcMain.handle('update:info', () => ({ version: '0.18.0', mirrors: [] }))
   ipcMain.handle('app:about', () => null)
   ipcMain.handle('window:fullscreen', () => true)
   ipcMain.handle('lab:open-window', async () => { await makeLab(); return true })

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { fileNameOf, folderOf } from '../model/starters'
 import type { DailyQuote } from '../model/hitokoto'
+import type { ThemeId } from '../settings'
 
 export interface RecentFileMeta {
   path: string
@@ -35,6 +36,8 @@ export type LobbyQuick =
 
 interface Props {
   version: string
+  theme: ThemeId
+  onToggleTheme: () => void
   recentFiles: RecentFileMeta[]
   /** 自动保存快照（有就显示「恢复未保存的课件」） */
   recovery: { at: number; file: string; filePath: string | null } | null
@@ -251,6 +254,8 @@ function RecentRow({ file, onOpen }: { file: RecentFileMeta; onOpen: (p: string)
 
 export function Lobby({
   version,
+  theme,
+  onToggleTheme,
   recentFiles,
   recovery,
   quote,
@@ -311,6 +316,25 @@ export function Lobby({
           <button className="lobby__iconbtn" onClick={onShortcuts} title="快捷键一览">
             <IconKeyboard />
             <span>快捷键</span>
+          </button>
+          <button
+            className="lobby__iconbtn"
+            onClick={onToggleTheme}
+            title={theme === 'glass' ? '切换到纸面主题' : '切换到液态玻璃主题'}
+            data-theme-toggle="1"
+          >
+            {theme === 'glass' ? (
+              <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+                <rect x="5" y="4" width="14" height="16" rx="2" {...S} />
+                <path d="M8 9h8M8 13h8M8 17h5" {...S} />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+                <path d="M12 3c3.2 4.2 6 7.1 6 10a6 6 0 0 1-12 0c0-2.9 2.8-5.8 6-10Z" {...S} />
+                <path d="M9.2 13.4a2.8 2.8 0 0 0 2.8 2.8" {...S} opacity="0.5" />
+              </svg>
+            )}
+            <span>{theme === 'glass' ? '纸面' : '液态玻璃'}</span>
           </button>
           <button className="lobby__iconbtn" onClick={onPrefs} title="设置">
             <IconGearTop />
@@ -426,7 +450,21 @@ export function Lobby({
           </div>
           <div className="lobby__modegrid">
             {MODES.map((m) => (
-              <button key={m.id} className="lobby__mode" data-mode={m.id} onClick={() => onQuick(m.id)}>
+              <button
+                key={m.id}
+                className="lobby__mode"
+                data-mode={m.id}
+                onClick={() => onQuick(m.id)}
+                onPointerMove={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect()
+                  e.currentTarget.style.setProperty('--gx', (((e.clientX - r.left) / r.width) * 100).toFixed(1) + '%')
+                  e.currentTarget.style.setProperty('--gy', (((e.clientY - r.top) / r.height) * 100).toFixed(1) + '%')
+                }}
+                onPointerLeave={(e) => {
+                  e.currentTarget.style.setProperty('--gx', '28%')
+                  e.currentTarget.style.setProperty('--gy', '12%')
+                }}
+              >
                 <span className="lobby__modeicon">{m.icon}</span>
                 <span className="lobby__modetext">
                   <b>
