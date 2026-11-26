@@ -6606,9 +6606,9 @@ html[data-capturing='1'][data-sheet='1'] .lab__notes {
   padding: 2px 0 4px;
 }
 
-/* ───────── 0.16.0：演示者模�?/ 版本历史弹窗 / 投影增强 ───────── */
+/* ───────── 0.16.0：演示者模式 / 版本历史弹窗 / 投影增强 ───────── */
 
-/* 演示者模式：收起编辑界面，只留画�?+ 悬浮�?*/
+/* 演示者模式：收起编辑界面，只留画布 + 悬浮条 */
 .app--present .titlebar,
 .app--present .dock,
 .app--present .statusbar,
@@ -6687,7 +6687,7 @@ html[data-capturing='1'][data-sheet='1'] .lab__notes {
   white-space: nowrap;
 }
 
-/* 投影增强：加粗线条、提高对比（不改配色�?*/
+/* 投影增强：加粗线条、提高对比（不改配色） */
 .app--boost .canvas__svg {
   filter: contrast(1.06) saturate(1.05);
 }
@@ -6825,7 +6825,7 @@ html[data-capturing='1'][data-sheet='1'] .lab__notes {
   pointer-events: none;
 }
 
-/* ───────── 0.16.0：三维展开图面�?───────── */
+/* ───────── 0.16.0：三维展开图面板 ───────── */
 .solidnet-wrap {
   position: absolute;
   right: 16px;
@@ -6880,12 +6880,26 @@ html[data-capturing='1'][data-sheet='1'] .lab__notes {
 
 .solidnet__label {
   font-family: var(--font-mono);
-  font-size: 8.5px;
-  fill: #7a756d;
+  font-size: 9.5px;
+  fill: #5c5a56;
 }
 
 .solidnet__hint {
   padding: 0 10px 7px;
   font-size: 9.5px;
   color: var(--text-secondary);
+}
+
+/* 窄窗口 / 中文按钮不换行，防止「上一镜头」被拆成两行 */
+.presenter__btn,
+.presenter__hint,
+.presenter__timer,
+.presenter__sep {
+  white-space: nowrap;
+  flex: none;
+}
+
+.presenter__btn {
+  display: inline-flex;
+  align-items: center;
 }

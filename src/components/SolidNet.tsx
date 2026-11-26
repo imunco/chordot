@@ -149,26 +149,38 @@ function buildNet(shape: SolidShape): NetResult {
     }
   }
 
-  // 边界棱（只属于一个面的棱）长度标注
+  const resultFaces = [...placedPts.entries()].map(([, pts]) => ({ pts }))
+
+  // 摊平后只给「外轮廓」标棱长：共享的折痕被两个面各用一次，count 为 2；只出现一次的才是外边。
+  const edgeUse = new Map<string, { a: P2; b: P2; count: number }>()
+  for (const f of resultFaces) {
+    for (let i = 0; i < f.pts.length; i += 1) {
+      const a = f.pts[i]
+      const b = f.pts[(i + 1) % f.pts.length]
+      const ka = a.x.toFixed(3) + ',' + a.y.toFixed(3)
+      const kb = b.x.toFixed(3) + ',' + b.y.toFixed(3)
+      const key = ka < kb ? ka + '|' + kb : kb + '|' + ka
+      const hit = edgeUse.get(key)
+      if (hit) hit.count += 1
+      else edgeUse.set(key, { a, b, count: 1 })
+    }
+  }
   const labelByEdge: { x: number; y: number; text: string }[] = []
-  const seenBoundary = new Set<string>()
-  for (const [key, list] of edgeMap) {
-    if (list.length !== 1) continue
-    if (seenBoundary.has(key)) continue
-    seenBoundary.add(key)
-    const [a, b] = key.split(':').map(Number)
-    const pa = globalV.get(a)
-    const pb = globalV.get(b)
-    if (!pa || !pb) continue
-    const len = Math.hypot(pb.x - pa.x, pb.y - pa.y)
+  const seenLength = new Set<string>()
+  for (const { a, b, count } of edgeUse.values()) {
+    if (count !== 1) continue
+    const len = Math.hypot(b.x - a.x, b.y - a.y)
+    if (len < 1e-4) continue
+    const text = Number(len.toFixed(2)).toString()
+    // 同一种棱长只标一次：正方体 12 条棱都写「4」会把小卡片糊满
+    if (seenLength.has(text)) continue
+    seenLength.add(text)
     labelByEdge.push({
-      x: (pa.x + pb.x) / 2,
-      y: (pa.y + pb.y) / 2,
-      text: Number(len.toFixed(2)).toString(),
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+      text,
     })
   }
-
-  const resultFaces = [...placedPts.entries()].map(([, pts]) => ({ pts }))
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
@@ -216,6 +228,7 @@ export function SolidNet({ shape, width = 260, height = 190 }: Props) {
   const project = (p: P2) => ({ x: ox + p.x * scale, y: oy + p.y * scale })
 
   const edgeLabels = net.edgeLabels
+  const edgeLengths = [...new Set(edgeLabels.map((l) => l.text))]
 
   return (
     <div className="solidnet" data-solid-net="1" style={{ width, height }}>
@@ -263,7 +276,12 @@ export function SolidNet({ shape, width = 260, height = 190 }: Props) {
           })}
         </g>
       </svg>
-      <div className="solidnet__hint">棱长为场景单位；球体不可展开</div>
+      <div className="solidnet__hint">
+        {edgeLengths.length > 0
+          ? '棱长 ' + edgeLengths.join(' / ') + '（场景单位）'
+          : '棱长为场景单位'}
+        {' · '}球体不可展开
+      </div>
     </div>
   )
 }
