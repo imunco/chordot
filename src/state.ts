@@ -4,6 +4,7 @@ import { shapeById } from './data/shapes'
 import { quadDragMoves, quadFitMoves, lockedQuadOf } from './model/quad'
 import { emptySketch } from './kernel/types'
 import type {
+  DocMeta,
   MotionModel,
   SolidShape,
   MotionParams,
@@ -43,6 +44,8 @@ export interface Doc {
   deleted: string[]
   /** 手绘批注 */
   strokes?: Stroke[]
+  /** 课件元信息（标题 / 学科 / 章节 / 备注 / 演示镜头书签） */
+  meta?: DocMeta
 }
 
 export interface State {
@@ -147,7 +150,10 @@ export type Action =
   | { type: 'ink-visible'; visible: boolean }
   | { type: 'shapes'; open: boolean }
   | { type: 'canvas'; w: number; h: number }
-  | { type: 'scene'; scene: SceneSpec; file: string }
+  | { type: 'scene'; scene: SceneSpec; file: string; meta?: DocMeta }
+  | { type: 'meta'; meta: DocMeta }
+  /** 恢复自动保存 / 历史版本：文档进来但不算「已保存」 */
+  | { type: 'restore'; doc: Doc; file: string; path?: string | null }
   | { type: 'saved'; path: string; file: string }
   | { type: 'scene-patch'; scene: SceneSpec }
   | { type: 'insert-shape'; shapeId: string; at: [number, number] }
@@ -1212,7 +1218,14 @@ export function reducer(state: State, action: Action): State {
       return { ...state, canvas: { w: action.w, h: action.h } }
 
     case 'scene': {
-      const doc: Doc = { scene: action.scene, hidden: {}, names: {}, deleted: [] }
+      const now = Date.now()
+      const doc: Doc = {
+        scene: action.scene,
+        hidden: {},
+        names: {},
+        deleted: [],
+        ...(action.meta ? { meta: { createdAt: now, updatedAt: now, ...action.meta } } : {}),
+      }
       return {
         ...state,
         doc,
@@ -1247,11 +1260,46 @@ export function reducer(state: State, action: Action): State {
     }
 
     /** 改场景参数：入栈、重算，并停掉正在跑的仿真 */
+    /** 改元信息：不进撤销栈（标题/备注不值得占一步历史） */
+    case 'meta':
+      return { ...state, doc: { ...state.doc, meta: { ...state.doc.meta, ...action.meta } }, dirty: true }
+
     case 'scene-patch':
       return commitScene(state, action.scene, { sim: null, playing: false, stopped: false })
 
     case 'saved':
       return { ...state, filePath: action.path, file: action.file, dirty: false }
+
+    case 'restore': {
+      return {
+        ...state,
+        doc: action.doc,
+        file: action.file,
+        filePath: action.path ?? null,
+        solution: solveScene(action.doc.scene),
+        past: [],
+        future: [],
+        selected: [],
+        picks: [],
+        decomposed: [],
+        sim: null,
+        playing: false,
+        stopped: false,
+        dirty: true,
+        mode:
+          action.doc.scene.kind === 'incline' ||
+          action.doc.scene.kind === 'motion' ||
+          action.doc.scene.kind === 'mech'
+            ? 'physics'
+            : 'math',
+        subState: action.doc.scene.kind === 'motion' ? 'kinematics' : 'statics',
+        fitToken: state.fitToken + 1,
+        tool: 'select',
+        zoom: 1,
+        solveError: null,
+        lastSource: null,
+      }
+    }
 
     case 'opened': {
       return {

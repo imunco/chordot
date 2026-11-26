@@ -6,9 +6,10 @@ const path = require('node:path')
  * @param {{
  *   sendMenu: (action: string, arg?: string) => void
  *   recent: () => string[]
+ *   openGalleryWindow?: () => void
  * }} deps
  */
-function buildAppMenu({ sendMenu, recent }) {
+function buildAppMenu({ sendMenu, recent, openGalleryWindow }) {
   const list = Array.isArray(recent()) ? recent().slice(0, 8) : []
   const recentItems =
     list.length === 0
@@ -66,6 +67,7 @@ function buildAppMenu({ sendMenu, recent }) {
         { type: 'separator' },
         { label: '教材实验室…', click: () => sendMenu('textbook') },
         { label: '教材实验室（独立窗口）…', click: () => sendMenu('textbook-window') },
+        { label: '模板库（独立窗口）…', click: () => openGalleryWindow?.() },
         { type: 'separator' },
         // 讲台投影时去掉标题栏和任务栏，多出一整条画布
         { role: 'togglefullscreen', label: '全屏（F11）', accelerator: 'F11' },

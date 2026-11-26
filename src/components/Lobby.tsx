@@ -1,5 +1,20 @@
 import type { ReactNode } from 'react'
 import { fileNameOf, folderOf } from '../model/starters'
+import type { DailyQuote } from '../model/hitokoto'
+
+export interface RecentFileMeta {
+  path: string
+  title?: string
+  subject?: string
+  chapter?: string
+  grade?: string
+}
+
+export interface LibraryFileMeta {
+  name: string
+  path: string
+  at: number
+}
 
 /**
  * 大厅（启动页）。
@@ -20,7 +35,17 @@ export type LobbyQuick =
 
 interface Props {
   version: string
-  recent: string[]
+  recentFiles: RecentFileMeta[]
+  /** 自动保存快照（有就显示「恢复未保存的课件」） */
+  recovery: { at: number; file: string; filePath: string | null } | null
+  /** 每日一言（Hitokoto + 兜底） */
+  quote: DailyQuote | null
+  /** 课件库（userData/library） */
+  library: LibraryFileMeta[]
+  onRecover: () => void
+  onDismissRecovery: () => void
+  onQuoteRefresh: () => void
+  onOpenLibrary: (path: string) => void
   /** 上次打开的课件（来自主进程的 UI 状态） */
   lastFile: string | null
   /** 本次已经在编辑的课件（从编辑器点「返回大厅」时保留） */
@@ -201,17 +226,21 @@ const MODES: ModeCard[] = [
   { id: 'gallery', title: '模板库', hint: '现成课件一键套用', icon: <IconTemplates /> },
 ]
 
-function RecentRow({ path, onOpen }: { path: string; onOpen: (p: string) => void }) {
-  const name = fileNameOf(path)
-  const folder = folderOf(path)
+function RecentRow({ file, onOpen }: { file: RecentFileMeta; onOpen: (p: string) => void }) {
+  const fallback = fileNameOf(file.path).replace(/\.chordot$/i, '')
+  const name = file.title || fallback
+  const hint =
+    [file.grade, file.chapter].filter(Boolean).join(' · ') ||
+    folderOf(file.path) ||
+    '本地文件'
   return (
-    <button className="lobby__file" onClick={() => onOpen(path)} title={path}>
+    <button className="lobby__file" onClick={() => onOpen(file.path)} title={file.path}>
       <span className="lobby__file-icon">
         <IconFolder />
       </span>
       <span className="lobby__file-text">
         <b>{name}</b>
-        <i>{folder || '本地文件'}</i>
+        <i>{hint}</i>
       </span>
       <span className="lobby__file-go">
         <IconArrow />
@@ -222,7 +251,14 @@ function RecentRow({ path, onOpen }: { path: string; onOpen: (p: string) => void
 
 export function Lobby({
   version,
-  recent,
+  recentFiles,
+  recovery,
+  quote,
+  library,
+  onRecover,
+  onDismissRecovery,
+  onQuoteRefresh,
+  onOpenLibrary,
   lastFile,
   currentFile,
   onNew,
@@ -238,9 +274,9 @@ export function Lobby({
   onDataDir,
 }: Props) {
   const seen = new Set<string>()
-  const files = recent.filter((p) => {
-    if (!p || seen.has(p)) return false
-    seen.add(p)
+  const files = recentFiles.filter((f) => {
+    if (!f || !f.path || seen.has(f.path)) return false
+    seen.add(f.path)
     return true
   })
   const showLast = Boolean(lastFile && lastFile !== currentFile)
@@ -295,6 +331,27 @@ export function Lobby({
             点线圆多边形、函数与几何约束、受力分解、三维立体、机构装配和教材实验，都在同一个工作台里。
           </p>
 
+          {recovery && (
+            <div className="lobby__recovery">
+              <span className="lobby__recoveryicon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                  <path d="M12 7v5l3 2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                </svg>
+              </span>
+              <span className="lobby__recoverytext">
+                <i>上次没有正常退出</i>
+                <b>发现「{recovery.file || '未命名课件'}」的未保存快照</b>
+              </span>
+              <button className="lobby__recoverygo" onClick={onRecover}>
+                恢复
+              </button>
+              <button className="lobby__recoverydrop" onClick={onDismissRecovery}>
+                忽略
+              </button>
+            </div>
+          )}
+
           <div className="lobby__cta">
             <button className="lobby__primary" onClick={onNew}>
               <IconPlus />
@@ -342,6 +399,24 @@ export function Lobby({
               )}
             </div>
           )}
+
+          {quote && (
+            <div className="lobby__quote" data-quote-source={quote.source}>
+              <span className="lobby__quotemark" aria-hidden="true">
+                “
+              </span>
+              <div className="lobby__quotebody">
+                <p>{quote.text}</p>
+                <span>
+                  — {quote.from}
+                  {quote.source === 'local' ? '（离线）' : ''}
+                </span>
+              </div>
+              <button className="lobby__quoterefresh" onClick={onQuoteRefresh} title="换一句">
+                ↻
+              </button>
+            </div>
+          )}
         </section>
 
         <section className="lobby__modes" aria-label="选择模式">
@@ -368,6 +443,46 @@ export function Lobby({
           </div>
         </section>
       </main>
+
+      {library.length > 0 && (
+        <section className="lobby__library" aria-label="我的课件">
+          <div className="lobby__recenthead">
+            <h2>我的课件</h2>
+            <span>课件库 · 另存进去的课件会出现在这里</span>
+          </div>
+          <div className="lobby__filelist">
+            {library.slice(0, 8).map((item) => {
+              const label = item.name.replace(/\.chordot$/i, '')
+              const when = new Date(item.at)
+              const hint =
+                when.getFullYear() +
+                '/' +
+                String(when.getMonth() + 1).padStart(2, '0') +
+                '/' +
+                String(when.getDate()).padStart(2, '0')
+              return (
+                <button
+                  key={item.path}
+                  className="lobby__file"
+                  onClick={() => onOpenLibrary(item.path)}
+                  title={item.path}
+                >
+                  <span className="lobby__file-icon">
+                    <IconTemplates />
+                  </span>
+                  <span className="lobby__file-text">
+                    <b>{label}</b>
+                    <i>{hint}</i>
+                  </span>
+                  <span className="lobby__file-go">
+                    <IconArrow />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       <section className="lobby__recent" aria-label="最近课件">
         <div className="lobby__recenthead">
@@ -397,8 +512,8 @@ export function Lobby({
           </div>
         ) : (
           <div className="lobby__filelist">
-            {files.slice(0, 8).map((p) => (
-              <RecentRow key={p} path={p} onOpen={onOpenRecent} />
+            {files.slice(0, 8).map((f) => (
+              <RecentRow key={f.path} file={f} onOpen={onOpenRecent} />
             ))}
           </div>
         )}

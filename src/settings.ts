@@ -23,6 +23,18 @@ export interface Settings {
   onboarded: boolean
   /** 启动时先显示大厅（选择模式 / 新建 / 打开最近） */
   startInLobby: boolean
+  /** 自动保存 / 崩溃恢复 */
+  autosave: boolean
+  /** 自动保存间隔（秒） */
+  autosaveInterval: number
+  /** 大厅显示每日一言（Hitokoto + 本地兜底） */
+  dailyQuote: boolean
+  /** 一言分类（c=游戏 i=诗词 k=哲学... 见 model/hitokoto.ts） */
+  quoteCategory: string
+  /** 本地错误日志开关 */
+  errorLog: boolean
+  /** 教材 / 模板库默认开独立窗口（关掉则回落到内嵌面板） */
+  independentWindows: boolean
   /** 批注：上次用的颜色 / 粗细 / 笔型 */
   penColor: string
   penWidth: number
@@ -55,6 +67,12 @@ export const DEFAULT_SETTINGS: Settings = {
   touchDefault: false,
   onboarded: false,
   startInLobby: true,
+  autosave: true,
+  autosaveInterval: 30,
+  dailyQuote: true,
+  quoteCategory: 'k',
+  errorLog: true,
+  independentWindows: true,
   penColor: '#9a5b4a',
   penWidth: 2.5,
   penMode: 'pen',
@@ -87,6 +105,13 @@ export function loadSettings(): Settings {
       touchDefault: typeof p.touchDefault === 'boolean' ? p.touchDefault : false,
       onboarded: typeof p.onboarded === 'boolean' ? p.onboarded : false,
       startInLobby: typeof p.startInLobby === 'boolean' ? p.startInLobby : true,
+      autosave: typeof p.autosave === 'boolean' ? p.autosave : true,
+      autosaveInterval: num(p.autosaveInterval, 10, 300, 30),
+      dailyQuote: typeof p.dailyQuote === 'boolean' ? p.dailyQuote : true,
+      quoteCategory:
+        typeof p.quoteCategory === 'string' && /^[a-l]$/.test(p.quoteCategory) ? p.quoteCategory : 'k',
+      errorLog: typeof p.errorLog === 'boolean' ? p.errorLog : true,
+      independentWindows: typeof p.independentWindows === 'boolean' ? p.independentWindows : true,
       penColor: typeof p.penColor === 'string' && /^#[0-9a-f]{6}$/i.test(p.penColor) ? p.penColor : DEFAULT_SETTINGS.penColor,
       penWidth: num(p.penWidth, 1, 8, DEFAULT_SETTINGS.penWidth),
       penMode:

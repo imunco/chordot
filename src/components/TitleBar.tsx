@@ -1,6 +1,8 @@
 interface Props {
   file: string
   dirty: boolean
+  /** 课件标题（meta.title，缺省不显示） */
+  title?: string
   /** 传了才显示「返回大厅」按钮 */
   onHome?: () => void
 }
@@ -20,7 +22,8 @@ function HomeIcon() {
   )
 }
 
-export function TitleBar({ file, dirty, onHome }: Props) {
+export function TitleBar({ file, dirty, title, onHome }: Props) {
+  const display = title && title.trim() ? title.trim() : ''
   return (
     <div className="titlebar">
       {onHome && (
@@ -29,6 +32,7 @@ export function TitleBar({ file, dirty, onHome }: Props) {
           <span>大厅</span>
         </button>
       )}
+      {display ? <span className="titlebar__title">{display}</span> : null}
       <span className="titlebar__file">{file}</span>
       {dirty && (
         <span className="titlebar__dirty" title="有未保存的修改">

@@ -19,6 +19,23 @@ export interface TriangleParams {
   lengths: { a: string; b: string; d: number }[]
 }
 
+/** 课件元信息：只用于大厅 / 标题栏 / 导出页眉，不影响几何求解 */
+export interface DocMeta {
+  /** 展示用标题；缺省时用文件名 */
+  title?: string
+  subject?: 'math' | 'physics'
+  /** 学段 / 年级，如「高一」 */
+  grade?: string
+  /** 章节，如「3.2 摩擦力」 */
+  chapter?: string
+  /** 备注 / 教学目标 */
+  note?: string
+  createdAt?: number
+  updatedAt?: number
+  /** 演示者模式的镜头书签（来回切换视角用） */
+  slides?: { id: string; name: string; zoom: number; pan: { x: number; y: number } }[]
+}
+
 /* ───────── 通用草图文档：构造工具直接编辑这一层 ───────── */
 
 export interface SketchPoint {
@@ -139,8 +156,8 @@ export interface Camera {
 
 export type SolidType = 'cube' | 'pyramid' | 'prism' | 'tetra' | 'octahedron' | 'sphere'
 
-/** 立体材质：程序化纹理，不依赖图片资源 */
-export type SolidMaterial = 'none' | 'paper' | 'wood' | 'grid' | 'dots' | 'metal'
+/** 立体材质：程序化纹理 + 自定义位图（image 用 shape.texture 的 dataURL） */
+export type SolidMaterial = 'none' | 'paper' | 'wood' | 'grid' | 'dots' | 'metal' | 'image'
 
 export interface SolidShape {
   id: string
@@ -156,6 +173,8 @@ export interface SolidShape {
   force?: PhysicsForce
   /** 表面材质；缺省 = 原来的灰阶着色 */
   material?: SolidMaterial
+  /** 自定义位图贴图（dataURL，仅 material = 'image' 时使用） */
+  texture?: string
 }
 
 /** 变力：F(t) 沿某个方向 */

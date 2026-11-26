@@ -6,8 +6,15 @@ const { registerFileIpc } = require('./file-ipc.cjs')
 const { registerUpdateIpc } = require('./update.cjs')
 const { buildAppMenu } = require('./menu.cjs')
 const { registerStoreIpc } = require('./store.cjs')
+const { registerAutosaveIpc, getAutosaveSummary } = require('./autosave.cjs')
+const { registerHistoryIpc } = require('./history.cjs')
+const { registerPrintIpc } = require('./print.cjs')
+const { registerErrorLog } = require('./errorlog.cjs')
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
+
+// 主进程崩溃 / 未捕获异常先落日志：启动阶段出问题才有据可查
+registerErrorLog()
 
 // Windows 任务栏图标/通知归属：不设的话任务栏会挂到 electron.exe 名下
 if (process.platform === 'win32') app.setAppUserModelId('cn.chordot.desktop')
@@ -81,9 +88,72 @@ function ensureVisible(bounds) {
 }
 
 let mainWindow = null
-let labWindow = null
-let symbolWindow = null
+/** 辅助窗口按 kind 复用：lab / symbols / gallery；print 每次新建，导出完就销毁 */
+const auxWindows = { lab: null, symbols: null, gallery: null }
 let forceClose = false
+let runtimeDirty = false
+/** 第二实例 / 文件关联带进来的课件路径，等主窗口能收消息时再发 */
+let pendingOpenFile = null
+/** 主进程 ready → 主窗口可交互的毫秒数（ui:get-state 的 slowStart） */
+let readyAt = 0
+let slowStartMs = 0
+let interactiveReported = false
+
+/** 页面还在加载就等加载完再发，避免消息发空 */
+function sendWhenReady(wc, channel, ...args) {
+  if (!wc || wc.isDestroyed()) return
+  if (wc.isLoading()) {
+    wc.once('did-finish-load', () => {
+      if (!wc.isDestroyed()) wc.send(channel, ...args)
+    })
+  } else {
+    wc.send(channel, ...args)
+  }
+}
+
+/** 把主窗口叫到前面；没有主窗口就再开一个 */
+function focusMainWindow() {
+  if (!app.isReady()) return
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+/** 等主窗口能收消息了再把待打开课件发过去（窗口刚建好时页面可能还没加载完） */
+function flushPendingOpenFile() {
+  if (!pendingOpenFile) return
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.webContents.isLoading()) return
+  const filePath = pendingOpenFile
+  pendingOpenFile = null
+  mainWindow.webContents.send('app:open-file', filePath)
+}
+
+/** 文件关联 / 第二实例 / 拖进来的课件都走这里 */
+function queueOpenFile(filePath) {
+  if (typeof filePath !== 'string' || !filePath) return
+  pendingOpenFile = path.resolve(filePath)
+  focusMainWindow()
+  flushPendingOpenFile()
+}
+
+/** 从命令行里找 .chordot 路径：双击课件启动 / 第二实例带参数都靠它 */
+function chordotPathFromArgs(argv) {
+  if (!Array.isArray(argv)) return null
+  for (const arg of argv.slice(1)) {
+    if (typeof arg !== 'string' || arg.startsWith('-')) continue
+    if (!/\.chordot$/i.test(arg)) continue
+    return path.resolve(arg)
+  }
+  return null
+}
+
+/** 主窗口全局唯一：第二实例把课件丢过来之后自己退出 */
+const gotSingleLock = app.requestSingleInstanceLock()
 
 function createWindow() {
   const saved = readState()
@@ -126,6 +196,12 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => mainWindow.show())
   bindFullscreenEvents(mainWindow)
 
+  // 页面加载完：兜底记一次慢启动耗时（渲染层还会上报更准的一次），并送出待打开课件
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (!interactiveReported && !slowStartMs && readyAt) slowStartMs = Date.now() - readyAt
+    flushPendingOpenFile()
+  })
+
   const persistBounds = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return
     const maximized = mainWindow.isMaximized()
@@ -144,10 +220,9 @@ function createWindow() {
     mainWindow.webContents.send('app:request-close')
   })
 
+  // 主窗口关了辅助窗口继续留着（各是各的窗口）；全部关掉后由 window-all-closed 收尾
   mainWindow.on('closed', () => {
     mainWindow = null
-    if (labWindow && !labWindow.isDestroyed()) labWindow.close()
-    if (symbolWindow && !symbolWindow.isDestroyed()) symbolWindow.close()
   })
 
   if (isDev) {
@@ -155,41 +230,90 @@ function createWindow() {
   } else {
     mainWindow.loadURL('app://chordot/index.html')
   }
+  return mainWindow
 }
 
-/** 教材实验室独立窗口：适合双屏 / 投影，主窗口继续留着画布 */
-function createLabWindow(id) {
-  if (labWindow && !labWindow.isDestroyed()) {
-    labWindow.show()
-    labWindow.focus()
-    if (id) {
-      const send = () => {
-        if (labWindow && !labWindow.isDestroyed()) labWindow.webContents.send('lab:switch', id)
-      }
-      if (labWindow.webContents.isLoading()) labWindow.webContents.once('did-finish-load', send)
-      else send()
+/**
+ * 辅助窗口配置：每个 kind 自己的标题、查询串和 bounds state key。
+ * print 是隐藏窗口，每次导出新建、不记忆位置。
+ */
+const AUX_KINDS = {
+  lab: {
+    title: '教材实验室 · 弦点',
+    stateKey: 'labBounds',
+    maxKey: 'labMaximized',
+    query: (opts) => `?lab=1${opts.id ? `&id=${encodeURIComponent(opts.id)}` : ''}`,
+    minWidth: 980,
+    minHeight: 680,
+    width: (wa) => Math.min(1680, Math.round(wa.width * 0.94)),
+    height: (wa) => Math.min(1040, Math.round(wa.height * 0.94)),
+  },
+  symbols: {
+    title: '符号公式实验室 · 弦点',
+    stateKey: 'symbolsBounds',
+    maxKey: 'symbolsMaximized',
+    query: () => '?symbols=1',
+    minWidth: 980,
+    minHeight: 700,
+    width: () => 1200,
+    height: () => 860,
+  },
+  gallery: {
+    title: '模板库 · 弦点',
+    stateKey: 'galleryBounds',
+    maxKey: 'galleryMaximized',
+    query: () => '?gallery=1',
+    minWidth: 900,
+    minHeight: 620,
+    width: (wa) => Math.min(1440, Math.round(wa.width * 0.86)),
+    height: (wa) => Math.min(940, Math.round(wa.height * 0.9)),
+  },
+  print: {
+    title: '讲义打印 · 弦点',
+    hidden: true,
+    query: () => '?print=1',
+    width: () => 1280,
+    height: () => 900,
+  },
+}
+
+/**
+ * 通用辅助窗口：lab / symbols / gallery / print。
+ * lab、symbols、gallery 同一时刻各只有一个（再点就把现有窗口叫到前面），
+ * print 每次新建隐藏窗口，导出完由 print.cjs 销毁。
+ */
+function createAuxWindow(kind, opts = {}) {
+  const meta = AUX_KINDS[kind]
+  if (!meta) throw new Error(`未知的辅助窗口类型：${kind}`)
+
+  const reusable = kind !== 'print'
+  if (reusable) {
+    const existing = auxWindows[kind]
+    if (existing && !existing.isDestroyed()) {
+      existing.show()
+      existing.focus()
+      if (kind === 'lab' && opts.id) sendWhenReady(existing.webContents, 'lab:switch', opts.id)
+      return existing
     }
-    return labWindow
   }
 
   const saved = readState()
-  const bounds = ensureVisible(saved.labBounds)
+  const bounds = meta.hidden ? null : ensureVisible(saved[meta.stateKey])
   const wa = screen.getPrimaryDisplay().workArea
-  const width = bounds?.width ?? Math.min(1680, Math.round(wa.width * 0.94))
-  const height = bounds?.height ?? Math.min(1040, Math.round(wa.height * 0.94))
+  const width = bounds?.width ?? meta.width(wa)
+  const height = bounds?.height ?? meta.height(wa)
   const x = bounds?.x ?? Math.round(wa.x + (wa.width - width) / 2)
   const y = bounds?.y ?? Math.round(wa.y + (wa.height - height) / 2)
 
-  labWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width,
     height,
     x,
     y,
-    minWidth: 980,
-    minHeight: 680,
+    ...(meta.minWidth ? { minWidth: meta.minWidth, minHeight: meta.minHeight } : {}),
     show: false,
     backgroundColor: '#FAFAF8',
-    title: '教材实验室 · 弦点',
+    title: meta.title,
     autoHideMenuBar: true,
     ...(windowIcon ? { icon: windowIcon } : {}),
     webPreferences: {
@@ -197,89 +321,94 @@ function createLabWindow(id) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // 打印窗口是隐藏的，别让 Chromium 节流它的定时器
+      ...(meta.hidden ? { backgroundThrottling: false } : {}),
     },
   })
 
-  if (saved.labMaximized) labWindow.maximize()
-  labWindow.once('ready-to-show', () => labWindow.show())
-  bindFullscreenEvents(labWindow)
+  if (!meta.hidden) {
+    if (saved[meta.maxKey]) win.maximize()
+    win.once('ready-to-show', () => win.show())
+    bindFullscreenEvents(win)
 
-  const persist = () => {
-    if (!labWindow || labWindow.isDestroyed()) return
-    const maximized = labWindow.isMaximized()
-    const b = maximized ? readState().labBounds : labWindow.getBounds()
-    writeState({ labBounds: b, labMaximized: maximized })
+    // 每个窗口记自己的 bounds，互不影响
+    const persist = () => {
+      if (win.isDestroyed()) return
+      const maximized = win.isMaximized()
+      const b = maximized ? readState()[meta.stateKey] : win.getBounds()
+      writeState({ [meta.stateKey]: b, [meta.maxKey]: maximized })
+    }
+    win.on('resize', persist)
+    win.on('move', persist)
+    win.on('close', persist)
   }
-  labWindow.on('resize', persist)
-  labWindow.on('move', persist)
-  labWindow.on('close', persist)
-  labWindow.on('closed', () => {
-    labWindow = null
+
+  win.on('closed', () => {
+    if (reusable && auxWindows[kind] === win) auxWindows[kind] = null
   })
 
-  const query = `?lab=1${id ? `&id=${encodeURIComponent(id)}` : ''}`
+  const query = meta.query(opts)
   if (isDev) {
-    labWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}${query}`)
+    win.loadURL(`${process.env.VITE_DEV_SERVER_URL}${query}`)
   } else {
-    labWindow.loadURL(`app://chordot/index.html${query}`)
+    win.loadURL(`app://chordot/index.html${query}`)
   }
-  return labWindow
-}
 
-/** 符号公式实验室：独立窗口，拼出来的表达式就是作用在小球上的合力 */
-function createSymbolWindow() {
-  if (symbolWindow && !symbolWindow.isDestroyed()) {
-    symbolWindow.show()
-    symbolWindow.focus()
-    return symbolWindow
-  }
-  symbolWindow = new BrowserWindow({
-    width: 1200,
-    height: 860,
-    minWidth: 980,
-    minHeight: 700,
-    show: false,
-    backgroundColor: '#FAFAF8',
-    title: '符号公式实验室 · 弦点',
-    autoHideMenuBar: true,
-    ...(windowIcon ? { icon: windowIcon } : {}),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  })
-  symbolWindow.once('ready-to-show', () => symbolWindow.show())
-  symbolWindow.on('closed', () => {
-    symbolWindow = null
-  })
-  const query = '?symbols=1'
-  if (isDev) {
-    symbolWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}${query}`)
-  } else {
-    symbolWindow.loadURL(`app://chordot/index.html${query}`)
-  }
-  return symbolWindow
+  if (reusable) auxWindows[kind] = win
+  return win
 }
 
 ipcMain.handle('symbol:open-window', () => {
-  createSymbolWindow()
+  createAuxWindow('symbols')
   return true
 })
 
+/** 模板库独立窗口：双屏时一边挑模板一边留着画布 */
+ipcMain.handle('gallery:open-window', () => {
+  createAuxWindow('gallery')
+  return true
+})
+
+/** 模板库窗口 → 主窗口：选中模板后交给主窗口套用 */
+ipcMain.handle('gallery:pick', (_e, payload) => {
+  if (!payload || typeof payload !== 'object') return false
+  const scene = payload.scene
+  const file = typeof payload.file === 'string' ? payload.file : null
+  if (!scene && !file) return false
+  return sendToMain('gallery:pick', { scene, file })
+})
+
+/** 发给主窗口；主窗口已经关了就先开回来（页面加载完再发，preload 会缓冲） */
+function sendToMain(channel, ...args) {
+  if (!app.isReady()) return false
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+  sendWhenReady(mainWindow.webContents, channel, ...args)
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  return true
+}
+
 /** 符号实验室 → 主窗口：把拼好的公式交给机构里选中的部件 */
-ipcMain.handle('symbol:apply', (_e, expr) => {
-  if (typeof expr !== 'string' || !expr.trim()) return false
+ipcMain.handle('symbol:apply', (_e, payload) => {
+  const p =
+    typeof payload === 'string'
+      ? { expr: payload, target: 'force', value: null }
+      : payload && typeof payload === 'object'
+        ? payload
+        : null
+  if (!p || typeof p.expr !== 'string' || !p.expr.trim()) return false
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('symbol:apply', expr)
+    sendWhenReady(mainWindow.webContents, 'symbol:apply', p)
     mainWindow.focus()
   }
   return true
 })
 
+/** 教材实验室独立窗口：适合双屏 / 投影，主窗口继续留着画布 */
 ipcMain.handle('lab:open-window', (_e, payload) => {
-  createLabWindow(typeof payload?.id === 'string' ? payload.id : '')
+  createAuxWindow('lab', { id: typeof payload?.id === 'string' ? payload.id : '' })
   return true
 })
 
@@ -304,14 +433,11 @@ ipcMain.handle('lab:capture', async (e, rect) => {
   }
 })
 
-/** 主窗口 ↔ 独立窗口：实验切换双向同步（谁切的听谁的，不回传给发送方） */
-ipcMain.on('lab:sync', (e, id) => {
-  if (typeof id !== 'string' || !id) return
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed() || win.webContents.id === e.sender.id) continue
-    win.webContents.send('lab:sync', id)
-  }
-})
+/**
+ * 教材窗口 / 主窗口的实验切换同步已取消（0.16.0 起各窗口独立）。
+ * 通道保留：旧渲染层还会 send，收下但不转发，免得报错。
+ */
+ipcMain.on('lab:sync', () => {})
 
 /** 教材「全屏演示」：必须走原生 setFullScreen，才能盖住 Windows 任务栏 */
 ipcMain.handle('window:fullscreen', (e, on) => {
@@ -336,22 +462,38 @@ function sendMenu(action, arg) {
 }
 
 function buildMenu() {
-  buildAppMenu({ sendMenu, recent: () => readState().recent })
+  buildAppMenu({
+    sendMenu,
+    recent: () => readState().recent,
+    openGalleryWindow: () => createAuxWindow('gallery'),
+  })
   // 菜单栏常显：触控用户没有 Alt 键，藏起来等于没有菜单
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setMenuBarVisibility(true)
 }
 
 ipcMain.handle('ui:get-state', () => {
   const s = readState()
+  const autosave = getAutosaveSummary()
   return {
     leftWidth: s.leftWidth,
     rightOpen: s.rightOpen,
     lastFile: s.lastFile,
     recent: Array.isArray(s.recent) ? s.recent : [],
+    // 崩溃恢复：只给摘要，不带 data
+    autosave: autosave ? { at: autosave.at, file: autosave.file, filePath: autosave.filePath } : null,
+    // 慢启动耗时（毫秒）；测不到就是 0
+    slowStart: slowStartMs,
   }
 })
 
-let runtimeDirty = false
+/** 渲染层首屏挂载完（preload 在 load + 两帧后自动发），记一次更准的慢启动耗时 */
+ipcMain.on('app:interactive', (e) => {
+  if (interactiveReported || !readyAt) return
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (e.sender.id !== mainWindow.webContents.id) return
+  interactiveReported = true
+  slowStartMs = Date.now() - readyAt
+})
 
 ipcMain.on('ui:set-state', (_e, patch) => {
   if (!patch || typeof patch !== 'object') return
@@ -360,11 +502,12 @@ ipcMain.on('ui:set-state', (_e, patch) => {
   if ('recent' in patch && app.isReady()) buildMenu()
 })
 
+/** 退出：先关所有窗口（主窗口有未保存修改时渲染层已经确认过了） */
 ipcMain.on('app:close', () => {
   forceClose = true
-  if (symbolWindow && !symbolWindow.isDestroyed()) symbolWindow.close()
-  if (labWindow && !labWindow.isDestroyed()) labWindow.close()
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close()
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.close()
+  }
 })
 
 /** 最近打开：写进 window-state.json，供启动恢复与“最近课件”使用 */
@@ -376,28 +519,54 @@ function addRecent(filePath) {
   if (app.isReady()) buildMenu()
 }
 
-app.whenReady().then(() => {
-  protocol.handle('app', (request) => {
-    const { pathname } = new URL(request.url)
-    const target = path.join(DIST, decodeURIComponent(pathname))
-    // 防目录穿越
-    if (!target.startsWith(DIST)) {
-      return new Response('Forbidden', { status: 403 })
-    }
-    return net.fetch(pathToFileURL(target).toString())
+if (!gotSingleLock) {
+  // 已经有实例在跑：把命令行里的课件路径交给它，自己退出
+  app.quit()
+} else {
+  app.on('second-instance', (_e, argv) => {
+    const filePath = chordotPathFromArgs(argv)
+    if (filePath) queueOpenFile(filePath)
+    else focusMainWindow()
   })
 
-  registerFileIpc({ addRecent })
-  registerUpdateIpc({ getWindow: () => mainWindow })
-  registerStoreIpc()
-  createWindow()
-  buildMenu()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  // macOS：Dock 拖文件 / 双击课件（必须在 ready 之前挂）
+  app.on('open-file', (e, filePath) => {
+    e.preventDefault()
+    queueOpenFile(filePath)
   })
-})
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+  app.whenReady().then(() => {
+    readyAt = Date.now()
+
+    protocol.handle('app', (request) => {
+      const { pathname } = new URL(request.url)
+      const target = path.join(DIST, decodeURIComponent(pathname))
+      // 防目录穿越
+      if (!target.startsWith(DIST)) {
+        return new Response('Forbidden', { status: 403 })
+      }
+      return net.fetch(pathToFileURL(target).toString())
+    })
+
+    registerFileIpc({ addRecent })
+    registerUpdateIpc({ getWindow: () => mainWindow })
+    registerStoreIpc()
+    registerAutosaveIpc()
+    registerHistoryIpc()
+    registerPrintIpc({ createPrintWindow: () => createAuxWindow('print') })
+    createWindow()
+    buildMenu()
+
+    // 双击 / 文件关联首次启动：等窗口加载完再发（did-finish-load 里 flush）
+    const startupFile = chordotPathFromArgs(process.argv)
+    if (startupFile) queueOpenFile(startupFile)
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+}

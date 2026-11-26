@@ -600,7 +600,10 @@ export function RightPanel(props: Props) {
                       <div className="props__row" key={f.key}>
                         <button
                           className="props__action"
-                          onClick={() => props.onPatchParams(f.set(true))}
+                          onClick={() => {
+                            if (f.run) f.run(props.onPatchParams)
+                            else props.onPatchParams(f.set(true))
+                          }}
                         >
                           {f.label}
                         </button>

@@ -6605,3 +6605,287 @@ html[data-capturing='1'][data-sheet='1'] .lab__notes {
 .fnpad__field {
   padding: 2px 0 4px;
 }
+
+/* ───────── 0.16.0：演示者模�?/ 版本历史弹窗 / 投影增强 ───────── */
+
+/* 演示者模式：收起编辑界面，只留画�?+ 悬浮�?*/
+.app--present .titlebar,
+.app--present .dock,
+.app--present .statusbar,
+.app--present .leftbar,
+.app--present .rightpanel,
+.app--present .mechbar,
+.app--present .physprompt {
+  display: none !important;
+}
+
+.app--present .workspace {
+  height: 100%;
+}
+
+.app--present .canvas-col {
+  height: 100%;
+}
+
+.presenter {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 28px);
+  padding: 8px 10px;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(31, 31, 29, 0.14);
+  backdrop-filter: blur(6px);
+}
+
+.presenter__timer {
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+}
+
+.presenter__sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+}
+
+.presenter__btn {
+  height: 28px;
+  padding: 0 11px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.presenter__btn:hover {
+  color: var(--text-primary);
+  background: var(--hover);
+}
+
+.presenter__btn[data-active='true'] {
+  color: #fff;
+  background: #3d5a66;
+}
+
+.presenter__hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* 投影增强：加粗线条、提高对比（不改配色�?*/
+.app--boost .canvas__svg {
+  filter: contrast(1.06) saturate(1.05);
+}
+
+.app--boost .canvas__svg line,
+.app--boost .canvas__svg path,
+.app--boost .canvas__svg polygon,
+.app--boost .canvas__svg polyline {
+  stroke-width: 1.25;
+}
+
+/* 版本历史弹窗 */
+.histdlg {
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(31, 31, 29, 0.34);
+}
+
+.histdlg__panel {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 22px 56px rgba(31, 31, 29, 0.22);
+  overflow: hidden;
+}
+
+.histdlg__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid #ece9e3;
+}
+
+.histdlg__head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.histdlg__head p {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.histdlg__close {
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.histdlg__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.histdlg__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  background: #fbfaf8;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.histdlg__item b {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.histdlg__item span {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.histdlg__item .histdlg__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.histdlg__item button {
+  height: 27px;
+  padding: 0 11px;
+  font-size: 11.5px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.histdlg__empty {
+  padding: 20px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* 拖拽文件到窗口时的提示层 */
+.dropcue {
+  position: fixed;
+  inset: 16px;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: #3d5a66;
+  background: rgba(250, 250, 248, 0.86);
+  border: 2px dashed #9fb2b8;
+  border-radius: 14px;
+  pointer-events: none;
+}
+
+/* ───────── 0.16.0：三维展开图面�?───────── */
+.solidnet-wrap {
+  position: absolute;
+  right: 16px;
+  bottom: 18px;
+  z-index: 9;
+}
+
+.solidnet {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(31, 31, 29, 0.14);
+}
+
+.solidnet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 26px;
+  padding: 0 6px 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  background: #f6f4ef;
+  border-bottom: 1px solid #ece9e3;
+}
+
+.solidnet__close {
+  width: 20px;
+  height: 20px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.solidnet__close:hover {
+  background: rgba(31, 31, 29, 0.07);
+}
+
+.solidnet__svg {
+  display: block;
+}
+
+.solidnet__label {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  fill: #7a756d;
+}
+
+.solidnet__hint {
+  padding: 0 10px 7px;
+  font-size: 9.5px;
+  color: var(--text-secondary);
+}

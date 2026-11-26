@@ -2,9 +2,77 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
+const { recordHistory } = require('./history.cjs')
 
 const FILTERS = [{ name: '弦点课件', extensions: ['chordot'] }]
 const PACK_FILTERS = [{ name: '弦点模板包', extensions: ['chordotpack'] }]
+
+const PEEK_BYTES = 16 * 1024
+
+/** 从文件头里抠出 doc.meta：没截断就整份 JSON 解析，截断了按括号配对找 */
+function extractMeta(text) {
+  const key = text.indexOf('"meta"')
+  if (key < 0) return null
+  const start = text.indexOf('{', key)
+  if (start < 0) return null
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{') depth += 1
+    else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) {
+        try {
+          return JSON.parse(text.slice(start, i + 1))
+        } catch {
+          return null
+        }
+      }
+    }
+  }
+  return null
+}
+
+/** 课件元信息预览：只读文件头，解析不出来就只给名字和时间 */
+function peekFile(filePath) {
+  const raw = String(filePath || '')
+  const name = path.basename(raw).replace(/\.chordot$/i, '')
+  try {
+    const st = fs.statSync(raw)
+    if (!st.isFile()) return { exists: false, name, at: 0 }
+    const at = Math.round(st.mtimeMs)
+    const fd = fs.openSync(raw, 'r')
+    let head = ''
+    try {
+      const size = Math.min(PEEK_BYTES, st.size)
+      const buf = Buffer.alloc(size)
+      fs.readSync(fd, buf, 0, size, 0)
+      head = buf.toString('utf8')
+    } finally {
+      fs.closeSync(fd)
+    }
+    let meta = null
+    try {
+      meta = JSON.parse(head)?.doc?.meta ?? null
+    } catch {
+      // 超过 16KB 被截断：按括号配对在头部里找 doc.meta
+      meta = extractMeta(head)
+    }
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return { exists: true, name, at }
+    return { exists: true, name, at, meta }
+  } catch {
+    return { exists: false, name, at: 0 }
+  }
+}
 
 /**
  * @param {{ addRecent: (filePath: string) => void }} hooks
@@ -29,8 +97,18 @@ function registerFileIpc({ addRecent }) {
       }
     }
 
+    // 先留一份保存前的内容：写成功之后它就是版本历史里的一份
+    let previous = null
+    try {
+      previous = fs.readFileSync(target, 'utf8')
+    } catch {
+      /* 新文件：没有旧内容可记 */
+    }
+
     try {
       fs.writeFileSync(target, data, 'utf8')
+      // 版本历史由主进程自动记，渲染层不用管
+      if (typeof previous === 'string' && previous && previous !== data) recordHistory(target, previous)
       addRecent(target)
       return { path: target }
     } catch (err) {
@@ -146,6 +224,9 @@ function registerFileIpc({ addRecent }) {
     }
   })
 
+  /** 课件元信息预览：只读文件头 16KB 解析 doc.meta（大厅最近课件显示标题/学科） */
+  ipcMain.handle('file:peek', (_e, filePath) => peekFile(filePath))
+
   /** 未保存修改的确认：仅用于不可逆操作，默认焦点在“取消” */
   ipcMain.handle('dialog:confirm-unsaved', async (e, name) => {
     // 测试接缝：0 取消 / 1 放弃 / 2 保存
@@ -164,4 +245,4 @@ function registerFileIpc({ addRecent }) {
   })
 }
 
-module.exports = { registerFileIpc, FILTERS }
+module.exports = { registerFileIpc, peekFile, FILTERS }

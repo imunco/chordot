@@ -33,6 +33,7 @@ import type {
   MechParams,
   MechPart,
   MechPartKind,
+  DocMeta,
   PhysicsForce,
   SceneSpec,
   SketchConstraint,
@@ -54,9 +55,15 @@ import { UpdateDialog } from './components/UpdateDialog'
 import { useUpdater } from './updater'
 import { PX_PER_UNIT } from './model/scale'
 import { MechBar } from './components/MechBar'
-import { Lobby, type LobbyQuick } from './components/Lobby'
+import {
+  Lobby,
+  type LobbyQuick,
+  type RecentFileMeta,
+  type LibraryFileMeta,
+} from './components/Lobby'
 import { NewDocDialog, type NewDocValues } from './components/NewDocDialog'
-import { cleanFileName, starterScene } from './model/starters'
+import { cleanFileName, fileNameOf, starterScene } from './model/starters'
+import { cachedQuote, fetchDailyQuote, randomQuote, type DailyQuote } from './model/hitokoto'
 import { makeLink, makePart, MECH_GROUND_Y, presetById, type MechPresetId } from './model/mech'
 import {
   conflictScene,
@@ -85,6 +92,13 @@ interface Toast {
  * - ?lobby=1 强制显示（验证脚本 / 演示）。
  * - ?lobby=0 不显示；带其它 query 的窗口（教材独立窗口、符号实验室、?notour=1 的验证脚本）一律直接进编辑器。
  */
+function formatClock(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds))
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0')
+}
+
 function shouldShowLobby(): boolean {
   try {
     const query = new URLSearchParams(location.search)
@@ -122,6 +136,31 @@ export default function App() {
   const [updateOpen, setUpdateOpen] = useState(false)
   /** 批注偏好恢复完成前不要回写，否则会用默认值盖掉上次的笔 */
   const [penReady, setPenReady] = useState(false)
+
+  /* ── 0.16.0：大厅工程化 / 演示 / 版本历史 ── */
+  const [recentFiles, setRecentFiles] = useState<RecentFileMeta[]>([])
+  const [library, setLibrary] = useState<LibraryFileMeta[]>([])
+  const [quote, setQuote] = useState<DailyQuote | null>(() =>
+    loadSettings().dailyQuote ? cachedQuote() : null,
+  )
+  const [recovery, setRecovery] = useState<{ at: number; file: string; filePath: string | null } | null>(
+    null,
+  )
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyItems, setHistoryItems] = useState<
+    { name: string; path: string; at: number; size: number }[]
+  >([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [presenter, setPresenter] = useState<{ on: boolean; startedAt: number; boost: boolean }>({
+    on: false,
+    startedAt: 0,
+    boost: false,
+  })
+  const [presenterTick, setPresenterTick] = useState(0)
+  const [slideIndex, setSlideIndex] = useState(0)
+  const [dropActive, setDropActive] = useState(false)
+  const [slowStart, setSlowStart] = useState(0)
+  const slides = state.doc.meta?.slides ?? []
 
   const patchSettings = (patch: Partial<Settings>) => {
     setSettings((prev) => ({ ...prev, ...patch }))
@@ -616,6 +655,10 @@ export default function App() {
         if (typeof ui.rightOpen === 'boolean') dispatch({ type: 'right', open: ui.rightOpen })
         if (Array.isArray(ui.recent)) setRecent(ui.recent)
         if (ui.lastFile) setLastFile(ui.lastFile)
+        if (ui.autosave) setRecovery(ui.autosave)
+        if (typeof ui.slowStart === 'number' && ui.slowStart > 0) setSlowStart(ui.slowStart)
+        void refreshRecentMeta(ui.recent ?? [])
+        void refreshLibrary()
         // 大厅启动时只把「上次打开的课件」做成卡片，不自动打开；
         // 关掉大厅（设置 / ?lobby=0）时保持原来的「恢复上次课件」行为。
         if (ui.lastFile && !bootLobbyRef.current) {
@@ -631,6 +674,192 @@ export default function App() {
       })
       .catch(() => {})
   }, [])
+
+
+  /** 读最近课件的元信息（标题 / 学段 / 章节），大厅卡片用 */
+  const refreshRecentMeta = async (paths: string[]) => {
+    const api = window.chordot
+    const list = Array.from(new Set((paths ?? []).filter(Boolean))).slice(0, 8)
+    if (!api?.peekFile) {
+      setRecentFiles(list.map((p) => ({ path: p })))
+      return
+    }
+    const rows = await Promise.all(
+      list.map(async (p) => {
+        try {
+          const res = await api.peekFile!(p)
+          if (!res?.exists) return { path: p }
+          return {
+            path: p,
+            title: res.meta?.title,
+            subject: res.meta?.subject,
+            chapter: res.meta?.chapter,
+            grade: res.meta?.grade,
+          } as RecentFileMeta
+        } catch {
+          return { path: p } as RecentFileMeta
+        }
+      }),
+    )
+    setRecentFiles(rows)
+  }
+
+  /** 课件库（userData/library）列表，大厅展示 */
+  const refreshLibrary = async () => {
+    const api = window.chordot
+    if (!api?.library?.list) return
+    try {
+      const res = await api.library.list()
+      setLibrary(Array.isArray(res?.items) ? res.items : [])
+    } catch {
+      /* 忽略 */
+    }
+  }
+
+  /** 保存 / 打开 / 新建之后，旧快照已经没意义 */
+  const clearAutosave = () => {
+    void window.chordot?.autosave?.clear?.().catch(() => {})
+    setRecovery(null)
+  }
+
+  useEffect(() => {
+    void refreshRecentMeta(recent)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recent])
+
+  /* 大厅每日一言：先缓存秒出，没缓存再请求（3s 超时 / 本地兜底） */
+  useEffect(() => {
+    if (!settings.dailyQuote) {
+      setQuote(null)
+      return
+    }
+    const hit = cachedQuote()
+    if (hit) {
+      setQuote(hit)
+      return
+    }
+    let cancelled = false
+    void fetchDailyQuote(settings.quoteCategory).then((q) => {
+      if (!cancelled) setQuote(q)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [settings.dailyQuote, settings.quoteCategory])
+
+  /* 自动保存：只在编辑器里、有未保存修改时写快照（主进程原子写） */
+  useEffect(() => {
+    if (!settings.autosave || lobbyOpen) return
+    const api = window.chordot
+    if (!api?.autosave) return
+    const interval = Math.max(10, Math.min(300, settings.autosaveInterval)) * 1000
+    const timer = window.setInterval(() => {
+      const current = stateRef.current
+      if (!current.dirty) return
+      try {
+        void api
+          .autosave!.write({
+            data: serializeDoc(current.doc),
+            file: current.file,
+            filePath: current.filePath,
+            at: Date.now(),
+          })
+          .catch(() => {})
+      } catch {
+        /* 忽略 */
+      }
+    }, interval)
+    return () => window.clearInterval(timer)
+  }, [settings.autosave, settings.autosaveInterval, lobbyOpen])
+
+  /* 文件关联 / 第二次启动：.chordot 双击打开 */
+  useEffect(() => {
+    const off = window.chordot?.onOpenFile?.((path) => {
+      if (path) void actionsRef.current.openDoc(path)
+    })
+    return () => off?.()
+  }, [])
+
+  /* 独立模板库窗口选完模板 → 主窗口套用并进编辑器 */
+  useEffect(() => {
+    const off = window.chordot?.onGalleryPick?.((payload) => {
+      const p = payload as { scene?: SceneSpec; file?: string }
+      if (!p?.scene) return
+      setLobbyOpen(false)
+      setHasDoc(true)
+      dispatch({ type: 'scene', scene: p.scene, file: p.file || '模板.chordot' })
+      toast('已套用模板「' + (p.file || '模板').replace(/\.chordot$/i, '') + '」')
+    })
+    return () => off?.()
+  }, [])
+
+  /* 本地错误日志：渲染层异常也写进 userData/logs，方便离线排查 */
+  useEffect(() => {
+    if (!settings.errorLog) return
+    const report = (message: string, stack?: string, source?: string) => {
+      try {
+        window.chordot?.reportError?.({ message, stack, source })
+      } catch {
+        /* 忽略 */
+      }
+    }
+    const onError = (e: ErrorEvent) => report(e.message, e.error?.stack, 'window.onerror')
+    const onReject = (e: PromiseRejectionEvent) => {
+      const reason = e.reason as { message?: string; stack?: string } | undefined
+      report(String(reason?.message ?? e.reason ?? 'unhandledrejection'), reason?.stack, 'unhandledrejection')
+    }
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onReject)
+    return () => {
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onReject)
+    }
+  }, [settings.errorLog])
+
+  /* 启动慢提示：主进程记录的 ready→可交互耗时 */
+  useEffect(() => {
+    if (!slowStart || slowStart < 2.5) return
+    const timer = window.setTimeout(() => {
+      toast('本次启动用了 ' + slowStart.toFixed(1) + ' 秒，可以试试清理旧课件或关闭其它大程序')
+    }, 3000)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slowStart])
+
+  /* 演示者模式计时器：1s 刷新一次 */
+  useEffect(() => {
+    if (!presenter.on) return
+    const timer = window.setInterval(() => setPresenterTick((t) => t + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [presenter.on])
+
+  /* 演示者模式键盘：PageUp/PageDown 切镜头书签，B 切换投影增强，Esc 退出 */
+  useEffect(() => {
+    if (!presenter.on) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        stopPresenter()
+        return
+      }
+      if (e.key === 'PageDown' || e.key === 'ArrowRight') {
+        e.preventDefault()
+        jumpSlide(1)
+      } else if (e.key === 'PageUp' || e.key === 'ArrowLeft') {
+        e.preventDefault()
+        jumpSlide(-1)
+      } else if (e.key === 'b' || e.key === 'B') {
+        e.preventDefault()
+        setPresenter((p) => ({ ...p, boost: !p.boost }))
+      } else if (e.key === 'Home') {
+        e.preventDefault()
+        jumpSlide(0, 0)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presenter.on])
 
   useEffect(() => {
     window.chordot?.setUiState({ leftWidth: state.leftWidth, rightOpen: state.rightOpen })
@@ -964,8 +1193,15 @@ export default function App() {
       toast('保存需要桌面端环境')
       return false
     }
+    // 保存时补全元信息：标题缺省用文件名，updatedAt 落盘
+    const metaNow: DocMeta = {
+      ...state.doc.meta,
+      title: state.doc.meta?.title || fileName(state.file).replace(/\.chordot$/i, ''),
+      subject: state.doc.meta?.subject ?? (state.mode === 'physics' ? 'physics' : 'math'),
+      updatedAt: Date.now(),
+    }
     const res = await api.saveFile({
-      data: serializeDoc(state.doc),
+      data: serializeDoc({ ...state.doc, meta: metaNow }),
       filePath: state.filePath,
       saveAs,
     })
@@ -976,8 +1212,9 @@ export default function App() {
     }
     if (!res.path) return false
     dispatch({ type: 'saved', path: res.path, file: fileName(res.path) })
+    clearAutosave()
     toast('已保存')
-    window.chordot?.getUiState().then((ui) => setRecent(ui.recent ?? [])).catch(() => {})
+    refreshRecent()
     return true
   }
 
@@ -1015,6 +1252,7 @@ export default function App() {
       return
     }
     dispatch({ type: 'opened', doc: parsed.doc, file: fileName(res.path), path: res.path })
+    clearAutosave()
     toast(`已打开 ${fileName(res.path)}`)
     refreshRecent()
     enterEditor()
@@ -1041,8 +1279,14 @@ export default function App() {
 
   const loadTemplate = async (t: Template) => {
     if (!(await confirmDiscard())) return
-    dispatch({ type: 'scene', scene: t.build(), file: t.file })
+    dispatch({
+      type: 'scene',
+      scene: t.build(),
+      file: t.file,
+      meta: { title: t.name, subject: t.category === '物理' ? 'physics' : 'math' },
+    })
     dispatch({ type: 'gallery', open: false })
+    clearAutosave()
     toast(`已载入「${t.name}」`)
   }
 
@@ -1067,7 +1311,15 @@ export default function App() {
       touchDefault: values.touch,
     })
     setTouch(values.touch)
-    dispatch({ type: 'scene', scene, file })
+    const meta: DocMeta = {
+      title: file.replace(/\.chordot$/i, ''),
+      subject: values.subject,
+      ...(values.grade ? { grade: values.grade } : {}),
+      ...(values.chapter ? { chapter: values.chapter } : {}),
+      ...(values.note ? { note: values.note } : {}),
+    }
+    dispatch({ type: 'scene', scene, file, meta })
+    clearAutosave()
     // 物理场景（斜面 / 运动 / 机构）scene 动作已经自动切物理模式；
     // 其它画布按用户选的学科补一刀，避免把运动仿真的子状态冲掉。
     const autoPhysics = scene.kind === 'incline' || scene.kind === 'motion' || scene.kind === 'mech'
@@ -1084,19 +1336,18 @@ export default function App() {
     if (lobbyOpen) return
     if (!(await confirmDiscard())) return
     newSketch()
+    clearAutosave()
     toast('画布已清空')
   }
 
   /** 大厅模式卡：每个模式直接开一张合身的空白课件 */
   const quickStart = (id: LobbyQuick) => {
     if (id === 'gallery') {
-      enterEditor()
-      dispatch({ type: 'gallery', open: true })
+      openGalleryEntry()
       return
     }
     if (id === 'lab') {
-      enterEditor()
-      dispatch({ type: 'textbook', open: true })
+      openLabEntry()
       return
     }
     if (id === 'symbols') {
@@ -1125,7 +1376,289 @@ export default function App() {
   const returnToLobby = async () => {
     if (!(await confirmDiscard())) return
     refreshRecent()
+    void refreshLibrary()
     setLobbyOpen(true)
+  }
+
+
+  /* ───────── 0.16.0：恢复 / 历史 / 课件库 / 演示 / PDF / 独立窗口 ───────── */
+
+  /** 从自动保存快照恢复课件（恢复后是「未保存」状态，提醒另存） */
+  const recoverAutosave = async () => {
+    const api = window.chordot
+    const snap = await api?.autosave?.read?.()
+    if (!snap?.exists || !snap.data) {
+      toast('快照已失效')
+      setRecovery(null)
+      return
+    }
+    const parsed = parseDoc(snap.data)
+    if ('error' in parsed) {
+      toast('快照损坏：' + parsed.error)
+      return
+    }
+    dispatch({ type: 'restore', doc: parsed.doc, file: snap.file || '未命名课件.chordot' })
+    setRecovery(null)
+    setLobbyOpen(false)
+    setHasDoc(true)
+    toast('已恢复上次未保存的内容，记得另存')
+  }
+
+  const dismissRecovery = async () => {
+    await window.chordot?.autosave?.clear?.()
+    setRecovery(null)
+  }
+
+  const refreshQuote = async () => {
+    const q = await randomQuote(settings.quoteCategory)
+    setQuote(q)
+  }
+
+  /** 教材实验室：独立窗口优先；浏览器环境退回主窗口内嵌面板 */
+  const openLabEntry = (id?: string) => {
+    const api = window.chordot
+    if (api?.openLabWindow) {
+      void api.openLabWindow(id)
+      return
+    }
+    enterEditor()
+    dispatch({ type: 'textbook', open: true })
+  }
+
+  /** 模板库：独立窗口优先 */
+  const openGalleryEntry = () => {
+    const api = window.chordot
+    if (api?.openGalleryWindow) {
+      void api.openGalleryWindow()
+      return
+    }
+    enterEditor()
+    dispatch({ type: 'gallery', open: true })
+  }
+
+  /** 工具栏 / 菜单的默认入口：设置里开「辅助窗口独立」就开窗口，否则内嵌（验证环境保持内嵌） */
+  const independentAux = () =>
+    settings.independentWindows !== false && !location.search.includes('notour')
+
+  const openGallerySmart = () => {
+    if (independentAux()) {
+      openGalleryEntry()
+      return
+    }
+    enterEditor()
+    dispatch({ type: 'gallery', open: true })
+  }
+
+  const openLabSmart = () => {
+    if (independentAux()) {
+      openLabEntry()
+      return
+    }
+    enterEditor()
+    dispatch({ type: 'textbook', open: true })
+  }
+
+  /** 版本历史：列出当前文件保存前的快照 */
+  const openHistory = async () => {
+    const api = window.chordot
+    if (!api?.history?.list) {
+      toast('版本历史需要桌面端环境')
+      return
+    }
+    setHistoryOpen(true)
+    setHistoryLoading(true)
+    try {
+      const res = await api.history.list(state.filePath ?? '')
+      setHistoryItems(Array.isArray(res?.items) ? res.items : [])
+    } catch {
+      setHistoryItems([])
+    }
+    setHistoryLoading(false)
+  }
+
+  const restoreHistory = async (path: string) => {
+    const api = window.chordot
+    if (!api?.history?.read) return
+    const res = await api.history.read(path)
+    if ('error' in res) {
+      toast('恢复失败：' + res.error)
+      return
+    }
+    const parsed = parseDoc(res.content)
+    if ('error' in parsed) {
+      toast(parsed.error)
+      return
+    }
+    const base = state.file.replace(/\.chordot$/i, '')
+    dispatch({ type: 'restore', doc: parsed.doc, file: base + '（历史版本）.chordot' })
+    setHistoryOpen(false)
+    enterEditor()
+    toast('已恢复历史版本（另存为新文件，不覆盖原文件）')
+  }
+
+  /** 保存当前课件到「课件库」文件夹（大厅「我的课件」可见） */
+  const saveToLibrary = async () => {
+    const api = window.chordot
+    if (!api?.library?.add) {
+      toast('课件库需要桌面端环境')
+      return
+    }
+    const metaNow: DocMeta = {
+      ...state.doc.meta,
+      title: state.doc.meta?.title || state.file.replace(/\.chordot$/i, ''),
+      updatedAt: Date.now(),
+    }
+    const saved = await api.library.add({
+      path: state.filePath ?? '',
+      content: serializeDoc({ ...state.doc, meta: metaNow }),
+    })
+    if (!saved) {
+      toast('保存到课件库失败')
+      return
+    }
+    await refreshLibrary()
+    toast('已保存到课件库')
+  }
+
+  const openLibraryFile = async (path: string) => {
+    const api = window.chordot
+    if (!api?.library?.open) return
+    const res = await api.library.open(path)
+    if ('error' in res) {
+      toast('打开失败：' + res.error)
+      return
+    }
+    const parsed = parseDoc(res.content)
+    if ('error' in parsed) {
+      toast(parsed.error)
+      return
+    }
+    dispatch({ type: 'restore', doc: parsed.doc, file: fileNameOf(path) })
+    enterEditor()
+    toast('已打开课件库中的「' + fileNameOf(path).replace(/\.chordot$/i, '') + '」')
+  }
+
+  /** 把当前画面转成 PNG base64（导出 PDF 讲义用） */
+  const capturePNGData = (): Promise<string | null> =>
+    new Promise((resolve) => {
+      const data = serialize()
+      if (!data) {
+        resolve(null)
+        return
+      }
+      const url = URL.createObjectURL(new Blob([data], { type: 'image/svg+xml;charset=utf-8' }))
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const scale = 2
+        canvas.width = Math.max(1, Math.round(state.canvas.w * scale))
+        canvas.height = Math.max(1, Math.round(state.canvas.h * scale))
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          URL.revokeObjectURL(url)
+          resolve(null)
+          return
+        }
+        ctx.fillStyle = '#FAFAF8'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            URL.revokeObjectURL(url)
+            resolve(null)
+            return
+          }
+          const reader = new FileReader()
+          reader.onload = () => {
+            const raw = String(reader.result)
+            resolve(raw.slice(raw.indexOf(',') + 1))
+          }
+          reader.onerror = () => resolve(null)
+          reader.readAsDataURL(blob)
+        }, 'image/png')
+        URL.revokeObjectURL(url)
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(url)
+        resolve(null)
+      }
+      img.src = url
+    })
+
+  /** 导出 A4 横向讲义 PDF（画面 + 标题 + 学段章节页脚） */
+  const exportPDFSheet = async () => {
+    const api = window.chordot
+    if (!api?.exportPDF) {
+      toast('PDF 导出需要桌面端环境')
+      return
+    }
+    const png = await capturePNGData()
+    if (!png) {
+      toast('画面捕获失败，先退出批注/聚光灯再试')
+      return
+    }
+    const meta = state.doc.meta
+    const title = meta?.title || state.file.replace(/\.chordot$/i, '')
+    const subtitle = [meta?.grade, meta?.chapter].filter(Boolean).join(' · ')
+    const res = await api.exportPDF({
+      png,
+      title,
+      subtitle,
+      footer: '弦点 / Chordot · 数学与物理教学作图工具',
+      defaultName: (title || '讲义') + '.pdf',
+    })
+    if ('canceled' in res) return
+    if ('error' in res) {
+      toast('导出失败：' + res.error)
+      return
+    }
+    toast('已导出 PDF 讲义')
+  }
+
+  /* 演示者模式 */
+  const startPresenter = () => {
+    if (lobbyOpen) return
+    setSlideIndex(0)
+    setPresenter({ on: true, startedAt: Date.now(), boost: false })
+    dispatch({ type: 'tool', tool: 'select' })
+    void window.chordot?.setFullscreen?.(true)
+  }
+
+  const stopPresenter = () => {
+    setPresenter((p) => ({ ...p, on: false }))
+    void window.chordot?.setFullscreen?.(false)
+  }
+
+  const applySlide = (index: number) => {
+    const slide = state.doc.meta?.slides?.[index]
+    if (!slide) return
+    dispatch({ type: 'zoom', zoom: slide.zoom })
+    dispatch({ type: 'pan', pan: slide.pan })
+  }
+
+  const jumpSlide = (dir: number, absolute?: number) => {
+    const list = state.doc.meta?.slides ?? []
+    if (list.length === 0) {
+      if (dir) toast('还没有镜头书签：先点「记视角」，再按 PageUp / PageDown 切换')
+      return
+    }
+    let next = typeof absolute === 'number' ? absolute : slideIndex + dir
+    next = ((next % list.length) + list.length) % list.length
+    setSlideIndex(next)
+    applySlide(next)
+  }
+
+  /** 记下当前缩放 + 平移，作为演示时的一页镜头 */
+  const captureSlide = () => {
+    const list = state.doc.meta?.slides ?? []
+    const slide = {
+      id: 's' + Date.now().toString(36),
+      name: '视角 ' + (list.length + 1),
+      zoom: state.zoom,
+      pan: state.pan,
+    }
+    dispatch({ type: 'meta', meta: { ...state.doc.meta, slides: [...list, slide] } })
+    toast('已记下当前视角，演示模式里用 PageUp / PageDown 切换')
   }
 
   /* ───────── 运动仿真控制 ───────── */
@@ -1529,20 +2062,69 @@ export default function App() {
     })
   }
 
-  /** 符号实验室发来的公式：落到机构里选中的部件上（存进 .chordot，能撤销） */
+  /** 符号实验室发来的公式：可以当公式力，也可以把结果绑到弹簧 k / c 或部件质量上 */
   useEffect(() => {
-    const off = window.chordot?.onSymbolForce?.((expr) => {
-      if (!mech || !mechSel || mechSel.kind !== 'part') {
-        toast('先在机构里选中一个部件，再把公式发过来')
+    const off = window.chordot?.onSymbolForce?.((payload) => {
+      const p =
+        typeof payload === 'string'
+          ? { expr: payload, target: 'force' as const, value: null }
+          : payload
+      const expr = String(p?.expr ?? '')
+      const target = p?.target ?? 'force'
+      const value = typeof p?.value === 'number' && Number.isFinite(p.value) ? p.value : null
+      if (!expr.trim()) return
+      if (!mech) {
+        toast('先在机构装配里选中目标，再把公式发过来')
         return
       }
-      if (!mech.parts.some((p) => p.id === mechSel.id)) return
-      patchMechPart(mechSel.id, {
-        // 收到公式就切到「公式」模式，否则恒力模式下看不到这条表达式
-        force: { enabled: true, mode: 'expr', expr, angle: 0 },
-      })
-      setMechPlaying(false)
-      toast(`已把 F = ${expr} 加到选中的部件上`)
+      if (target === 'force') {
+        if (!mechSel || mechSel.kind !== 'part' || !mech.parts.some((x) => x.id === mechSel.id)) {
+          toast('先在机构里选中一个部件，再把公式发过来')
+          return
+        }
+        patchMechPart(mechSel.id, {
+          // 收到公式就切到「公式」模式，否则恒力模式下看不到这条表达式
+          force: { enabled: true, mode: 'expr', expr, angle: 0 },
+        })
+        setMechPlaying(false)
+        toast(`已把 F = ${expr} 加到选中的部件上`)
+        return
+      }
+      if (target === 'mass') {
+        if (!mechSel || mechSel.kind !== 'part') {
+          toast('先在机构里选中一个部件，再发「质量」')
+          return
+        }
+        if (value === null) {
+          toast('公式的当前值不是有效数字，无法设为质量')
+          return
+        }
+        patchMechPart(mechSel.id, { mass: Math.max(0.02, Math.min(500, value)) })
+        toast('已把质量设为 ' + Number(value.toFixed(2)) + ' kg')
+        return
+      }
+      // springK / springC：优先选中的弹簧连接；否则找选中部件上连着的第一条弹簧
+      const link =
+        mechSel?.kind === 'link'
+          ? mech.links.find((l) => l.id === mechSel.id && l.kind === 'spring')
+          : mech.links.find(
+              (l) => l.kind === 'spring' && (l.a === mechSel?.id || l.b === mechSel?.id),
+            )
+      if (!link) {
+        toast('先在机构里选中一根弹簧（或连着弹簧的部件）')
+        return
+      }
+      if (value === null) {
+        toast('公式的当前值不是有效数字，无法绑定到弹簧')
+        return
+      }
+      if (target === 'springK') {
+        patchMechLink(link.id, { k: Math.max(0.1, Math.min(4000, value)) })
+        toast('已把弹簧劲度 k 设为 ' + Number(value.toFixed(2)) + ' N/m')
+      } else {
+        patchMechLink(link.id, { c: Math.max(0, Math.min(200, value)) })
+        toast('已把弹簧阻尼 c 设为 ' + Number(value.toFixed(2)) + ' N·s/m')
+      }
     })
     return () => off?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1848,8 +2430,12 @@ export default function App() {
     () => [
       { id: 'new', label: '新建课件（可设属性）', hint: 'Ctrl+N', run: () => void newDoc() },
       { id: 'home', label: '返回大厅（新建 / 打开 / 换模式）…', run: () => void returnToLobby() },
-      { id: 'gallery', label: '模板库…', run: () => dispatch({ type: 'gallery', open: true }) },
-      { id: 'textbook', label: '教材实验室：高中物理实验…', run: () => dispatch({ type: 'textbook', open: true }) },
+      { id: 'gallery', label: '模板库（独立窗口）…', run: () => openGalleryEntry() },
+      { id: 'textbook', label: '教材实验室（独立窗口）…', run: () => openLabEntry() },
+      { id: 'presenter', label: '演示者模式（全屏 / 计时 / 镜头翻页）', run: () => startPresenter() },
+      { id: 'export-pdf', label: '导出 PDF 讲义…', run: () => void exportPDFSheet() },
+      { id: 'history', label: '版本历史…', run: () => void openHistory() },
+      { id: 'library-add', label: '保存到课件库', run: () => void saveToLibrary() },
       { id: 'textbook-window', label: '教材实验室：独立窗口（投影 / 双屏）…', run: () => void window.chordot?.openLabWindow() },
       { id: 'open', label: '打开课件…', hint: 'Ctrl+O', run: () => void openDoc() },
       { id: 'save', label: '保存', hint: 'Ctrl+S', run: () => void save() },
@@ -1903,7 +2489,21 @@ export default function App() {
       { id: 'prefs', label: '首选项', run: () => setPrefsOpen(true) },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state.grid, state.mode, state.rightOpen, fit, toast, recent, returnToLobby],
+    [
+      state.grid,
+      state.mode,
+      state.rightOpen,
+      fit,
+      toast,
+      recent,
+      returnToLobby,
+      openGalleryEntry,
+      openLabEntry,
+      startPresenter,
+      exportPDFSheet,
+      openHistory,
+      saveToLibrary,
+    ],
   )
 
   /* 应用菜单（Alt 唤出菜单栏）：用 ref 拿最新的处理函数，effect 只挂一次 */
@@ -1957,10 +2557,25 @@ export default function App() {
         setShortcutsOpen(true)
         break
       case 'textbook':
-        dispatch({ type: 'textbook', open: true })
+        openLabSmart()
         break
       case 'textbook-window':
-        void window.chordot?.openLabWindow()
+        openLabEntry()
+        break
+      case 'gallery-window':
+        openGalleryEntry()
+        break
+      case 'history':
+        void openHistory()
+        break
+      case 'library-add':
+        void saveToLibrary()
+        break
+      case 'export-pdf':
+        void exportPDFSheet()
+        break
+      case 'presenter':
+        startPresenter()
         break
       case 'tour':
         setTourOpen(true)
@@ -1999,12 +2614,44 @@ export default function App() {
   /** 批注是一个独立模式：画笔/橡皮激活时，底部整行换成批注条 */
   const inkMode = state.tool === 'pen' || state.tool === 'eraser'
 
+  const presenterSeconds = presenter.on ? (Date.now() - presenter.startedAt) / 1000 : 0
+
   return (
-    <div className="app">
+    <div
+      className={
+        'app' + (presenter.on ? ' app--present' : '') + (presenter.boost ? ' app--boost' : '')
+      }
+      onDragOver={(e) => {
+        if (Array.from(e.dataTransfer?.types ?? []).includes('Files')) {
+          e.preventDefault()
+          setDropActive(true)
+        }
+      }}
+      onDragLeave={() => setDropActive(false)}
+      onDrop={(e) => {
+        const file = e.dataTransfer?.files?.[0]
+        if (!file) return
+        e.preventDefault()
+        setDropActive(false)
+        const path = window.chordot?.getPathForFile?.(file)
+        if (path && /\.chordot$/i.test(path)) {
+          void openDoc(path)
+        } else {
+          toast('把 .chordot 课件拖进窗口即可打开')
+        }
+      }}
+    >
       {lobbyOpen ? (
         <Lobby
           version={__APP_VERSION__}
-          recent={recent}
+          recentFiles={recentFiles}
+          recovery={recovery}
+          quote={quote}
+          library={library}
+          onRecover={() => void recoverAutosave()}
+          onDismissRecovery={() => void dismissRecovery()}
+          onQuoteRefresh={() => void refreshQuote()}
+          onOpenLibrary={(path) => void openLibraryFile(path)}
           lastFile={lastFile}
           currentFile={hasDoc ? state.file : null}
           onNew={() => setNewDocOpen(true)}
@@ -2040,7 +2687,12 @@ export default function App() {
         />
       ) : (
         <>
-      <TitleBar file={state.file} dirty={state.dirty} onHome={() => void returnToLobby()} />
+      <TitleBar
+        file={state.file}
+        dirty={state.dirty}
+        title={state.doc.meta?.title}
+        onHome={() => void returnToLobby()}
+      />
 
       <div className="workspace">
         {state.doc.scene.kind !== 'mech' && (
@@ -2413,9 +3065,14 @@ export default function App() {
               else if (cmd === 'mech-rocket') loadMech('rocket')
               else if (cmd === 'mech-magnet') loadMech('magnet')
               else if (cmd === 'symbols') void window.chordot?.openSymbolWindow?.()
-              else if (cmd === 'gallery') dispatch({ type: 'gallery', open: true })
-              else if (cmd === 'textbook') dispatch({ type: 'textbook', open: true })
-              else if (cmd === 'textbook-window') void window.chordot?.openLabWindow()
+              else if (cmd === 'gallery') openGallerySmart()
+              else if (cmd === 'gallery-window') openGalleryEntry()
+              else if (cmd === 'textbook') openLabSmart()
+              else if (cmd === 'textbook-window') openLabEntry()
+              else if (cmd === 'presenter') startPresenter()
+              else if (cmd === 'export-pdf') void exportPDFSheet()
+              else if (cmd === 'history') void openHistory()
+              else if (cmd === 'library-add') void saveToLibrary()
               else if (cmd === 'palette') dispatch({ type: 'palette', open: true })
               else if (cmd === 'shortcuts') setShortcutsOpen(true)
               else setPrefsOpen(true)
@@ -2534,6 +3191,86 @@ export default function App() {
       {state.textbookOpen && (
         <Textbook onClose={() => dispatch({ type: 'textbook', open: false })} />
       )}
+
+
+      {/* 演示者模式：全屏画布上的悬浮条（计时 / 镜头翻页 / 投影增强） */}
+      {presenter.on && (
+        <div className="presenter" data-tick={presenterTick}>
+          <span className="presenter__timer">{formatClock(presenterSeconds)}</span>
+          <span className="presenter__sep" />
+          <button className="presenter__btn" onClick={() => jumpSlide(-1)}>
+            ← 上一镜头
+          </button>
+          <button className="presenter__btn" onClick={() => jumpSlide(1)}>
+            下一镜头 →
+            {slides.length > 0 ? ' ' + (slideIndex + 1) + '/' + slides.length : ''}
+          </button>
+          <button className="presenter__btn" onClick={captureSlide}>
+            记视角
+          </button>
+          <button
+            className="presenter__btn"
+            data-active={presenter.boost}
+            onClick={() => setPresenter((p) => ({ ...p, boost: !p.boost }))}
+          >
+            投影增强
+          </button>
+          <span className="presenter__hint">PageUp / PageDown 翻镜头 · B 增强 · Esc 退出</span>
+          <button className="presenter__btn" onClick={stopPresenter}>
+            退出演示
+          </button>
+        </div>
+      )}
+
+      {/* 版本历史 */}
+      {historyOpen && (
+        <div className="histdlg" role="dialog" aria-modal="true" aria-label="版本历史">
+          <div className="histdlg__panel">
+            <div className="histdlg__head">
+              <div>
+                <h2>版本历史</h2>
+                <p>
+                  {state.filePath
+                    ? '当前文件保存前的快照（每个文件最多保留 20 份）'
+                    : '当前是还没保存到磁盘的新课件，暂无历史'}
+                </p>
+              </div>
+              <button
+                className="histdlg__close"
+                onClick={() => setHistoryOpen(false)}
+                aria-label="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <div className="histdlg__list">
+              {historyLoading ? (
+                <div className="histdlg__empty">正在读取…</div>
+              ) : historyItems.length === 0 ? (
+                <div className="histdlg__empty">
+                  还没有历史版本。第一次覆盖保存后，旧版本会出现在这里，可以随时恢复。
+                </div>
+              ) : (
+                historyItems.map((item) => (
+                  <div className="histdlg__item" key={item.path}>
+                    <span className="histdlg__main">
+                      <b>{item.name}</b>
+                      <span>
+                        {new Date(item.at).toLocaleString()} ·{' '}
+                        {Math.max(1, Math.round(item.size / 1024))} KB
+                      </span>
+                    </span>
+                    <button onClick={() => void restoreHistory(item.path)}>恢复</button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 拖拽 .chordot 到窗口 */}
+      {dropActive && <div className="dropcue">松开鼠标打开 .chordot 课件</div>}
 
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (

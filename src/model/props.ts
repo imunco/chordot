@@ -1,4 +1,5 @@
 import type { PhysicsForce, SceneSpec, SolidMaterial, SolidShape } from '../kernel/types'
+import { toggleSolidNet } from './solidNet'
 import { groundedZ } from './solid'
 
 export type FieldValue = number | boolean | string
@@ -16,6 +17,8 @@ export interface Field {
   get: () => FieldValue
   /** 返回要合并进 scene.params 的补丁 */
   set: (value: FieldValue) => Record<string, unknown>
+  /** kind = 'action' 时的自定义动作（文件选择、开关等），拿到 patch 回调自己决定写什么 */
+  run?: (onPatch: (patch: Record<string, unknown>) => void) => void
 }
 
 export interface PropGroup {
@@ -325,12 +328,61 @@ export function schemaFor(scene: SceneSpec, selectedId?: string | null): PropGro
             { value: 'grid', label: '网格' },
             { value: 'dots', label: '点阵' },
             { value: 'metal', label: '金属' },
+            { value: 'image', label: '图片贴图' },
           ],
           get: () => shape.material ?? 'none',
           set: (v: FieldValue) =>
             patchShape(shape.id, {
               material: String(v) === 'none' ? undefined : (String(v) as SolidMaterial),
             }),
+        } satisfies Field,
+        {
+          key: 'net-' + shape.id,
+          label: '展开图（多面体）',
+          kind: 'action',
+          get: () => '',
+          set: () => ({}),
+          run: () => toggleSolidNet(),
+        } satisfies Field,
+        {
+          key: 'tex-' + shape.id,
+          label: '贴图…（≤2MB）',
+          kind: 'action',
+          get: () => '',
+          set: () => ({}),
+          run: (onPatch) => {
+            const input = document.createElement('input')
+            input.type = 'file'
+            input.accept = 'image/png,image/jpeg,image/webp'
+            input.onchange = () => {
+              const file = input.files?.[0]
+              if (!file) return
+              if (file.size > 2 * 1024 * 1024) {
+                window.alert('贴图不能超过 2MB，请先压缩')
+                return
+              }
+              const reader = new FileReader()
+              reader.onload = () => {
+                onPatch(patchShape(shape.id, { material: 'image', texture: String(reader.result) }))
+              }
+              reader.readAsDataURL(file)
+            }
+            input.click()
+          },
+        } satisfies Field,
+        {
+          key: 'tex-clear-' + shape.id,
+          label: '清除贴图',
+          kind: 'action',
+          get: () => '',
+          set: () => ({}),
+          run: (onPatch) =>
+            onPatch(
+              patchShape(shape.id, {
+                texture: undefined,
+                material: shape.material === 'image' ? 'none' : shape.material,
+              }),
+            ),
         } satisfies Field,
         ...(shape.id === selectedId ? forceFields(shape) : []),
       ],

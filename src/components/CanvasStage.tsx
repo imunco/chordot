@@ -16,6 +16,7 @@ import { evalForce } from '../model/force'
 import { forceDir } from '../model/force3d'
 import { SolidIncline } from './SolidIncline'
 import { MaterialPattern } from './solidTexture'
+import { SolidNet, setSolidNetOpen, supportsSolidNet, useSolidNetOpen } from './SolidNet'
 import { MechStage } from './MechStage'
 import type {
   Camera,
@@ -271,6 +272,13 @@ export function CanvasStage(props: Props) {
     pan: { x: number; y: number }
     moved: boolean
   } | null>(null)
+  const netOpen = useSolidNetOpen()
+  const netShape = useMemo(() => {
+    const solids = props.objects.filter((o): o is Extract<GeoObj, { kind: 'solid' }> => o.kind === 'solid')
+    const picked = solids.find((o) => props.selected.includes(o.id)) || solids[0]
+    return picked ? picked.shape : null
+  }, [props.objects, props.selected])
+
   const live = useRef({ zoom: props.zoom, pan: props.pan, w: 0, h: 0, camera: props.camera })
   live.current = { zoom: props.zoom, pan: props.pan, w: size.w, h: size.h, camera: props.camera }
   /** 手势回调里要用最新的 props（effect 只挂一次） */
@@ -1427,7 +1435,9 @@ export function CanvasStage(props: Props) {
                     <stop offset="100%" stopColor="#c9c4bc" />
                   </radialGradient>
                   {/* 球细分太密，逐面贴纹理要上千个 pattern；改用屏幕空间图案 + 渐变压暗 */}
-                  {mat && <MaterialPattern id={`sptex-${o.id}`} kind={mat} unit={44} />}
+                  {mat && (
+                    <MaterialPattern id={`sptex-${o.id}`} kind={mat} unit={44} src={o.shape.texture} />
+                  )}
                 </defs>
                 <circle
                   cx={cx}
@@ -1484,6 +1494,7 @@ export function CanvasStage(props: Props) {
                           key={`tx${i}`}
                           id={`tx-${o.id}-${i}`}
                           kind={mat}
+                          src={o.shape.texture}
                           transform={`matrix(${f.tex.map((n) => n.toFixed(3)).join(' ')})`}
                         />
                       ) : null,
@@ -2280,6 +2291,21 @@ export function CanvasStage(props: Props) {
           >
             透视
           </button>
+          <span className="canvas__viewsep" />
+          <button
+            className="canvas__view"
+            data-active={netOpen}
+            title="展开图：把多面体摊平成平面网"
+            onClick={() => setSolidNetOpen(!netOpen)}
+          >
+            展开图
+          </button>
+        </div>
+      )}
+
+      {props.camera && netOpen && netShape && supportsSolidNet(netShape) && (
+        <div className="solidnet-wrap">
+          <SolidNet shape={netShape} />
         </div>
       )}
 

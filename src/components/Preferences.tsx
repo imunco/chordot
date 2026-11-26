@@ -225,6 +225,58 @@ export function Preferences({
                   offText="直接进编辑器"
                 />
               </Row>
+
+              <Row label="自动保存" hint="有改动时定期留快照，异常退出后可在大厅恢复">
+                <Toggle
+                  on={settings.autosave}
+                  onChange={(v) => onChange({ autosave: v })}
+                  onText="开启"
+                  offText="关闭"
+                />
+              </Row>
+
+              <Row label="自动保存间隔" hint="快照写盘的时间间隔">
+                <select
+                  className="forceedit__select"
+                  value={settings.autosaveInterval}
+                  onChange={(e) =>
+                    onChange({ autosaveInterval: Number(e.currentTarget.value) || 30 })
+                  }
+                >
+                  {[15, 30, 60, 120].map((s) => (
+                    <option key={s} value={s}>
+                      {s} 秒
+                    </option>
+                  ))}
+                </select>
+              </Row>
+
+              <Row label="每日一言" hint="大厅里的 Hitokoto 每日一句；断网时用本地句子兜底">
+                <Toggle
+                  on={settings.dailyQuote}
+                  onChange={(v) => onChange({ dailyQuote: v })}
+                  onText="显示"
+                  offText="隐藏"
+                />
+              </Row>
+
+              <Row label="辅助窗口独立" hint="教材实验室 / 模板库默认开独立窗口（验证环境仍用内嵌面板）">
+                <Toggle
+                  on={settings.independentWindows}
+                  onChange={(v) => onChange({ independentWindows: v })}
+                  onText="独立窗口"
+                  offText="内嵌面板"
+                />
+              </Row>
+
+              <Row label="本地错误日志" hint="把异常写进数据目录 logs，离线排查不依赖网络">
+                <Toggle
+                  on={settings.errorLog}
+                  onChange={(v) => onChange({ errorLog: v })}
+                  onText="记录"
+                  offText="关闭"
+                />
+              </Row>
             </>
           )}
 

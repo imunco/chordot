@@ -300,30 +300,32 @@ function buildRawMesh(shape: SolidShape): Mesh {
       }
 
       const normals = vertices.map((v) => normalize(v))
-      // 球面 UV：u 沿经度、v 沿纬度；极点扇面取相邻两条经线的中点
+      // 球面 UV：u 沿经度、v 沿纬度；极点扇面取相邻两条经线的中点。
+      // 和圆柱一样保持「v=0 在南极、v=1 在北极」（uvMatrix 会翻成图片坐标），
+      // 最后一圈的 u 正好落在 1，经线接缝处纹理不会整片折回去。
       const uv: number[][][] = []
       for (let j = 0; j < slices; j++) {
         uv.push([
-          [(j + 0.5) / slices, 0],
-          [j / slices, 1 / stacks],
-          [(j + 1) / slices, 1 / stacks],
+          [(j + 0.5) / slices, 1],
+          [j / slices, 1 - 1 / stacks],
+          [(j + 1) / slices, 1 - 1 / stacks],
         ])
       }
       for (let i = 1; i < stacks - 1; i++) {
         for (let j = 0; j < slices; j++) {
           uv.push([
-            [j / slices, i / stacks],
-            [(j + 1) / slices, i / stacks],
-            [(j + 1) / slices, (i + 1) / stacks],
-            [j / slices, (i + 1) / stacks],
+            [j / slices, 1 - i / stacks],
+            [(j + 1) / slices, 1 - i / stacks],
+            [(j + 1) / slices, 1 - (i + 1) / stacks],
+            [j / slices, 1 - (i + 1) / stacks],
           ])
         }
       }
       for (let j = 0; j < slices; j++) {
         uv.push([
-          [(j + 0.5) / slices, 1],
-          [(j + 1) / slices, (stacks - 1) / stacks],
-          [j / slices, (stacks - 1) / stacks],
+          [(j + 0.5) / slices, 0],
+          [(j + 1) / slices, 1 / stacks],
+          [j / slices, 1 / stacks],
         ])
       }
       return translate({ vertices, faces, normals, smooth: true, uv }, shape.center)
@@ -335,22 +337,29 @@ function buildRawMesh(shape: SolidShape): Mesh {
 }
 
 /**
- * 没有显式 UV 的网格（立方体 / 四面体 / 八面体 / 棱柱端面）：
+ * 没有显式 UV 的网格（立方体 / 四面体 / 八面体 / 棱柱）：
  * 逐面按平面投影归一化到 0..1，等于每个面贴一张完整的纹理。
+ *
+ * 方向规则：u 沿「从面外看过去的右手方向」，v 沿「世界 +z 投影到面内」。
+ * 以前用 cross(n, e1) 当 v，八面体的斜面会被转 90°、立方体背面会倒过来；
+ * 现在同一张图片在四个侧面都朝上，逐面完整且方向一致（v 约定见 uvMatrix）。
  */
 function autoUv(mesh: Mesh): number[][][] {
   return mesh.faces.map((face) => {
     const p0 = mesh.vertices[face[0]]
     const p1 = mesh.vertices[face[1]]
     const p2 = mesh.vertices[face[2]] ?? p1
-    let e1 = normalize(sub(p1, p0))
-    if (!Number.isFinite(e1[0]) || Math.hypot(e1[0], e1[1], e1[2]) < 1e-9) e1 = [1, 0, 0]
-    const n = normalize(cross(sub(p1, p0), sub(p2, p0)))
-    let e2 = normalize(cross(n, e1))
-    if (!Number.isFinite(e2[0]) || Math.hypot(e2[0], e2[1], e2[2]) < 1e-9) e2 = [0, 1, 0]
+    let n = normalize(cross(sub(p1, p0), sub(p2, p0)))
+    if (Math.hypot(n[0], n[1], n[2]) < 1e-9 || !Number.isFinite(n[0])) n = [0, 0, 1]
+    // 世界 +z 投影到面内当「上」；顶面 / 底面退化成 +y（俯视图的屏幕上方）
+    const nz = dot([0, 0, 1], n)
+    let up: Vec3 = [0 - n[0] * nz, 0 - n[1] * nz, 1 - n[2] * nz]
+    if (Math.hypot(up[0], up[1], up[2]) < 0.15) up = [0, 1, 0]
+    up = normalize(up)
+    const right = normalize(cross(up, n))
     const raw = face.map((i) => {
       const d = sub(mesh.vertices[i], p0)
-      return [dot(d, e1), dot(d, e2)]
+      return [dot(d, right), dot(d, up)]
     })
     const us = raw.map((r) => r[0])
     const vs = raw.map((r) => r[1])
@@ -469,6 +478,10 @@ function convexHull(points: { x: number; y: number }[]): [number, number][] {
 /**
  * uv → 屏幕的仿射矩阵：取面内前三个顶点解 2×3 方程。
  * 四边形第四个点会有很小的偏差，纹理被多边形裁掉，看不出来。
+ *
+ * 约定：网格里的 v 是「向上」的（v=0 在底、v=1 在顶，见 autoUv / 圆柱侧面 / 球），
+ * 而 SVG pattern 的图片 y 轴向下、v=0 是图片顶边。这里把 v 翻成 1−v，
+ * 位图贴到面上的方向才和世界坐标一致（否则用户照片会上下颠倒）。
  */
 function uvMatrix(
   uv: number[][],
@@ -492,7 +505,10 @@ function uvMatrix(
   const c = (dx2 * du1 - dx1 * du2) / det
   const b = (dy1 * dv2 - dy2 * dv1) / det
   const d = (dy2 * du1 - dy1 * du2) / det
-  return [a, b, c, d, p[0].x - a * u0 - c * v0, p[0].y - b * u0 - d * v0]
+  const e = p[0].x - a * u0 - c * v0
+  const f = p[0].y - b * u0 - d * v0
+  // v → 1−v：x = a·u + c·(1−v') + e = a·u − c·v' + (e+c)，y 同理
+  return [a, b, -c, -d, e + c, f + d]
 }
 
 /** 正交/透视投影 + 背面剔除 + 画家算法排序（任意网格） */

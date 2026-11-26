@@ -220,6 +220,19 @@ app.whenReady().then(async () => {
   ipcMain.on('ui:set-state', () => {})
   registerStoreIpc()
   registerFileIpc({ addRecent: () => {} })
+  // 0.16.0 新增 IPC 的空实现：主窗口启动时会读自动保存 / 课件库，别让测试日志被未处理错误淹没
+  ipcMain.handle('autosave:write', () => true)
+  ipcMain.handle('autosave:read', () => null)
+  ipcMain.handle('autosave:clear', () => true)
+  ipcMain.handle('history:list', () => ({ items: [] }))
+  ipcMain.handle('history:read', () => ({ error: 'test' }))
+  ipcMain.handle('library:list', () => ({ items: [] }))
+  ipcMain.handle('library:add', () => '')
+  ipcMain.handle('library:open', () => ({ error: 'test' }))
+  ipcMain.on('app:error-log', () => {})
+  ipcMain.handle('gallery:open-window', () => true)
+  ipcMain.handle('gallery:pick', () => true)
+  ipcMain.handle('file:export-pdf', () => ({ canceled: true }))
   ipcMain.handle('window:fullscreen', () => true)
   ipcMain.on('lab:sync', () => {})
   ipcMain.handle('lab:capture', () => null)
@@ -227,8 +240,9 @@ app.whenReady().then(async () => {
   ipcMain.handle('update:check', () => ({ ok: true, current: '0.0.0', hasUpdate: false }))
   ipcMain.handle('app:about', () => ({ name: 'Chordot', version: '0.0.0', electron: '', chrome: '', node: '', repo: '' }))
 
-  ipcMain.handle('symbol:apply', (_e, expr) => {
-    win.webContents.send('symbol:apply', String(expr))
+  /** 0.16.0：公式对象 { expr, target, value } 原样转发（旧字符串也兼容） */
+  ipcMain.handle('symbol:apply', (_e, payload) => {
+    win.webContents.send('symbol:apply', payload)
     return true
   })
   ipcMain.handle('symbol:open-window', () => {
@@ -749,7 +763,10 @@ app.whenReady().then(async () => {
   report.vectors.overlay = vecOverlay
   check(vecOverlay, '播放时没有画速度 / 受力箭头（[data-vectors]）')
 
-  // 公式力：选中方块，给 30 N 沿 +x，播放后应该被推走
+  // 公式力：先换到空白装配台、只放一个方块，排除弹簧/轨道干扰后再推
+  await openPreset('空白装配台')
+  await clickPartButton('box')
+  await wait(650)
   await clickPart('box')
   await wait(350)
   const fOk = await js('(function () {\n' +
@@ -761,24 +778,37 @@ app.whenReady().then(async () => {
     ' if (!mag) return "no-mag"\n' +
     ' var i = mag.querySelector("input")\n' +
     ' var set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set\n' +
-    ' i.focus(); set.call(i, "30"); i.dispatchEvent(new Event("input", { bubbles: true })); i.blur()\n' +
+    ' i.focus(); set.call(i, "30"); i.dispatchEvent(new Event("input", { bubbles: true }))\n' +
     ' var dir = rows.find(function (r) { return r.textContent.includes("方向") })\n' +
     ' var d = dir && dir.querySelector("input")\n' +
-    ' if (d) { d.focus(); set.call(d, "0"); d.dispatchEvent(new Event("input", { bubbles: true })); d.blur() }\n' +
+    ' if (d) { d.focus(); set.call(d, "0"); d.dispatchEvent(new Event("input", { bubbles: true })) }\n' +
     ' return true\n' +
     '})()')
   check(fOk === true, '选中方块后没有恒力输入框（' + fOk + '）')
+  // 等 React 把输入值同步进 state 再 blur；同一 tick 里 blur 读到的是旧闭包值
+  await wait(250)
+  await js('(function () {\n' +
+    ' var rows = [...document.querySelectorAll(".mechbar__force label")]\n' +
+    ' var mag = rows.find(function (r) { return r.textContent.includes("大小") })\n' +
+    ' var i = mag && mag.querySelector("input")\n' +
+    ' if (i) i.blur()\n' +
+    ' var dir = rows.find(function (r) { return r.textContent.includes("方向") })\n' +
+    ' var d = dir && dir.querySelector("input")\n' +
+    ' if (d) d.blur()\n' +
+    ' return true\n' +
+    '})()')
   await wait(350)
   const boxScreenX = async () => {
     const p = await readPart('box', 0)
     return p ? Math.round(p.sx) : null
   }
   const fx0 = await boxScreenX()
+  report.forceDebug = await js('(function(){const i=window.__mechInfo(); return i ? i.parts.find(function(p){return p.kind==="box"}) : null})()')
   await ensurePlaying(true)
   await wait(1000)
   const fx1 = await boxScreenX()
   await ensurePlaying(false)
-  report.forceExpr = { before: fx0, after: fx1 }
+  report.forceExpr = { before: fx0, after: fx1, debug: await js('(function(){const i=window.__mechInfo(); return i ? i.parts.find(function(p){return p.kind==="box"}) : null})()') }
   check(fx0 !== null && fx1 !== null && fx1 > fx0 + 8, '施加的力没有推动方块（' + fx0 + ' → ' + fx1 + '）')
 
   /* ── 7. 符号公式实验室（独立窗口，老断言） ── */
@@ -1069,12 +1099,21 @@ app.whenReady().then(async () => {
   await ensurePlaying(true)
   const arcP0 = await readPart('ball', 0)
   await wait(900)
-  const arcP1 = await readPart('ball', 0)
+  let arcP1 = await readPart('ball', 0)
+  const arcDx0 = arcP0 && arcP1 ? Math.abs(arcP1.x - arcP0.x) : 0
+  let arcStepped = false
+  // rAF 在远程桌面会暂停：轮询不到位移就用确定性步进兜底
+  if (arcDx0 < 0.1 && (await js('typeof window.__mechStep === "function"'))) {
+    await js('window.__mechStep(180)')
+    arcStepped = true
+    await wait(120)
+    arcP1 = await readPart('ball', 0)
+  }
   await ensurePlaying(false)
   const arcBall0 = arcP0 ? arcP0.x : null
   const arcBall1 = arcP1 ? arcP1.x : null
-  report.arcBall = { before: arcBall0, after: arcBall1 }
-  check(Number.isFinite(arcBall0) && Number.isFinite(arcBall1) && Math.abs(arcBall1 - arcBall0) > 0.1, '圆弧轨道播放后小球没沿弧滚动（x ' + arcBall0 + ' → ' + arcBall1 + '）')
+  report.arcBall = { before: arcBall0, after: arcBall1, stepped: arcStepped }
+  check(Number.isFinite(arcBall0) && Number.isFinite(arcBall1) && Math.abs(arcBall1 - arcBall0) > 0.1, '圆弧轨道播放后小球没沿弧滚动（x ' + arcBall0 + ' → ' + arcBall1 + (arcStepped ? '，已确定性步进' : '') + '）')
 
   // 9.6 液压缸：活塞把小车推走
   report.piston = await presetInfo('液压缸')

@@ -45,6 +45,10 @@ interface Props {
       | 'open'
       | 'save'
       | 'saveAs'
+      | 'export-pdf'
+      | 'history'
+      | 'library-add'
+      | 'presenter'
       | 'prefs'
       | 'shortcuts'
       | 'samples'
@@ -53,6 +57,7 @@ interface Props {
       | 'conflict'
       | 'solid'
       | 'gallery'
+      | 'gallery-window'
       | 'pendulum'
       | 'incline3d'
       | 'mech'
@@ -159,6 +164,10 @@ export function Toolbar(props: Props) {
       | 'open'
       | 'save'
       | 'saveAs'
+      | 'export-pdf'
+      | 'history'
+      | 'library-add'
+      | 'presenter'
       | 'prefs'
       | 'shortcuts'
       | 'samples'
@@ -167,6 +176,7 @@ export function Toolbar(props: Props) {
       | 'conflict'
       | 'solid'
       | 'gallery'
+      | 'gallery-window'
       | 'pendulum'
       | 'incline3d'
       | 'mech'
@@ -310,6 +320,15 @@ export function Toolbar(props: Props) {
               >
                 导出 PNG
               </button>
+              <button
+                className="menu__item"
+                onClick={() => {
+                  setExportOpen(false)
+                  runCommand('export-pdf')
+                }}
+              >
+                导出 PDF 讲义…
+              </button>
             </div>
           )}
 
@@ -323,6 +342,9 @@ export function Toolbar(props: Props) {
               </button>
               <button className="menu__item" onClick={() => runCommand('gallery')}>
                 模板库…
+              </button>
+              <button className="menu__item" onClick={() => runCommand('gallery-window')}>
+                模板库（独立窗口）…
               </button>
               <button className="menu__item" onClick={() => runCommand('open')}>
                 打开…
@@ -390,6 +412,16 @@ export function Toolbar(props: Props) {
               </button>
               <button className="menu__item" onClick={() => runCommand('clear')}>
                 清空画布
+              </button>
+              <div className="menu__sep" />
+              <button className="menu__item" onClick={() => runCommand('presenter')}>
+                演示者模式（全屏）
+              </button>
+              <button className="menu__item" onClick={() => runCommand('history')}>
+                版本历史…
+              </button>
+              <button className="menu__item" onClick={() => runCommand('library-add')}>
+                保存到课件库
               </button>
               <div className="menu__sep" />
               <button className="menu__item" onClick={() => runCommand('prefs')}>

@@ -426,6 +426,10 @@ export function MechStage({
 
   /** 每步累加的各部件合力（N，世界坐标），画箭头用 */
   const forcesRef = useRef<Map<string, Point2>>(new Map())
+  /** 自定义库仑摩擦的接触结果：id → 支持力 / 摩擦力 / 是否滑动 */
+  const contactRef = useRef<
+    Map<string, { normal: Point2; tangent: Point2; n: number; friction: number; sliding: boolean }>
+  >(new Map())
   /** 轨迹：id → 世界坐标采样 */
   const trailsRef = useRef<Map<string, [number, number][]>>(new Map())
   const trailsOnRef = useRef(trails)
@@ -542,7 +546,8 @@ export function MechStage({
 
     const ground = Matter.Bodies.rectangle(0, MECH_GROUND_Y - 0.5, 90, 1, {
       isStatic: true,
-      friction: 0.6,
+      // 接触摩擦改由 applyContactFriction 自己算（教科书库仑模型），Matter 只负责碰撞
+      friction: 0,
       restitution: 0.02,
       density: 0.001,
       label: 'ground',
@@ -558,7 +563,7 @@ export function MechStage({
       if (part.onTrack) mask &= ~CAT_FIELD
       const common: Matter.IChamferableBodyDefinition = {
         isStatic,
-        friction: mat.friction,
+        friction: 0,
         restitution: part.kind === 'anchor' ? 0.2 : mat.restitution,
         frictionAir: isStatic ? 0 : airDrag,
         density: 0.001,
@@ -743,6 +748,7 @@ export function MechStage({
     const rig: Rig = { engine, bodies, ground, hingeInit }
     rigRef.current = rig
     forcesRef.current = new Map()
+    contactRef.current = new Map()
     trailsRef.current = new Map()
     prevVelRef.current = new Map()
     timeRef.current = 0
@@ -875,6 +881,147 @@ export function MechStage({
       arr.push([body.position.x, body.position.y])
       if (arr.length > MAX_TRAIL) arr.shift()
     }
+  }
+
+
+  /* ───────── 自定义库仑摩擦（Matter 自带摩擦已清零） ───────── */
+
+  /** 不含摩擦的外力：连接力 / 公式力 / 重力 */
+  function externalForceOf(part: MechPart, body: Matter.Body) {
+    const links = linksRef.current
+    const P = paramsRef.current
+    let ex = 0
+    let ey = 0
+    for (const link of links) {
+      if (link.a !== part.id && link.b !== part.id) continue
+      const A = rigRef.current?.bodies.get(link.a)
+      const B = rigRef.current?.bodies.get(link.b)
+      if (!A || !B) continue
+      const vias: ViaBody[] = linkVias(link)
+        .map((id) => ({ id, body: rigRef.current?.bodies.get(id) }))
+        .filter((v): v is ViaBody => Boolean(v.body))
+      const r = linkForce(link, A, B, vias)
+      if (!r) continue
+      if (link.a === part.id) {
+        ex += r.fA.x
+        ey += r.fA.y
+      } else {
+        ex += r.fB.x
+        ey += r.fB.y
+      }
+      for (const extra of r.extras) {
+        if (extra.id !== part.id) continue
+        ex += extra.x
+        ey += extra.y
+      }
+    }
+    let fx = 0
+    let fy = 0
+    const f = part.force
+    if (f?.enabled) {
+      const th = (f.angle ?? 0) * DEG
+      let mag = 0
+      if (f.mode === 'const') mag = clamp(finite(f.n) ? f.n : 0, -2000, 2000)
+      else if (f.expr.trim()) {
+        mag = evalForceExpr(f.expr, {
+          x: body.position.x,
+          y: body.position.y,
+          vx: body.velocity.x * VEL_SCALE,
+          vy: body.velocity.y * VEL_SCALE,
+          t: timeRef.current,
+          m: part.mass,
+          g: P.gravity,
+        })
+      }
+      fx = Math.cos(th) * mag
+      fy = Math.sin(th) * mag
+    }
+    const gs = finite(part.gravityScale) ? part.gravityScale : 1
+    return { ex, ey, fx, fy, gx: 0, gy: -part.mass * P.gravity * gs }
+  }
+
+  /** 是否贴在圆弧轨道上（弧轨自己用分段碰撞，不能按地平面摩擦处理，否则球会在弧底被"粘"住） */
+  function nearArcTrack(part: MechPart, body: Matter.Body): boolean {
+    for (const t of partsRef.current) {
+      if (t.kind !== 'arcTrack') continue
+      const d = Math.hypot(body.position.x - t.x, body.position.y - t.y)
+      if (Math.abs(d - t.size) < part.size + 0.2) return true
+    }
+    return false
+  }
+
+  /** 接触面：地平面或挂着的轨道 */
+  function contactOf(part: MechPart, body: Matter.Body) {
+    if (part.onTrack) {
+      const track = partById(part.onTrack)
+      if (track) {
+        const th = (track.angle ?? 0) * DEG
+        return {
+          normal: { x: -Math.sin(th), y: Math.cos(th) },
+          tangent: { x: Math.cos(th), y: Math.sin(th) },
+        }
+      }
+    }
+    if (nearArcTrack(part, body)) return null
+    const bottom = body.bounds.max.y
+    if (bottom >= MECH_GROUND_Y - 0.07 && body.position.y > MECH_GROUND_Y - 4) {
+      return { normal: { x: 0, y: 1 }, tangent: { x: 1, y: 0 } }
+    }
+    return null
+  }
+
+  /**
+   * 每个物理步末尾结算接触摩擦：
+   * 支持力 N 由法向合力反推，摩擦力按静摩擦（|f| ≤ μN 同速度）或滑动摩擦（-μN·sign(v)）。
+   * 读数直接存进 contactRef，受力分解面板与箭头用同一份数据，避免「画的和算的不一致」。
+   */
+  function applyContactFriction() {
+    const rig = rigRef.current
+    if (!rig) return
+    const next = new Map<
+      string,
+      { normal: Point2; tangent: Point2; n: number; friction: number; sliding: boolean }
+    >()
+    for (const part of partsRef.current) {
+      if (isStaticPart(part)) continue
+      const body = rig.bodies.get(part.id)
+      if (!body || body.isStatic) continue
+      const contact = contactOf(part, body)
+      if (!contact) continue
+      const { normal, tangent } = contact
+      const F = externalForceOf(part, body)
+      const total = { x: F.ex + F.fx + F.gx, y: F.ey + F.fy + F.gy }
+      const n = Math.max(0, -(total.x * normal.x + total.y * normal.y))
+      if (n <= 1e-6) continue
+      const ft = total.x * tangent.x + total.y * tangent.y
+      const mu = clamp(materialOf(part).friction, 0, 1.2)
+      const vx = body.velocity.x
+      const vy = body.velocity.y
+      const vAlong = (vx * tangent.x + vy * tangent.y) * VEL_SCALE
+      let friction = 0
+      let sliding = false
+      if (Math.abs(vAlong) < 0.03 && Math.abs(ft) <= mu * n) {
+        // 静摩擦：合力不足以推动，抹掉切向速度（轨道上的滑块不会慢慢「蠕变」）
+        friction = -ft
+        const keep = vx * tangent.x + vy * tangent.y
+        if (Math.abs(keep) > 1e-9) {
+          Matter.Body.setVelocity(body, {
+            x: vx - keep * tangent.x,
+            y: vy - keep * tangent.y,
+          })
+        }
+      } else {
+        const dir = Math.abs(vAlong) > 0.02 ? -Math.sign(vAlong) : -Math.sign(ft || 1)
+        friction = dir * mu * n
+        sliding = true
+        Matter.Body.applyForce(body, body.position, {
+          x: friction * tangent.x * MECH_FORCE_SCALE,
+          y: friction * tangent.y * MECH_FORCE_SCALE,
+        })
+      }
+      next.set(part.id, { normal, tangent, n, friction, sliding })
+    }
+    contactRef.current = next
   }
 
   /* ───────── 一帧物理 ───────── */
@@ -1157,6 +1304,9 @@ export function MechStage({
       }
     }
 
+    /* 8.5 自定义库仑摩擦：Matter 不处理摩擦，这里按 N / μ 结算 */
+    applyContactFriction()
+
     /* 9. 数值兜底：万一求解炸了（NaN / 飞出世界），把该部件放回文档位置 */
     for (const part of parts) {
       const body = bodyOf(part.id)
@@ -1229,6 +1379,18 @@ export function MechStage({
           kind: p.kind,
           onTrack: p.onTrack ?? null,
           fixed: Boolean(p.fixed),
+          force: p.force ? { enabled: Boolean(p.force.enabled), mode: p.force.mode, n: p.force.n ?? null, expr: p.force.expr, angle: p.force.angle ?? 0 } : null,
+          contact: (() => {
+            const c = contactRef.current.get(p.id)
+            return c
+              ? {
+                  n: Number(c.n.toFixed(2)),
+                  friction: Number(c.friction.toFixed(2)),
+                  sliding: c.sliding,
+                  normal: [Number(c.normal.x.toFixed(2)), Number(c.normal.y.toFixed(2))],
+                }
+              : null
+          })(),
           body: b
             ? { x: Number(b.position.x.toFixed(3)), y: Number(b.position.y.toFixed(3)), isStatic: b.isStatic, mass: Number(b.mass.toFixed(2)) }
             : null,
@@ -1439,77 +1601,36 @@ export function MechStage({
     if (!rig) return null
     const body = rig.bodies.get(part.id)
     if (!body || body.isStatic) return null
-    let ex = 0
-    let ey = 0
-    for (const link of params.links) {
-      if (link.a !== part.id && link.b !== part.id) continue
-      const A = rig.bodies.get(link.a)
-      const B = rig.bodies.get(link.b)
-      if (!A || !B) continue
-      const vias: ViaBody[] = linkVias(link)
-        .map((id) => ({ id, body: rig.bodies.get(id) }))
-        .filter((v): v is ViaBody => Boolean(v.body))
-      const r = linkForce(link, A, B, vias)
-      if (!r) continue
-      if (link.a === part.id) {
-        ex += r.fA.x
-        ey += r.fA.y
-      } else {
-        ex += r.fB.x
-        ey += r.fB.y
-      }
-      for (const extra of r.extras) {
-        if (extra.id !== part.id) continue
-        ex += extra.x
-        ey += extra.y
-      }
-    }
-    let fx = 0
-    let fy = 0
-    const f = part.force
-    if (f?.enabled) {
-      const th = (f.angle ?? 0) * DEG
-      let mag = 0
-      if (f.mode === 'const') mag = clamp(finite(f.n) ? f.n : 0, -2000, 2000)
-      else if (f.expr.trim()) {
-        mag = evalForceExpr(f.expr, {
-          x: body.position.x,
-          y: body.position.y,
-          vx: body.velocity.x * VEL_SCALE,
-          vy: body.velocity.y * VEL_SCALE,
-          t: timeRef.current,
-          m: part.mass,
-          g: params.gravity,
-        })
-      }
-      fx = Math.cos(th) * mag
-      fy = Math.sin(th) * mag
-    }
-    const gs = finite(part.gravityScale) ? part.gravityScale : 1
-    const g = { x: 0, y: -part.mass * params.gravity * gs }
-    // 支持力：挂在轨道上按轨道法向，否则按是否贴地近似
-    let normal: Point2 | null = null
-    if (part.onTrack) {
+    const F = externalForceOf(part, body)
+    const g = { x: F.gx, y: F.gy }
+    const elastic = { x: F.ex, y: F.ey }
+    const formula = { x: F.fx, y: F.fy }
+
+    // 支持力：先看本步接触结算，其次按轨道 / 贴地近似
+    const contact = contactRef.current.get(part.id)
+    let normal: Point2 | null = contact ? contact.normal : null
+    if (!normal && part.onTrack) {
       const tr = partById(part.onTrack)
       if (tr) {
         const th = (tr.angle ?? 0) * DEG
         normal = { x: -Math.sin(th), y: Math.cos(th) }
       }
-    } else if (Math.abs(body.position.y - (MECH_GROUND_Y + part.size)) < 0.12) {
+    } else if (!normal && Math.abs(body.position.y - (MECH_GROUND_Y + part.size)) < 0.12) {
       normal = { x: 0, y: 1 }
     }
-    let n = 0
-    let friction = 0
-    if (normal) {
-      const total = { x: ex + fx + g.x, y: ey + fy + g.y }
+
+    let n = contact ? contact.n : 0
+    let friction = contact ? contact.friction : 0
+    if (!contact && normal) {
+      const total = { x: F.ex + F.fx + F.gx, y: F.ey + F.fy + F.gy }
       n = Math.max(0, -(total.x * normal.x + total.y * normal.y))
       const tx = -normal.y
       const ty = normal.x
       const ft = total.x * tx + total.y * ty
-      const mu = 0.5
+      const mu = clamp(materialOf(part).friction, 0, 1.2)
       friction = clamp(-ft, -mu * n, mu * n)
     }
-    return { g, elastic: { x: ex, y: ey }, formula: { x: fx, y: fy }, normal, n, friction }
+    return { g, elastic, formula, normal, n, friction, sliding: contact?.sliding ?? false }
   }
 
   /* ───────── 画部件 ───────── */

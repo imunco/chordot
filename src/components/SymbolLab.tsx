@@ -1,12 +1,38 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { evaluate } from 'mathjs'
+import {
+  BUILTIN_FORMULAS,
+  CONSTANT_DEFS,
+  DEFAULT_CONSTANTS,
+  FORCE_TARGETS,
+  MAX_CUSTOM_FORMULAS,
+  SYMBOLS,
+  loadConstants,
+  loadCustomFormulas,
+  makeScope,
+  newFormulaId,
+  saveConstants,
+  saveCustomFormulas,
+  type ConstDef,
+  type CustomFormula,
+  type ForceTarget,
+  type SymGroup,
+  type SymbolForcePayload,
+} from '../data/symbolLibrary'
 
 /**
  * 符号公式实验室（独立窗口）。
  *
  * 把物理符号拖到一起拼成表达式，表达式就是作用在小球上的合力：
  * 拼 `-k*x` 得到简谐运动，拼 `-k*x - c*v` 得到阻尼振动，拼 `m*g` 就是重力。
- * 灵感来自 physics-sandbox 的「符号拼公式」，但换成我们自己的场景与排版。
+ *
+ * 0.16 起多了三件事：
+ * - 常量（g/k/c/m…）能改并记住，求值用的就是改过的常量；
+ * - 内置公式库一键载入，当前公式也能存进自定义库（localStorage）；
+ * - 发送到机构可以选目标：force（旧行为）/ springK / springC / mass。
+ *
+ * 符号表、公式库、常量的默认值与读写都在 data/symbolLibrary.ts。
  */
 
 type Tok =
@@ -15,53 +41,46 @@ type Tok =
   | { t: 'op'; v: string }
   | { t: 'paren'; v: '(' | ')' }
 
-interface SymDef {
-  id: string
-  label: string
-  unit: string
-  group: '状态' | '常量' | '导出量'
-  hint: string
-}
-
-const SYMBOLS: SymDef[] = [
-  { id: 'x', label: 'x', unit: 'm', group: '状态', hint: '小球位置' },
-  { id: 'v', label: 'v', unit: 'm/s', group: '状态', hint: '小球速度' },
-  { id: 'a', label: 'a', unit: 'm/s²', group: '状态', hint: '小球加速度（上一帧）' },
-  { id: 't', label: 't', unit: 's', group: '状态', hint: '时间' },
-  { id: 'm', label: 'm', unit: 'kg', group: '常量', hint: '小球质量' },
-  { id: 'g', label: 'g', unit: 'm/s²', group: '常量', hint: '重力加速度' },
-  { id: 'k', label: 'k', unit: 'N/m', group: '常量', hint: '劲度系数' },
-  { id: 'c', label: 'c', unit: 'N·s/m', group: '常量', hint: '阻尼系数' },
-  { id: 'F', label: 'F₀', unit: 'N', group: '常量', hint: '外力常量' },
-  { id: 'mu', label: 'μ', unit: '', group: '常量', hint: '动摩擦因数' },
-  { id: 'pi', label: 'π', unit: '', group: '常量', hint: '圆周率' },
-  { id: 'G', label: 'G', unit: '', group: '常量', hint: '引力常量' },
-  { id: 'M', label: 'M', unit: 'kg', group: '常量', hint: '地球质量' },
-  { id: 'r', label: 'r', unit: 'm', group: '常量', hint: '地球半径' },
-  { id: 'N', label: 'N', unit: 'N', group: '导出量', hint: '支持力 mg' },
-  { id: 'E', label: 'E', unit: 'J', group: '导出量', hint: '动能 ½mv²' },
-  { id: 'W', label: 'W', unit: 'J', group: '导出量', hint: '功 F₀x' },
-  { id: 'P', label: 'P', unit: 'W', group: '导出量', hint: '功率 F₀v' },
-  { id: 'omega', label: 'ω', unit: 'rad/s', group: '导出量', hint: '圆频率 √(k/m)' },
-]
-
-const PRESETS: { label: string; expr: string }[] = [
-  { label: '重力 m·g', expr: 'm*g' },
-  { label: '弹簧回复力 −k·x', expr: '-k*x' },
-  { label: '阻尼振动 −k·x − c·v', expr: '-k*x-c*v' },
-  { label: '匀加速 F₀', expr: 'F' },
-  { label: '动能 ½mv²', expr: '0.5*m*v^2' },
-  { label: '万有引力 GMm/r²', expr: 'G*M*m/r^2' },
-]
-
 const X_LIMIT = 4.2
 const TRACK_PX = 88 // 每米像素
 const HISTORY = 520
+const DEFAULT_EXPR = '-k*x-c*v'
+
+/** 新加的少量布局样式：app.css 归 Lead，这里内联，颜色仍取纸面 token */
+const S = {
+  stageTop: { flexWrap: 'wrap' },
+  target: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text-secondary)' },
+  select: {
+    height: 24,
+    padding: '0 4px',
+    fontSize: 11.5,
+    color: 'var(--text-primary)',
+    background: '#fff',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+  },
+  knobsHead: { gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  knobRow: { justifyContent: 'space-between' },
+  textTitle: { marginTop: 10 },
+  noMargin: { margin: 0 },
+  presetsRow: { alignItems: 'center' },
+  nameInput: { width: 136, height: 24, fontSize: 11.5, textAlign: 'left' },
+  custom: { display: 'inline-flex', alignItems: 'center', gap: 2 },
+  del: { padding: '2px 6px', fontSize: 11, color: 'var(--text-secondary)', background: 'transparent', borderColor: 'transparent' },
+} satisfies Record<string, CSSProperties>
 
 const fmt = (v: number, d = 2) => {
   if (!Number.isFinite(v)) return '—'
   if (Math.abs(v) >= 1e5 || (Math.abs(v) < 1e-3 && v !== 0)) return v.toExponential(2)
   return v.toFixed(d)
+}
+
+/** 常量输入框里的显示格式：小到 1e-11、大到 1e24 都别被 toFixed 抹成 0 */
+const fmtField = (v: number) => {
+  if (!Number.isFinite(v)) return '0'
+  const abs = Math.abs(v)
+  if (v !== 0 && (abs < 1e-4 || abs >= 1e6)) return v.toExponential(2)
+  return String(Number(v.toFixed(4)))
 }
 
 function tokensFromExpr(expr: string): Tok[] {
@@ -81,8 +100,7 @@ function tokensFromExpr(expr: string): Tok[] {
   return out
 }
 
-const exprOf = (tokens: Tok[]) =>
-  tokens.map((k) => (k.t === 'sym' ? k.id : k.v)).join('')
+const exprOf = (tokens: Tok[]) => tokens.map((k) => (k.t === 'sym' ? k.id : k.v)).join('')
 
 /** 公式里的 ^ 后面跟数字时渲染成上标，读起来像课本 */
 function FormulaView({ tokens }: { tokens: Tok[] }) {
@@ -121,14 +139,49 @@ function FormulaView({ tokens }: { tokens: Tok[] }) {
   )
 }
 
+/** 常量输入：失焦或回车才提交，边输边改会把 "1" 当成 1（右栏数字输入同款做法） */
+function ConstField({ def, value, onCommit }: { def: ConstDef; value: number; onCommit: (v: number) => void }) {
+  const [text, setText] = useState(() => fmtField(value))
+  useEffect(() => setText(fmtField(value)), [value])
+  const commit = () => {
+    const n = Number(text)
+    if (!Number.isFinite(n)) {
+      setText(fmtField(value))
+      return
+    }
+    const clamped = Math.min(def.max, Math.max(def.min, n))
+    onCommit(clamped)
+    setText(fmtField(clamped))
+  }
+  return (
+    <span className="numfield">
+      <input
+        className="numfield__input"
+        type="number"
+        value={text}
+        step={def.step}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            ;(e.target as HTMLInputElement).blur()
+          }
+        }}
+      />
+      {def.unit && <span className="numfield__unit">{def.unit}</span>}
+    </span>
+  )
+}
+
 export function SymbolLab() {
-  const [tokens, setTokens] = useState<Tok[]>(() => tokensFromExpr('-k*x-c*v'))
+  const [tokens, setTokens] = useState<Tok[]>(() => tokensFromExpr(DEFAULT_EXPR))
   const [playing, setPlaying] = useState(true)
-  const [mass, setMass] = useState(1)
-  const [g, setG] = useState(9.8)
-  const [k, setK] = useState(8)
-  const [c, setC] = useState(0.35)
-  const [f0, setF0] = useState(2)
+  /** 可编辑常量：先从 localStorage 读，改一次就写回去 */
+  const [constants, setConstants] = useState<Record<string, number>>(() => loadConstants())
+  const [target, setTarget] = useState<ForceTarget>('force')
+  const [customs, setCustoms] = useState<CustomFormula[]>(() => loadCustomFormulas())
+  const [draftName, setDraftName] = useState('')
   const [sim, setSim] = useState({ x: 1.8, v: 0, t: 0 })
   const [force, setForce] = useState(0)
   const [error, setError] = useState('')
@@ -139,55 +192,41 @@ export function SymbolLab() {
   const forceRef = useRef(0)
 
   const expr = exprOf(tokens)
+  /** 质量既进求值作用域，也进 a = F/m 的积分，统一从常量里取；最小 0.05 kg 防除零 */
+  const mass = Math.max(0.05, constants.m)
+  const targetDef = FORCE_TARGETS.find((t) => t.id === target) ?? FORCE_TARGETS[0]
   const scope = useMemo(
-    () => ({
-      x: sim.x,
-      v: sim.v,
-      t: sim.t,
-      a: force / Math.max(0.05, mass),
-      m: mass,
-      g,
-      k,
-      c,
-      F: f0,
-      mu: 0.3,
-      pi: Math.PI,
-      G: 6.67e-11,
-      M: 5.97e24,
-      r: 6.37e6,
-      N: mass * g,
-      E: 0.5 * mass * sim.v ** 2,
-      W: f0 * sim.x,
-      P: f0 * sim.v,
-      omega: Math.sqrt(k / Math.max(0.05, mass)),
-    }),
-    [sim, force, mass, g, k, c, f0],
+    () => makeScope({ x: sim.x, v: sim.v, t: sim.t, a: force / mass }, constants),
+    // 每帧都会重算一次，量级很小（几次乘除 + 一次开方）
+    [sim, force, mass, constants],
   )
+
+  const reportError = (msg: string) => setError((prev) => (prev === msg ? prev : msg))
 
   /**
    * 求值：x / v / t 必须取「当前帧」的值（stateRef），不能读渲染时闭包里的 scope，
    * 否则循环里用的是循环启动那一刻的旧值，拼 -k*x 会变成常力。
+   * 发到机构时也要用这里的原值（不裁剪），所以返回对象而不是直接设错误。
    */
-  const evalForce = (): number => {
-    if (!expr.trim()) return 0
+  const evalLive = (): { value: number; bad: string } => {
+    if (!expr.trim()) return { value: 0, bad: '' }
     const s = stateRef.current
-    const live = {
-      ...scope,
-      x: s.x,
-      v: s.v,
-      t: s.t,
-      a: forceRef.current / Math.max(0.05, mass),
-    }
+    const live = makeScope({ x: s.x, v: s.v, t: s.t, a: forceRef.current / mass }, constants)
     try {
       const out = evaluate(expr, live) as unknown
       const n = typeof out === 'number' ? out : Number(out)
-      if (!Number.isFinite(n)) return 0
-      setError('')
-      return Math.max(-500, Math.min(500, n))
+      if (!Number.isFinite(n)) return { value: 0, bad: '公式的结果不是实数' }
+      return { value: n, bad: '' }
     } catch (err) {
-      setError(err instanceof Error ? err.message.split('\n')[0] : '表达式无法求值')
-      return 0
+      return { value: 0, bad: err instanceof Error ? err.message.split('\n')[0] : '表达式无法求值' }
     }
+  }
+
+  /** 每步积分用的合力：算不出来就当 0，顺手把错误写到界面上 */
+  const evalForce = (): number => {
+    const { value, bad } = evalLive()
+    reportError(bad)
+    return bad ? 0 : Math.max(-500, Math.min(500, value))
   }
 
   useEffect(() => {
@@ -204,7 +243,7 @@ export function SymbolLab() {
       let F = forceRef.current
       while (acc >= step && guard++ < 8) {
         F = evalForce()
-        const a = F / Math.max(0.05, mass)
+        const a = F / mass
         const s = stateRef.current
         let v = s.v + a * step
         let x = s.x + v * step
@@ -227,7 +266,17 @@ export function SymbolLab() {
     raf = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(raf)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, expr, mass, k, c, g, f0])
+  }, [playing, expr, mass, constants])
+
+  /** 暂停时改公式或常量，也要让「现在」那行跟着动 */
+  useEffect(() => {
+    if (playing) return
+    const { value, bad } = evalLive()
+    reportError(bad)
+    forceRef.current = value
+    setForce(value)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, expr, constants])
 
   const reset = () => {
     histRef.current = []
@@ -251,9 +300,71 @@ export function SymbolLab() {
 
   const back = () => setTokens((prev) => prev.slice(0, -1))
   const clear = () => setTokens([])
+  const loadFormula = (src: string) => setTokens(tokensFromExpr(src))
 
-  const values = SYMBOLS.map((s) => ({ ...s, value: (scope as Record<string, number>)[s.id] }))
-  const groups: SymDef['group'][] = ['状态', '常量', '导出量']
+  /* ── 常量：改了就落 localStorage，求值作用域和积分都跟着变 ── */
+
+  const setConstant = (id: string, v: number) => {
+    const next = { ...constants, [id]: v }
+    setConstants(next)
+    saveConstants(next)
+  }
+
+  const resetConstants = () => {
+    const next = { ...DEFAULT_CONSTANTS }
+    setConstants(next)
+    saveConstants(next)
+  }
+
+  /* ── 自定义公式库 ── */
+
+  const saveCurrent = () => {
+    const body = expr.trim()
+    if (!body) return
+    const label = (draftName.trim() || body).slice(0, 24)
+    // 同一条公式存过就改名，不重复堆
+    const same = customs.find((f) => f.expr === body)
+    const next = same
+      ? customs.map((f) => (f.id === same.id ? { ...f, label, at: Date.now() } : f))
+      : [{ id: newFormulaId(), label, expr: body, at: Date.now() }, ...customs].slice(0, MAX_CUSTOM_FORMULAS)
+    setCustoms(next)
+    saveCustomFormulas(next)
+    setDraftName('')
+  }
+
+  const removeCustom = (id: string) => {
+    const next = customs.filter((f) => f.id !== id)
+    setCustoms(next)
+    saveCustomFormulas(next)
+  }
+
+  /* ── 发送到机构：target 决定主窗口怎么用这个值 ── */
+
+  const sendToMech = () => {
+    // Lead 把签名换成了 { expr, target, value }；global.d.ts 由 Lead 同步，这里收窄一下保持两侧都能编译
+    type SymbolForceApi = (payload: SymbolForcePayload) => Promise<boolean>
+    const api = window.chordot?.applySymbolForce as unknown as SymbolForceApi | undefined
+    if (!api) {
+      reportError('这个窗口没连上主进程（缺少 preload 通道），发不出去')
+      return
+    }
+    if (!expr.trim()) {
+      reportError('先拼一条公式再发送')
+      return
+    }
+    const { value, bad } = evalLive()
+    if (bad) {
+      reportError(bad)
+      return
+    }
+    const rounded = Number(value.toPrecision(12))
+    void api({ expr, target, value: rounded })
+    setSent(`已发送 ${targetDef.label} = ${fmt(rounded)}${targetDef.unit ? ' ' + targetDef.unit : ''}`)
+    window.setTimeout(() => setSent(''), 2600)
+  }
+
+  const values = SYMBOLS.map((s) => ({ ...s, value: scope[s.id] }))
+  const groups: SymGroup[] = ['状态', '常量', '导出量']
 
   // 轨道：屏幕 x = 中心 + x * TRACK_PX；小球会被限制在 ±X_LIMIT
   const W = 760
@@ -277,7 +388,8 @@ export function SymbolLab() {
         <div>
           <div className="symlab__brand">符号公式实验室</div>
           <div className="symlab__sub">
-            把符号拖进公式区（或点一下追加），拼出来的表达式就是作用在小球上的合力 F —— 拼 F(x, v, t) 就是在解运动方程
+            把符号拖进公式区（或点一下追加），拼出来的表达式就是作用在小球上的合力 F —— 常量可以改、公式可以存，
+            发送时还能把结果写给弹簧、阻尼或质量
           </div>
         </div>
         <button className="symlab__close" onClick={() => window.close()}>
@@ -358,37 +470,92 @@ export function SymbolLab() {
               </button>
             </div>
             {error && <div className="symlab__err">公式有问题：{error}</div>}
+
+            <div className="symlab__grouptitle" style={S.textTitle}>
+              公式库 · 点一下载入
+            </div>
             <div className="symlab__presets">
-              {PRESETS.map((p) => (
-                <button key={p.expr} onClick={() => setTokens(tokensFromExpr(p.expr))}>
-                  {p.label}
+              {BUILTIN_FORMULAS.map((f) => (
+                <button key={f.id} title={f.hint} onClick={() => loadFormula(f.expr)}>
+                  {f.label}
                 </button>
+              ))}
+            </div>
+
+            <div className="symlab__grouptitle" style={S.textTitle}>
+              我的公式 · 存进本机，关掉窗口也还在
+            </div>
+            <div className="symlab__presets" style={S.presetsRow}>
+              <input
+                className="numfield__input"
+                style={S.nameInput}
+                value={draftName}
+                placeholder="公式名（可留空）"
+                title="保存时起的名字，留空就用公式本身"
+                onChange={(e) => setDraftName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveCurrent()
+                }}
+              />
+              <button
+                className="symlab__save"
+                disabled={!expr.trim()}
+                title="把当前公式存进自定义库"
+                onClick={saveCurrent}
+              >
+                保存当前公式
+              </button>
+              {customs.length === 0 && <span className="symlab__empty">还没有：拼好一条，点「保存当前公式」</span>}
+              {customs.map((f) => (
+                <span key={f.id} style={S.custom}>
+                  <button title={f.expr} onClick={() => loadFormula(f.expr)}>
+                    {f.label}
+                  </button>
+                  <button
+                    className="symlab__mini"
+                    style={S.del}
+                    title="从自定义库删掉"
+                    onClick={() => removeCustom(f.id)}
+                  >
+                    ×
+                  </button>
+                </span>
               ))}
             </div>
           </div>
 
           <div className="symlab__stage">
-            <div className="symlab__stagetop">
+            <div className="symlab__stagetop" style={S.stageTop}>
               <button className="symlab__play" data-active={playing} onClick={() => setPlaying((v) => !v)}>
                 {playing ? '暂停' : '播放'}
               </button>
               <button className="symlab__mini" onClick={reset}>
                 重置
               </button>
+              <label className="symlab__target" style={S.target} title={targetDef.hint}>
+                <span>发送到</span>
+                <select
+                  style={S.select}
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value as ForceTarget)}
+                >
+                  {FORCE_TARGETS.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button
                 className="symlab__mini symlab__send"
-                title="把公式作为 F(x,v,t) 发给主窗口里机构选中的部件"
-                onClick={() => {
-                  void window.chordot?.applySymbolForce?.(expr)
-                  setSent(`已发送 F = ${expr}`)
-                  window.setTimeout(() => setSent(''), 2400)
-                }}
+                title="把公式发到主窗口里机构选中的部件（按左边选的目标）"
+                onClick={sendToMech}
               >
                 发送到机构
               </button>
               {sent && <span className="symlab__sent">{sent}</span>}
               <span className="symlab__now">
-                F = <b>{fmt(force)}</b> N　a = <b>{fmt(force / Math.max(0.05, mass))}</b> m/s²　v ={' '}
+                F = <b>{fmt(force)}</b> N　a = <b>{fmt(force / mass)}</b> m/s²　v ={' '}
                 <b>{fmt(sim.v)}</b> m/s　x = <b>{fmt(sim.x)}</b> m　t = <b>{fmt(sim.t, 2)}</b> s
               </span>
             </div>
@@ -456,27 +623,18 @@ export function SymbolLab() {
           </div>
 
           <div className="symlab__knobs">
-            {[
-              { label: '质量 m', unit: 'kg', value: mass, set: setMass, min: 0.1, max: 10, step: 0.1 },
-              { label: '劲度 k', unit: 'N/m', value: k, set: setK, min: 0, max: 40, step: 0.5 },
-              { label: '阻尼 c', unit: 'N·s/m', value: c, set: setC, min: 0, max: 6, step: 0.05 },
-              { label: '重力 g', unit: 'm/s²', value: g, set: setG, min: 0, max: 20, step: 0.1 },
-              { label: '外力 F₀', unit: 'N', value: f0, set: setF0, min: -20, max: 20, step: 0.5 },
-            ].map((kn) => (
-              <label key={kn.label} className="symlab__knob">
-                <span>{kn.label}</span>
-                <input
-                  type="range"
-                  min={kn.min}
-                  max={kn.max}
-                  step={kn.step}
-                  value={kn.value}
-                  onChange={(e) => kn.set(Number(e.target.value))}
-                />
-                <b>
-                  {kn.value.toFixed(kn.step < 1 ? 2 : 1)}
-                  <i>{kn.unit}</i>
-                </b>
+            <div style={S.knobsHead}>
+              <span className="symlab__grouptitle" style={S.noMargin}>
+                常量 · 改完自动记住（π 与状态量由程序提供）
+              </span>
+              <button className="symlab__mini" title="把这 12 个常量恢复成出厂值" onClick={resetConstants}>
+                恢复默认
+              </button>
+            </div>
+            {CONSTANT_DEFS.map((def) => (
+              <label key={def.id} className="symlab__knob" style={S.knobRow} title={def.hint}>
+                <span>{def.label}</span>
+                <ConstField def={def} value={constants[def.id]} onCommit={(v) => setConstant(def.id, v)} />
               </label>
             ))}
           </div>

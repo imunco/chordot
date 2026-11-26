@@ -1026,3 +1026,193 @@ html[data-reduce-motion='on'] .lobby__ghost:hover,
 html[data-reduce-motion='on'] .lobby__file:hover {
   transform: none;
 }
+
+/* ── 未保存快照恢复卡 ── */
+.lobby__recovery {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 10px 12px;
+  background: #fdf8ec;
+  border: 1px solid #ecdfc2;
+  border-left: 3px solid #b08a3e;
+  border-radius: var(--r-md);
+}
+
+.lobby__recoveryicon {
+  display: inline-flex;
+  flex: none;
+  color: #8a6a28;
+}
+
+.lobby__recoverytext {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.lobby__recoverytext i {
+  font-style: normal;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.lobby__recoverytext b {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lobby__recoverygo,
+.lobby__recoverydrop {
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.lobby__recoverygo {
+  color: #fff;
+  background: #8a6a28;
+}
+
+.lobby__recoverygo:hover {
+  background: #795c22;
+}
+
+.lobby__recoverydrop {
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.lobby__recoverydrop:hover {
+  background: rgba(31, 31, 29, 0.05);
+}
+
+/* ── 每日一言 ── */
+.lobby__quote {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 22px;
+  padding: 14px 16px 13px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--border);
+  border-radius: var(--r-max);
+}
+
+.lobby__quotemark {
+  flex: none;
+  margin-top: -8px;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 34px;
+  line-height: 1;
+  color: #b08a3e;
+  opacity: 0.85;
+}
+
+.lobby__quotebody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.lobby__quotebody p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--text-primary);
+}
+
+.lobby__quotebody span {
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.lobby__quoterefresh {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background var(--t), color var(--t), transform var(--t);
+}
+
+.lobby__quoterefresh:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.9);
+  border-color: var(--border);
+  transform: rotate(45deg);
+}
+
+/* ── 我的课件（library） ── */
+.lobby__library {
+  margin-top: 30px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(31, 31, 29, 0.08);
+}
+
+@media (max-width: 620px) {
+  .lobby__recovery {
+    flex-wrap: wrap;
+  }
+
+  .lobby__recoverygo,
+  .lobby__recoverydrop {
+    margin-left: auto;
+  }
+}
+
+/* 新建对话框：学段 / 章节 / 备注 */
+.newdoc__text {
+  height: 28px;
+  width: 96px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.newdoc__text--wide {
+  width: 168px;
+}
+
+.newdoc__note {
+  width: 100%;
+  min-height: 46px;
+  padding: 7px 9px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  resize: vertical;
+  outline: none;
+}
+
+.newdoc__note:focus {
+  border-color: #9fb2b8;
+  box-shadow: 0 0 0 3px rgba(61, 90, 102, 0.12);
+}

@@ -5,6 +5,8 @@ import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { LabWindow } from './components/LabWindow'
 import { SymbolLab } from './components/SymbolLab'
+import { PrintSheet } from './components/PrintSheet'
+import { GalleryWindow } from './components/GalleryWindow'
 import { hydrate } from './persist'
 import './styles/tokens.css'
 import './styles/app.css'
@@ -12,6 +14,7 @@ import './styles/app.css'
 import './styles/mech.css'
 // 启动大厅与新建课件对话框
 import './styles/lobby.css'
+import './styles/print.css'
 
 /**
  * 先把磁盘上的用户数据同步回 localStorage 再渲染，
@@ -22,6 +25,8 @@ async function boot() {
   const lab = query.get('lab')
   const labId = query.get('id') ?? undefined
   const symbols = query.get('symbols')
+  const print = query.get('print')
+  const gallery = query.get('gallery')
 
   // 本地数据最多等 1.2s，等太久不如先出界面
   await Promise.race([hydrate(), new Promise((r) => setTimeout(r, 1200))])
@@ -32,7 +37,17 @@ async function boot() {
     root.render(
       <StrictMode>
         <ErrorBoundary>
-          {symbols ? <SymbolLab /> : lab ? <LabWindow initialId={labId} /> : <App />}
+          {symbols ? (
+            <SymbolLab />
+          ) : print ? (
+            <PrintSheet />
+          ) : gallery ? (
+            <GalleryWindow />
+          ) : lab ? (
+            <LabWindow initialId={labId} />
+          ) : (
+            <App />
+          )}
         </ErrorBoundary>
       </StrictMode>,
     )

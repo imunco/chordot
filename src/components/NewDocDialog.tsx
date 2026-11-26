@@ -19,6 +19,10 @@ export interface NewDocValues {
   showTicks: boolean
   angleUnit: 'deg' | 'rad'
   touch: boolean
+  /** 课件元信息（可空）：学段 / 章节 / 备注 */
+  grade?: string
+  chapter?: string
+  note?: string
 }
 
 interface Props {
@@ -99,6 +103,9 @@ export function NewDocDialog({ initial, onCancel, onCreate }: Props) {
   const [showTicks, setShowTicks] = useState(initial.showTicks)
   const [angleUnit, setAngleUnit] = useState<'deg' | 'rad'>(initial.angleUnit)
   const [touch, setTouch] = useState(initial.touch)
+  const [grade, setGrade] = useState(initial.grade ?? '')
+  const [chapter, setChapter] = useState(initial.chapter ?? '')
+  const [note, setNote] = useState(initial.note ?? '')
 
   useEscape(true, onCancel)
 
@@ -118,6 +125,9 @@ export function NewDocDialog({ initial, onCancel, onCreate }: Props) {
       showTicks,
       angleUnit,
       touch,
+      grade: grade.trim() || undefined,
+      chapter: chapter.trim() || undefined,
+      note: note.trim() || undefined,
     })
   }
 
@@ -159,6 +169,34 @@ export function NewDocDialog({ initial, onCancel, onCreate }: Props) {
                   onChange={(e) => setName(e.target.value)}
                 />
                 <span className="newdoc__suffix">.chordot</span>
+              </div>
+            </div>
+
+            <div className="newdoc__group">
+              <span className="newdoc__label">学段与章节（可空）</span>
+              <div className="newdoc__row">
+                <label className="newdoc__check">
+                  学段
+                  <input
+                    className="newdoc__text"
+                    value={grade}
+                    spellCheck={false}
+                    placeholder="高一 / 初二…"
+                    maxLength={20}
+                    onChange={(e) => setGrade(e.target.value)}
+                  />
+                </label>
+                <label className="newdoc__check">
+                  章节
+                  <input
+                    className="newdoc__text newdoc__text--wide"
+                    value={chapter}
+                    spellCheck={false}
+                    placeholder="3.2 摩擦力"
+                    maxLength={40}
+                    onChange={(e) => setChapter(e.target.value)}
+                  />
+                </label>
               </div>
             </div>
 
@@ -258,6 +296,19 @@ export function NewDocDialog({ initial, onCancel, onCreate }: Props) {
                   弧度 rad
                 </button>
               </div>
+            </div>
+
+            <div className="newdoc__group">
+              <span className="newdoc__label">备注（可空）</span>
+              <textarea
+                className="newdoc__note"
+                value={note}
+                spellCheck={false}
+                placeholder="教学目标 / 课堂安排 / 用到的器材…"
+                maxLength={300}
+                rows={2}
+                onChange={(e) => setNote(e.target.value)}
+              />
             </div>
 
             <div className="newdoc__group">

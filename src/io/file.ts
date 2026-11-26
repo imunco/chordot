@@ -1,8 +1,8 @@
-import type { SceneSpec, SketchDoc, Stroke } from '../kernel/types'
+import type { DocMeta, SceneSpec, SketchDoc, Stroke } from '../kernel/types'
 import type { Doc } from '../state'
 import { normalizeMechParams } from '../model/mech'
 
-export const FILE_VERSION = 1
+export const FILE_VERSION = 2
 
 export interface ChordotFile {
   app: 'chordot'
@@ -13,6 +13,8 @@ export interface ChordotFile {
     hidden: Record<string, boolean>
     names: Record<string, string>
     strokes?: Stroke[]
+    /** v2：课件元信息（旧文件没有也照常打开） */
+    meta?: DocMeta
   }
 }
 
@@ -26,6 +28,7 @@ export function serializeDoc(doc: Doc): string {
       hidden: doc.hidden,
       names: doc.names,
       strokes: doc.strokes ?? [],
+      ...(doc.meta ? { meta: doc.meta } : {}),
     },
   }
   return JSON.stringify(payload, null, 2)
@@ -88,6 +91,24 @@ export function parseDoc(text: string): { doc: Doc } | { error: string } {
     return { error: '课件包含当前版本不支持的内容' }
   }
 
+  const rawMeta = file.doc?.meta
+  const meta =
+    rawMeta && typeof rawMeta === 'object'
+      ? {
+          ...(typeof rawMeta.title === 'string' ? { title: rawMeta.title } : {}),
+          ...(rawMeta.subject === 'math' || rawMeta.subject === 'physics'
+            ? { subject: rawMeta.subject }
+            : {}),
+          ...(typeof rawMeta.grade === 'string' ? { grade: rawMeta.grade } : {}),
+          ...(typeof rawMeta.chapter === 'string' ? { chapter: rawMeta.chapter } : {}),
+          ...(typeof rawMeta.note === 'string' ? { note: rawMeta.note } : {}),
+          ...(typeof rawMeta.createdAt === 'number' ? { createdAt: rawMeta.createdAt } : {}),
+          ...(typeof rawMeta.updatedAt === 'number' ? { updatedAt: rawMeta.updatedAt } : {}),
+          ...(Array.isArray(rawMeta.slides)
+            ? { slides: rawMeta.slides.filter((s: unknown) => s && typeof s === 'object') }
+            : {}),
+        }
+      : undefined
   return {
     doc: {
       scene,
@@ -95,6 +116,7 @@ export function parseDoc(text: string): { doc: Doc } | { error: string } {
       names: file.doc?.names && typeof file.doc.names === 'object' ? file.doc.names : {},
       deleted: [],
       strokes: Array.isArray(file.doc?.strokes) ? (file.doc.strokes as Stroke[]) : [],
+      ...(meta ? { meta } : {}),
     },
   }
 }
