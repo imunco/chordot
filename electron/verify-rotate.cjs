@@ -245,7 +245,6 @@ app.whenReady().then(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
       setter.call(el, ${JSON.stringify(String(v))});
       el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.blur();
       return 'ok';
     })()`
     report.labels3d = await js(
@@ -256,6 +255,9 @@ app.whenReady().then(async () => {
       '立体属性里没有俯仰 / 翻滚',
     )
     await js(setField('俯仰', 35))
+    // 等 React 把输入同步进 state 再 blur：同一 tick 里 blur 可能读到旧闭包
+    await wait(250)
+    await js("(function(){var rows=[...document.querySelectorAll('.props__row')];var row=rows.find(function(r){return r.querySelector('span') && r.querySelector('span').textContent==='俯仰'});if(row&&row.querySelector('input'))row.querySelector('input').blur();return true})()")
     await wait(400)
     const rot = await js(
       `window.__state.doc.scene.params.shapes[0].rotation?.map(v => +v.toFixed(3)) ?? null`,

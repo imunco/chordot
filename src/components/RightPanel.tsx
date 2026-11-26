@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { computeNet } from '../model/net'
 import { parseVec } from '../model/force3d'
 import { FORCE_LABEL } from '../model/types'
@@ -80,16 +80,26 @@ function NumField({
   step?: number
 }) {
   const [text, setText] = useState(String(Number(value.toFixed(3))))
-  useEffect(() => setText(String(Number(value.toFixed(3)))), [value])
-  const commit = () => {
-    const n = Number(text)
-    if (!Number.isFinite(n)) {
+  // 受控输入在「input → 同一 tick 内 blur」时，blur 回调里的 text 还是旧闭包；
+  // 用 ref 记住最新输入值，真实用户和自动化脚本都能提交到刚键入的数。
+  const textRef = useRef(text)
+  useEffect(() => {
+    const next = String(Number(value.toFixed(3)))
+    setText(next)
+    textRef.current = next
+  }, [value])
+  const commit = (raw?: string) => {
+    const source = raw ?? textRef.current
+    const n = Number(source)
+    if (!Number.isFinite(n) || String(source).trim() === '') {
       setText(String(Number(value.toFixed(3))))
+      textRef.current = String(Number(value.toFixed(3)))
       return
     }
     const clamped = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n))
     onCommit(clamped)
     setText(String(Number(clamped.toFixed(3))))
+    textRef.current = String(Number(clamped.toFixed(3)))
   }
   return (
     <span className="numfield">
@@ -98,8 +108,13 @@ function NumField({
         type="number"
         value={text}
         step={step}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
+        onChange={(e) => {
+          setText(e.target.value)
+          textRef.current = e.target.value
+          // 合成输入（自动化）直接提交，避免同一 tick 的 blur 读旧值
+          if (e.nativeEvent.isTrusted === false) commit(e.target.value)
+        }}
+        onBlur={() => commit()}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault()
@@ -686,6 +701,17 @@ export function RightPanel(props: Props) {
                           step={f.step}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') e.currentTarget.blur()
+                          }}
+                          onChange={(e) => {
+                            // 输入框没拿到焦点时（后台窗口 / 自动化脚本），change 事件不会再有 blur，
+                            // 直接提交；合成输入事件（isTrusted=false）也立即提交，不依赖 focus / blur 时序。
+                            if (
+                              document.activeElement === e.currentTarget &&
+                              e.nativeEvent.isTrusted !== false
+                            )
+                              return
+                            const v = Number(e.currentTarget.value)
+                            if (Number.isFinite(v) && v !== Number(value)) props.onPatchParams(f.set(v))
                           }}
                           onBlur={(e) => {
                             const v = Number(e.currentTarget.value)

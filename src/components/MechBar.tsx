@@ -602,8 +602,9 @@ function Num({
           const raw = e.target.value
           setText(raw)
           // 世界面板折叠时输入框在 display:none 里，拿不到焦点 → 程序化改值直接提交，
-          // 否则值只停在 DOM 上，不会写回文档（验证脚本会这样改世界参数）
-          if (document.activeElement !== e.currentTarget) commit(raw)
+          // 否则值只停在 DOM 上，不会写回文档（验证脚本会这样改世界参数）。
+          // 合成输入事件（isTrusted=false）也直接提交：自动化脚本不会经历真实 blur 的 React 刷新时序。
+          if (document.activeElement !== e.currentTarget || e.nativeEvent.isTrusted === false) commit(raw)
         }}
         onBlur={() => commit()}
         onKeyDown={(e) => {

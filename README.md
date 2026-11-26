@@ -105,13 +105,14 @@ npm run preview    # 用构建产物启动
 
 ## 验证
 
-四十套端到端脚本，全部基于真实 Electron 窗口驱动 UI 并断言结果（含机构装配 169 项断言、启动大厅 24 项、0.16 功能 26 项）；0.17 的 26 个模型另有逐项渲染探针：
+四十一套端到端脚本，全部基于真实 Electron 窗口驱动 UI 并断言结果（含机构装配 169 项断言、启动大厅 24 项、0.16 功能 26 项、0.17 全局工具与 26 个模型逐个渲染）：
 
 ```bash
 npm run verify:kernel && npm run verify:construct && npm run verify:file
 npm run verify:textbook && npm run verify:bigscreen && npm run verify:mech
 npm run verify:lobby
 npm run verify:016
+npm run verify:017
 # 或逐个跑，清单见 package.json 的 verify:* 脚本
 ```
 
